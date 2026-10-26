@@ -1,0 +1,9 @@
+agentic-laravel/
+.env
+admin/.env
+admin/storage/app/private/*.enc
+agente/base/
+agente/workspace/
+agente/encargos/
+__pycache__/
+catorce-platos/

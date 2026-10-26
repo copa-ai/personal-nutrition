@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""«Claude» de mentira para probar la cadena completa sin el modelo (solo para pruebas; ver docker-compose.pruebas.yml).
+
+Imita lo justo de `claude -p PROMPT --output-format stream-json --verbose`: lee el encargo, marca las fases con el consumos.py real,
+escribe un menu valido y lo entrega con el menu.py real. Emite los mismos eventos stream-json que el Claude de verdad.
+
+El modo se lee de /app/agente/modo-falso (se cambia sin recrear el contenedor):
+  ok (por defecto)  entrega un menu valido
+  lento             como ok, pero se queda 120 s en la fase de planificacion (para probar reinicios y paradas)
+  limite            imprime el aviso de limite de uso del plan y sale con 1, sin entregar
+  sinresultado      termina bien pero sin dejar resultado (dice por que)
+  invalido          deja un resultado que incumple el contrato
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+RAIZ = Path(os.environ.get("AGENTE_CARPETA", "/app/agente"))
+sys.path.insert(0, str(RAIZ / "scripts"))
+MODELO = "claude-sonnet-5-5"
+T0 = time.time()
+
+
+def emitir(evento: dict) -> None:
+    print(json.dumps(evento, ensure_ascii=False), flush=True)
+
+
+def texto(t: str) -> None:
+    emitir({"type": "assistant", "message": {"content": [{"type": "text", "text": t}]}})
+
+
+def herramienta(nombre: str, entrada: dict, resultado: str = "ok") -> None:
+    emitir({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": nombre, "input": entrada}]}})
+    time.sleep(0.6)
+    emitir({"type": "user", "message": {"content": [{"type": "tool_result", "content": resultado}]}})
+
+
+def bash(comando: str) -> str:
+    r = subprocess.run(comando, shell=True, cwd=RAIZ, capture_output=True, text=True)
+    herramienta("Bash", {"command": comando}, (r.stdout + r.stderr).strip() or "ok")
+    return r.stdout
+
+
+def apuntar_consumo(n: int, fase: str, entrada: int, salida: int) -> None:
+    """Lo que en el Claude real hace el hook Stop: una fila por respuesta del modelo."""
+    import consumos
+    c = consumos.conectar()
+    c.execute("INSERT OR IGNORE INTO consumos (mensaje_id, ejecucion_id, fase, agente, modelo, fecha, input_tokens, output_tokens) VALUES (?,?,?,?,?,?,?,?)",
+              (f"msg_falso_{n}_{fase}", n, fase, "principal", MODELO, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), entrada, salida))
+    c.commit()
+    c.close()
+
+
+def main() -> int:
+    prompt = sys.argv[sys.argv.index("-p") + 1] if "-p" in sys.argv else ""
+    m = re.search(r"trabajo (\d+)", prompt)
+    if not m:
+        print("Solo atiendo encargos de planificación.")
+        return 0
+    n = int(m.group(1))
+    modo = (RAIZ / "modo-falso").read_text().strip() if (RAIZ / "modo-falso").exists() else "ok"
+
+    emitir({"type": "system", "subtype": "init", "model": MODELO})
+    if modo == "limite":
+        print("You've hit your session limit · resets 3:20pm (UTC)", flush=True)
+        return 1
+
+    encargo_ruta = f"encargos/encargo-{n}.json"
+    texto(f"Leo el encargo {n}.")
+    bash(f"python scripts/consumos.py fase lectura --ejecucion {n}")
+    encargo = json.loads((RAIZ / encargo_ruta).read_text(encoding="utf-8"))
+    herramienta("Read", {"file_path": encargo_ruta}, "x" * 4000)
+    apuntar_consumo(n, "lectura", 9000, 400)
+
+    bash(f"python scripts/consumos.py fase planificacion --ejecucion {n}")
+    texto("Planifico el menú de la semana.")
+    if modo == "lento":
+        time.sleep(120)
+    adaptaciones = [{"perfil_id": p["id"], "cambios": f"Para {p['nombre']}: ajusto raciones y evito sus restricciones."} for p in encargo["perfiles"]]
+    receta = lambda titulo, minutos: {
+        "titulo": titulo, "categorias": [encargo["categorias_validas"][0]], "ingredientes": [{"nombre": "tomate", "cantidad": 200, "unidad": "g", "en_stock": True}],
+        "duracion_previa_min": 0, "duracion_momento_min": minutos, "pasos": ["Cortar", "Cocinar"], "adaptaciones": adaptaciones}
+    dias = []
+    for t in encargo["hogar"]["tiempos"]:
+        dias.append({"fecha": t["fecha"],
+                     "comida": {"opciones": [] if t["minutos_comida"] is None else [receta(f"Plato A {t['fecha']}", min(10, t["minutos_comida"])), receta(f"Plato B {t['fecha']}", min(15, t["minutos_comida"]))]},
+                     "cena": {"opciones": [] if t["minutos_cena"] is None else [receta(f"Cena A {t['fecha']}", min(10, t["minutos_cena"])), receta(f"Cena B {t['fecha']}", min(20, t["minutos_cena"]))]}})
+    apuntar_consumo(n, "planificacion", 15000, 9000)
+    borrador = f"workspace/borrador-{n}.json"
+    (RAIZ / borrador).write_text(json.dumps({"dias": dias}, ensure_ascii=False), encoding="utf-8")
+    herramienta("Write", {"file_path": borrador})
+
+    if modo == "invalido":
+        dias[0]["comida"]["opciones"][0]["adaptaciones"] = []
+        (RAIZ / encargo["salida"]).write_text(json.dumps({"entrega": {"completo": True}, "dias": dias}), encoding="utf-8")
+        texto("Entrego (sin validar).")
+        emitir({"type": "result", "result": "Menú entregado", "num_turns": 6, "duration_ms": int((time.time() - T0) * 1000)})
+        return 0
+
+    bash(f"python scripts/consumos.py fase validacion --ejecucion {n}")
+    bash(f"python scripts/menu.py validar {borrador} --encargo {encargo_ruta}")
+    apuntar_consumo(n, "validacion", 4000, 300)
+    if modo == "sinresultado":
+        emitir({"type": "result", "result": "No puedo cumplir la restricción de uno de los perfiles.", "num_turns": 5, "duration_ms": int((time.time() - T0) * 1000)})
+        return 0
+    bash(f"python scripts/menu.py entregar {borrador} --encargo {encargo_ruta}")
+    emitir({"type": "result", "result": "Menú entregado", "num_turns": 7, "duration_ms": int((time.time() - T0) * 1000), "total_cost_usd": 0.05})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

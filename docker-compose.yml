@@ -1,0 +1,160 @@
+# Plantilla de docker-compose.yml. Sustituir nutrition (p. ej. parques).
+#
+#   docker compose up -d --build        # primera vez: construye, instala y migra
+#   docker compose exec web php artisan make:filament-user
+#   Antes de la primera vez, en un archivo .env junto a este docker-compose.yml:
+#           AGENTE_SECRETO=<al menos 16 caracteres al azar, p. ej. `openssl rand -hex 24`>
+#   Claude: pega el token de `claude setup-token` en la administracion (Conexion con Claude),
+#           o, alternativa: docker compose exec -it agente claude login
+#   http://localhost:8000/admin
+#
+# Piezas y regla de oro:
+#   web + queue + preparar  -> misma imagen PHP (Laravel + Filament). Montan el repositorio en /app.
+#   agente                  -> Claude Code + Python + runner HTTP. NO ve admin/ (ni .env, ni BD, ni APP_KEY).
+#   garage                  -> S3 de desarrollo. Unico canal de ficheros entre administracion y agente.
+# Regla de oro: administracion y agente NO comparten ningun volumen. Hablan por HTTP (ordenes) y por S3 (ficheros).
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+  image: nutrition-admin:dev
+  volumes:
+    - .:/app:z   # :z = etiqueta SELinux compartida (Fedora)
+    # Dependencias de PHP dentro de Docker (las de Windows/Mac no valen y el montaje es lento).
+    - vendor:/app/admin/vendor
+    - home:/home/app
+  environment: &entorno
+    APP_ENV: ${APP_ENV:-local}
+    APP_URL: ${APP_URL:-http://localhost:8000}
+    # SQLite sobre un directorio montado: esperar al bloqueo en vez de fallar si web y cola escriben a la vez.
+    DB_BUSY_TIMEOUT: "10000"
+    AGENTE_CARPETA: /app/agente
+    # Donde corre claude. Vacio = en el propio proceso (solo desarrollo/pruebas).
+    AGENTE_URL: http://agente:9000
+    AGENTE_MODELO: ${AGENTE_MODELO:-claude-sonnet-5-5}
+    AGENTE_SECRETO: ${AGENTE_SECRETO:?Define AGENTE_SECRETO en un archivo .env junto al docker-compose.yml (al menos 16 caracteres)}
+    # Una tanda puede durar hasta AGENTE_TIMEOUT (3 h): la cola no debe darla por perdida y relanzarla antes
+    # (por defecto Laravel reintenta a los 90 s). Tiene que ser MAYOR que AGENTE_TIMEOUT.
+    DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-14400}
+    # S3 (ficheros entre administracion y agente). Por defecto, el servicio garage. Para un S3 real define estas
+    # variables en el .env (con AGENTE_S3_ENDPOINT= vacio se usa AWS). OJO: `-` y no `:-` en ENDPOINT para que vacio signifique AWS.
+    AGENTE_S3_BUCKET: ${AGENTE_S3_BUCKET:-agente}
+    AGENTE_S3_PREFIJO: ${AGENTE_S3_PREFIJO:-}
+    AGENTE_S3_REGION: ${AGENTE_S3_REGION:-us-east-1}
+    AGENTE_S3_ENDPOINT: ${AGENTE_S3_ENDPOINT-http://garage:3900}
+    # Valores por defecto SOLO de desarrollo (Garage exige GK + 24 hex y 64 hex). En produccion: claves reales en el .env.
+    AGENTE_S3_CLAVE: ${AGENTE_S3_CLAVE:-GK0a1b2c3d4e5f60718293a4b5}
+    AGENTE_S3_SECRETO: ${AGENTE_S3_SECRETO:-9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    AGENTE_S3_RUTA_ESTILO: ${AGENTE_S3_RUTA_ESTILO:-}
+
+services:
+  garage:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.garage
+    image: nutrition-garage:dev
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-4f0c7a1e9b3d5826a1c4e7f0b3d6a9c2e5f8b1d4a7c0e3f6b9d2a5c8e1f4b7d0}
+      GARAGE_CLAVE: ${AGENTE_S3_CLAVE:-GK0a1b2c3d4e5f60718293a4b5}
+      GARAGE_SECRETO: ${AGENTE_S3_SECRETO:-9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0}
+      GARAGE_BUCKET: ${AGENTE_S3_BUCKET:-agente}
+      GARAGE_REGION: ${AGENTE_S3_REGION:-us-east-1}
+    volumes:
+      - garage-datos:/var/lib/garage
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/listo"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Una sola vez al arrancar: dependencias, clave, migraciones. Web y cola esperan a que acabe.
+  preparar:
+    <<: *app
+    command: ["true"]
+    environment:
+      <<: *entorno
+      PREPARAR: "1"
+    depends_on:
+      garage:
+        condition: service_healthy
+    restart: "no"
+
+  # Claude Code y el kit del agente, aislados: solo ven su agente/ (volumen agente-datos) y su sesion de Claude (agente-home).
+  agente:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agente
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: nutrition-agente:dev
+    volumes:
+      - agente-datos:/app/agente
+      - agente-estado:/var/lib/agente-estado   # ejecuciones del runner: un reinicio no las pierde de vista
+      - agente-home:/home/app                  # sesion de `claude login` (si no se usa token)
+    environment:
+      AGENTE_SECRETO: ${AGENTE_SECRETO:?Define AGENTE_SECRETO en un archivo .env junto al docker-compose.yml (al menos 16 caracteres)}
+      AGENTE_S3_BUCKET: ${AGENTE_S3_BUCKET:-agente}
+      AGENTE_S3_PREFIJO: ${AGENTE_S3_PREFIJO:-}
+      AGENTE_S3_REGION: ${AGENTE_S3_REGION:-us-east-1}
+      AGENTE_S3_ENDPOINT: ${AGENTE_S3_ENDPOINT-http://garage:3900}
+      AGENTE_S3_CLAVE: ${AGENTE_S3_CLAVE:-GK0a1b2c3d4e5f60718293a4b5}
+      AGENTE_S3_SECRETO: ${AGENTE_S3_SECRETO:-9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0}
+      AGENTE_S3_RUTA_ESTILO: ${AGENTE_S3_RUTA_ESTILO:-}
+    depends_on:
+      garage:
+        condition: service_healthy
+    expose:
+      - "9000"          # NUNCA `ports:`. Solo la red interna de compose llega al runner.
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:9000/salud', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Tiene internet (lo necesita la API de Claude y, si procede, buscar) pero poco mas.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    pids_limit: 512
+    mem_limit: 4g
+    restart: unless-stopped
+
+  web:
+    <<: *app
+    # --no-reload: sin el, `artisan serve` descarta las variables de Docker (AGENTE_URL, AGENTE_SECRETO...)
+    # y la web intentaria lanzar claude ella misma.
+    command: php artisan serve --host=0.0.0.0 --port=8000 --no-reload
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    depends_on:
+      preparar:
+        condition: service_completed_successfully
+      agente:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Los jobs: aqui se le pide la ejecucion al agente y se importa el resultado al terminar.
+  queue:
+    <<: *app
+    command: php artisan queue:work --tries=1 --timeout=0 --sleep=3
+    depends_on:
+      preparar:
+        condition: service_completed_successfully
+      agente:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  vendor:
+  home:
+  agente-home:
+  agente-datos:
+  agente-estado:
+  garage-datos:

@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(py:*)",
+      "Bash(pip:*)",
+      "Bash(which:*)",
+      "Bash(where:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Bash(open:*)",
+      "Bash(start:*)",
+      "Edit(workspace/**)",
+      "Edit(.claude/setup-completado.json)",
+      "WebFetch",
+      "WebSearch"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/scripts/consumos.py\" --hook || python3 \"$CLAUDE_PROJECT_DIR/scripts/consumos.py\" --hook"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/scripts/consumos.py\" --hook || python3 \"$CLAUDE_PROJECT_DIR/scripts/consumos.py\" --hook"
+          }
+        ]
+      }
+    ]
+  }
+}
