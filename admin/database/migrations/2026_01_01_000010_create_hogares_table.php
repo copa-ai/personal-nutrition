@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/** Hogar: agrupa a los perfiles y es dueño de lo compartido (stock, compras, tiempos de cocinado y menús). */
+/** Hogar: agrupa a los perfiles y es dueño de lo compartido (stock, tiempos de cocinado y menús). */
 return new class extends Migration
 {
     public function up(): void

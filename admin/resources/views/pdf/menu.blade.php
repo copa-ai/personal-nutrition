@@ -3,8 +3,6 @@
 
     /** @var array<string, mixed> $d */
     $nombres = collect($d['perfiles'])->pluck('nombre', 'id');
-    $mismoMes = $d['inicio']->month === $d['fin']->month;
-    $periodo = 'Del '.$d['inicio']->locale('es')->isoFormat($mismoMes ? 'dddd D' : 'dddd D [de] MMMM').' al '.$d['fin']->locale('es')->isoFormat('dddd D [de] MMMM');
     $columnas = 3;
     $porColumna = max(1, (int) ceil(count($d['compra']['comprar']) / $columnas));
     $cantidad = function (?float $n, string $unidad): string {
@@ -29,7 +27,7 @@
 
     /* cabecera */
     .eyebrow { font-family: 'DejaVu Sans Mono', monospace; font-size: 7pt; letter-spacing: 1.4pt; text-transform: uppercase; color: #1D4E89; }
-    h1 { font-size: 27pt; line-height: 1.05; margin-top: 6pt; }
+    h1 { font-size: 19pt; line-height: 1.05; margin-top: 6pt; }
     h1 em { display: block; font-size: 17pt; font-style: italic; color: #1D4E89; margin-top: 3pt; }
     .entradilla { font-size: 9.5pt; margin-top: 12pt; width: 85%; }
     .supuestos { margin-top: 12pt; }
@@ -61,8 +59,13 @@
     .pasos li { margin-bottom: 1pt; }
     .ing { font-size: 7.2pt; color: #5D6874; margin-top: 4pt; }
     .ing b { font-weight: normal; font-family: 'DejaVu Sans Mono', monospace; font-size: 6pt; letter-spacing: 0.8pt; text-transform: uppercase; color: #5F6E38; }
-    .adapt { margin-top: 4pt; padding-left: 6pt; border-left: 2px solid #5F6E38; font-size: 7.4pt; line-height: 1.3; }
-    .adapt b { color: #141C26; }
+    .indiv td { border-top: 1px solid #E9E7E0; padding: 5pt 10pt 6pt 10pt; font-size: 7.4pt; line-height: 1.3; vertical-align: top; }
+    .indiv .quien { font-weight: bold; color: #141C26; }
+    .indiv .m { font-family: 'DejaVu Sans Mono', monospace; font-size: 5.8pt; letter-spacing: 0.8pt; text-transform: uppercase; color: #5F6E38; }
+    .indiv .t { color: #141C26; }
+    .indiv .mins { font-family: 'DejaVu Sans Mono', monospace; font-size: 6pt; color: #5D6874; }
+    .indiv .sub { color: #5D6874; font-size: 6.8pt; margin-top: 1pt; }
+    .indiv .nota { color: #A63D22; font-size: 6.8pt; font-style: italic; margin-top: 1pt; }
     .nada { font-size: 8pt; color: #5D6874; font-style: italic; }
 
     /* la compra */
@@ -78,6 +81,7 @@
     .persona { page-break-inside: avoid; border: 1px solid #E9E7E0; padding: 9pt 11pt; margin-bottom: 7pt; }
     .persona h3 { font-family: 'DejaVu Sans', sans-serif; font-weight: bold; font-size: 9.4pt; }
     .persona p { font-size: 8pt; margin-top: 3pt; }
+    .persona .explica { font-size: 8.4pt; line-height: 1.4; margin-top: 5pt; padding-left: 6pt; border-left: 2px solid #1D4E89; }
     .persona .dato { font-family: 'DejaVu Sans Mono', monospace; font-size: 7pt; color: #5D6874; }
     .persona .restr { color: #A63D22; }
 
@@ -88,14 +92,14 @@
 
 <div class="cabecera">
     <p class="eyebrow">Menú semanal · {{ $d['hogar'] }}</p>
-    <h1>{{ $d['titulo'] }}<em>{{ $periodo }}</em></h1>
+    <h1>{{ $d['titulo'] }}</h1>
     <p class="entradilla">
-        {{ $d['tomas'] }} tomas para {{ \Illuminate\Support\Arr::join($nombres->all(), ', ', ' y ') ?: 'el hogar' }}. En cada una va la opción elegida, con lo que cambia para cada persona,
-        y al final la lista de la compra de lo elegido.
+        Primero la lista de la compra de todo lo elegido, luego cómo se ha pensado el menú para {{ \Illuminate\Support\Arr::join($nombres->all(), ', ', ' y ') ?: 'el hogar' }}
+        y, por último, cada día: la comida y la cena elegidas y, debajo, el desayuno, el almuerzo y la merienda de cada persona.
     </p>
     <div class="supuestos">
         <span class="supuesto">{{ count($d['perfiles']) }} {{ count($d['perfiles']) === 1 ? 'persona' : 'personas' }}</span>
-        <span class="supuesto">{{ $d['tomas'] }} tomas</span>
+        <span class="supuesto">{{ $d['tomas'] }} comidas y cenas</span>
         @foreach ($d['perfiles'] as $p)
             <span class="supuesto">{{ $p['nombre'] }}@if (! empty($p['kcal_diarias'])) · {{ number_format($p['kcal_diarias'], 0, ',', '.') }} kcal @endif</span>
         @endforeach
@@ -103,7 +107,47 @@
     </div>
 </div>
 
-<table class="rotulo"><tr><td><h2>La semana</h2></td><td class="aparte">Opción elegida · Adaptaciones por persona</td></tr></table>
+<table class="rotulo"><tr><td><h2>La compra</h2></td><td class="aparte">Lo que hay que comprar para lo elegido</td></tr></table>
+
+@if (count($d['compra']['comprar']))
+    <table class="compra">
+        <tr>
+            @foreach (array_chunk($d['compra']['comprar'], $porColumna) as $trozo)
+                <td>
+                    @foreach ($trozo as $i)
+                        <div class="it"><span class="cant">{{ $cantidad($i['cantidad'], $i['unidad']) }}</span>{{ $i['nombre'] }}</div>
+                    @endforeach
+                </td>
+            @endforeach
+            @for ($r = count(array_chunk($d['compra']['comprar'], $porColumna)); $r < $columnas; $r++)<td></td>@endfor
+        </tr>
+    </table>
+@else
+    <p class="vacio">No hace falta comprar nada: todo lo elegido está ya en casa.</p>
+@endif
+@if (count($d['compra']['en_casa']))
+    <p class="apunte"><b>Ya en casa, no hace falta comprarlo:</b> {{ collect($d['compra']['en_casa'])->map(fn ($i) => $i['nombre'].' ('.$cantidad($i['cantidad'], $i['unidad']).')')->implode(' · ') }}.</p>
+@endif
+
+<table class="rotulo"><tr><td><h2>Cada persona</h2></td><td class="aparte">Cómo se ha pensado su menú</td></tr></table>
+
+<div class="personas">
+    @foreach ($d['perfiles'] as $p)
+        <div class="persona">
+            <h3>{{ $p['nombre'] }}</h3>
+            @if (! empty($p['objetivo']))<p>{{ $p['objetivo'] }}</p>@endif
+            <p class="dato">
+                @if (! empty($p['kcal_diarias'])){{ number_format($p['kcal_diarias'], 0, ',', '.') }} kcal/día @endif
+                @if (! empty($p['macros_pct']['proteina'])) · P {{ $p['macros_pct']['proteina'] }} % · C {{ $p['macros_pct']['carbohidratos'] }} % · G {{ $p['macros_pct']['grasa'] }} % @endif
+            </p>
+            @php($explica = collect($d['explicaciones'])->firstWhere('perfil_id', $p['id']))
+            @if ($explica)<p class="explica">{{ $explica['texto'] }}</p>@endif
+            @if (! empty($p['restricciones']))<p class="restr"><b>Restricciones:</b> {{ implode(', ', $p['restricciones']) }}</p>@endif
+        </div>
+    @endforeach
+</div>
+
+<table class="rotulo" style="page-break-before: always; margin-top: 0"><tr><td><h2>La semana</h2></td><td class="aparte">Comida y cena elegidas · Individual por persona</td></tr></table>
 
 @foreach ($d['dias'] as $dia)
     <table class="dia">
@@ -140,53 +184,38 @@
                                 {{ collect($o['ingredientes'])->map(fn ($i) => $i['nombre'].(isset($i['cantidad']) ? ' '.$cantidad((float) $i['cantidad'], (string) ($i['unidad'] ?? '')) : ''))->implode(' · ') }}
                             </p>
                         @endif
-                        @foreach ($o['adaptaciones'] ?? [] as $a)
-                            <div class="adapt"><b>{{ $nombres[$a['perfil_id']] ?? 'Perfil '.$a['perfil_id'] }}</b> · {{ $a['cambios'] }}</div>
-                        @endforeach
                     @endif
                 </td>
             @endforeach
         </tr>
+        @if ($dia['individuales'])
+            <tr>
+                <td colspan="3" style="padding:0">
+                    <table class="indiv" style="width:100%;border-collapse:collapse;table-layout:fixed">
+                        @foreach ($dia['individuales'] as $ind)
+                            <tr>
+                                <td style="width:58pt"><span class="quien">{{ $ind['nombre'] }}</span></td>
+                                @foreach ($ind['tomas'] as $m => $x)
+                                    @php($tm = $x['toma'])
+                                    <td>
+                                        <span class="m">{{ $x['etiqueta'] }}</span>
+                                        <span class="mins">{{ $tm['duracion_momento_min'] ?? 0 }} min @if (($tm['duracion_previa_min'] ?? 0) > 0) · {{ $tm['duracion_previa_min'] }} antes @endif</span><br>
+                                        <span class="t">{{ $tm['titulo'] ?? '' }}</span>
+                                        @if (! empty($tm['descripcion']))<div class="sub">{{ $tm['descripcion'] }}</div>@endif
+                                        @if (! empty($tm['ingredientes']))
+                                            <div class="sub">{{ collect($tm['ingredientes'])->map(fn ($i) => $i['nombre'].(isset($i['cantidad']) ? ' '.$cantidad((float) $i['cantidad'], (string) ($i['unidad'] ?? '')) : ''))->implode(' · ') }}</div>
+                                        @endif
+                                        @if (! empty($tm['nota']))<div class="nota">{{ $tm['nota'] }}</div>@endif
+                                    </td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                    </table>
+                </td>
+            </tr>
+        @endif
     </table>
 @endforeach
-
-<table class="rotulo"><tr><td><h2>La compra</h2></td><td class="aparte">Lo que hay que comprar para lo elegido</td></tr></table>
-
-@if (count($d['compra']['comprar']))
-    <table class="compra">
-        <tr>
-            @foreach (array_chunk($d['compra']['comprar'], $porColumna) as $trozo)
-                <td>
-                    @foreach ($trozo as $i)
-                        <div class="it"><span class="cant">{{ $cantidad($i['cantidad'], $i['unidad']) }}</span>{{ $i['nombre'] }}</div>
-                    @endforeach
-                </td>
-            @endforeach
-            @for ($r = count(array_chunk($d['compra']['comprar'], $porColumna)); $r < $columnas; $r++)<td></td>@endfor
-        </tr>
-    </table>
-@else
-    <p class="vacio">No hace falta comprar nada: todo lo elegido está ya en casa.</p>
-@endif
-@if (count($d['compra']['en_casa']))
-    <p class="apunte"><b>Ya en casa, no hace falta comprarlo:</b> {{ collect($d['compra']['en_casa'])->map(fn ($i) => $i['nombre'].' ('.$cantidad($i['cantidad'], $i['unidad']).')')->implode(' · ') }}.</p>
-@endif
-
-<table class="rotulo"><tr><td><h2>Cada persona</h2></td><td class="aparte">Con lo que se ha planificado</td></tr></table>
-
-<div class="personas">
-    @foreach ($d['perfiles'] as $p)
-        <div class="persona">
-            <h3>{{ $p['nombre'] }}</h3>
-            @if (! empty($p['objetivo']))<p>{{ $p['objetivo'] }}</p>@endif
-            <p class="dato">
-                @if (! empty($p['kcal_diarias'])){{ number_format($p['kcal_diarias'], 0, ',', '.') }} kcal/día @endif
-                @if (! empty($p['macros_pct']['proteina'])) · P {{ $p['macros_pct']['proteina'] }} % · C {{ $p['macros_pct']['carbohidratos'] }} % · G {{ $p['macros_pct']['grasa'] }} % @endif
-            </p>
-            @if (! empty($p['restricciones']))<p class="restr"><b>Restricciones:</b> {{ implode(', ', $p['restricciones']) }}</p>@endif
-        </div>
-    @endforeach
-</div>
 
 <p class="pie">
     Menú generado con ayuda de un asistente de IA a partir de los datos del hogar (gustos, restricciones, despensa y lo comido).

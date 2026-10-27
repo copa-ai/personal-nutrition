@@ -47,10 +47,14 @@ navegador ──8000──▶ web ──┐                      ┌────
 
 ## Qué hace el sistema
 
-1. **Hogar:** tiempos de cocinado por día, perfiles (cada uno con su modelo nutricional, restricciones y gustos), despensa (existencias y compras).
+1. **Hogar:** tiempos de cocinado por día y por toma (comida, cena, y también desayuno, almuerzo y merienda; en estas tres, vacío = sin dato y no se limita), perfiles (cada uno con su modelo nutricional, restricciones, gustos y notas libres como el gimnasio), despensa (existencias, sin registro de compras).
 2. **Seguimiento:** se registra lo que se comió *de verdad*. Lo planificado no cuenta como comido.
-3. **Menús:** se elige la semana y se pulsa «Generar menú». El agente propone 2-3 opciones de receta por comida y cena, cada una con una adaptación por perfil. La administración valida la entrega y la importa.
-4. **PDF:** en la ficha del menú se elige la opción preferida de cada toma (por defecto, la primera) y «Descargar PDF» genera un documento con una opción por toma, sus adaptaciones por persona y la lista de la compra de lo elegido. Se regenera cada vez, así que siempre refleja las elecciones actuales.
+3. **Menús:** se elige la semana y se pulsa «Generar menú». El agente fija primero las categorías de alimento de cada comida y cena y luego propone 2-3 recetas dentro de ellas (todas comparten categorías). Además da una toma individual de desayuno, almuerzo y merienda por perfil y día, y una explicación por perfil. La administración valida la entrega (contrato versión 2, ver abajo) y la importa. El título del menú lleva el rango de fechas: «Nombre · del 2 al 8 de noviembre».
+4. **PDF:** en la ficha del menú se elige la opción preferida de cada toma (por defecto, la primera) y «Descargar PDF» genera un documento. Orden: título con fechas, lista de la compra (comida y cena elegidas más todas las tomas individuales), «Cada persona» con su explicación y, por último, cada día con la comida y la cena elegidas y debajo las tomas individuales de cada persona. Se regenera cada vez, así que siempre refleja las elecciones actuales.
+
+### Contrato de entrega (versión 2)
+
+Encargo y entrega llevan `version: 2`. El encargo añade `minutos_desayuno`, `minutos_almuerzo` y `minutos_merienda` a `hogar.tiempos`. La entrega lleva `dias[]` con `comida` y `cena` (`categorias` + `opciones`), `individuales[]` (una entrada por perfil con `desayuno`, `almuerzo` y `merienda`, una sola versión cada una) y, arriba, `explicaciones[]` (una por perfil). Las reglas están en `admin/app/Models/Menu/ValidaEntrega.php` y en `agente/scripts/menu.py`: son las mismas y hay que cambiarlas a la vez. Detalle en `agente/.claude/skills/planificar-menu/SKILL.md`.
 
 ## Arranque
 

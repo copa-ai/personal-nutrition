@@ -19,7 +19,7 @@ class ViewMenu extends ViewRecord
 
     public function getTitle(): string
     {
-        return $this->getRecord()->nombre;
+        return $this->getRecord()->titulo();
     }
 
     /** Llamado desde los botones «Elegir» de la pestaña Menú: guarda qué opción se prefiere en una toma. */

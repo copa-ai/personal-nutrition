@@ -73,15 +73,11 @@
     .mn-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
     .mn-persona-fila { display: flex; gap: .6rem; align-items: baseline; }
     .mn-persona-fila .quien { flex: none; min-width: 4.5rem; font-weight: 700; }
+    .mn-ind-tomas { display: flex; flex-direction: column; gap: .2rem; }
+    .mn-individuales, .mn-explicaciones { margin-top: .6rem; padding: .6rem .8rem; border: 1px solid var(--mn-borde, rgba(128, 128, 128, .25)); border-radius: .5rem; }
     .mn-nocina { padding: .9rem .8rem; color: var(--mn-suave); font-style: italic; }
     .mn-vacio { display: flex; flex-direction: column; align-items: center; gap: .5rem; padding: 2.5rem 1rem; text-align: center; color: var(--mn-suave); }
     .mn-vacio .mn-icono { width: 2.25rem; height: 2.25rem; }
-
-    /* pestaña Compra */
-    .mn-compra-lista { list-style: none; padding: 0; columns: 15rem; column-gap: 2rem; }
-    .mn-compra-lista li { display: flex; justify-content: space-between; gap: 1rem; padding: .4rem 0; border-bottom: 1px dotted var(--mn-linea); break-inside: avoid; }
-    .mn-compra-lista .cant { color: var(--mn-suave); font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .mn-compra-lista--casa li { color: var(--mn-suave); }
 
     /* pestaña Consumo */
     .mn-consumo { display: flex; flex-direction: column; gap: 1.5rem; }

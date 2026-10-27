@@ -10,29 +10,39 @@ use Illuminate\Support\Str;
 trait ConstruyeDocumento
 {
     /**
-     * Ingredientes de las opciones ELEGIDAS, sumados por nombre y unidad. `comprar` lleva los que no están en casa
-     * (o sin dato de stock) y `en_casa` los que el encargo daba como existentes.
+     * Ingredientes de las opciones ELEGIDAS de comida y cena más los de las tomas individuales (desayuno, almuerzo y merienda
+     * de todos los perfiles), sumados por nombre y unidad. `comprar` lleva los que no están en casa (o sin dato de stock)
+     * y `en_casa` los que el encargo daba como existentes. Un ingrediente genérico («fruta») sale tal cual.
      *
      * @return array{comprar: list<array{nombre: string, cantidad: ?float, unidad: string}>, en_casa: list<array{nombre: string, cantidad: ?float, unidad: string}>}
      */
     public function listaCompra(): array
     {
         $acumulado = [];
+        $suma = function (array $ingredientes) use (&$acumulado): void {
+            foreach ($ingredientes as $ing) {
+                $nombre = trim((string) ($ing['nombre'] ?? ''));
+                if ($nombre === '') {
+                    continue;
+                }
+                $unidad = trim((string) ($ing['unidad'] ?? ''));
+                $clave = mb_strtolower($nombre).'|'.mb_strtolower($unidad);
+                $cantidad = is_numeric($ing['cantidad'] ?? null) ? (float) $ing['cantidad'] : null;
+                $previo = $acumulado[$clave] ?? ['nombre' => $nombre, 'cantidad' => null, 'unidad' => $unidad, 'en_casa' => true];
+                $acumulado[$clave] = [
+                    'cantidad' => $cantidad === null ? $previo['cantidad'] : ($previo['cantidad'] ?? 0.0) + $cantidad,
+                    'en_casa' => $previo['en_casa'] && ($ing['en_stock'] ?? false) === true,
+                ] + $previo;
+            }
+        };
+
         foreach ($this->contenido['dias'] ?? [] as $dia) {
             foreach (['comida', 'cena'] as $momento) {
-                foreach ($this->opcionElegida($dia['fecha'], $momento)['ingredientes'] ?? [] as $ing) {
-                    $nombre = trim((string) ($ing['nombre'] ?? ''));
-                    if ($nombre === '') {
-                        continue;
-                    }
-                    $unidad = trim((string) ($ing['unidad'] ?? ''));
-                    $clave = mb_strtolower($nombre).'|'.mb_strtolower($unidad);
-                    $cantidad = is_numeric($ing['cantidad'] ?? null) ? (float) $ing['cantidad'] : null;
-                    $previo = $acumulado[$clave] ?? ['nombre' => $nombre, 'cantidad' => null, 'unidad' => $unidad, 'en_casa' => true];
-                    $acumulado[$clave] = [
-                        'cantidad' => $cantidad === null ? $previo['cantidad'] : ($previo['cantidad'] ?? 0.0) + $cantidad,
-                        'en_casa' => $previo['en_casa'] && ($ing['en_stock'] ?? false) === true,
-                    ] + $previo;
+                $suma($this->opcionElegida($dia['fecha'], $momento)['ingredientes'] ?? []);
+            }
+            foreach ($this->individualesDelDia($dia) as $perfil) {
+                foreach ($perfil['tomas'] as $t) {
+                    $suma($t['toma']['ingredientes'] ?? []);
                 }
             }
         }
@@ -47,7 +57,7 @@ trait ConstruyeDocumento
     }
 
     /**
-     * Todo lo que necesita la vista del PDF: una opción por toma (la elegida), la lista de la compra y los datos de los perfiles.
+     * Todo lo que necesita la vista del PDF: la lista de la compra, y por día una opción por toma (la elegida) más las tomas individuales por perfil, las explicaciones y los datos de los perfiles.
      *
      * @return array<string, mixed>
      */
@@ -62,20 +72,23 @@ trait ConstruyeDocumento
                 $tomas[$momento] = [
                     'etiqueta' => $etiqueta, 'opcion' => $opcion, 'alternativas' => count($this->opcionesDe($dia['fecha'], $momento)),
                     'minutos' => $this->minutosDelHogar($dia['fecha'], $momento),
+                    'categorias' => $this->categoriasDe($dia['fecha'], $momento),
                 ];
             }
-            $dias[] = ['fecha' => $fecha, 'inicial' => DiaSemana::deFecha($fecha)->inicial(), 'nombre' => $fecha->locale('es')->isoFormat('dddd D [de] MMM'), 'tomas' => $tomas];
+            $dias[] = ['fecha' => $fecha, 'inicial' => DiaSemana::deFecha($fecha)->inicial(), 'nombre' => $fecha->locale('es')->isoFormat('dddd D [de] MMM'),
+                'individuales' => $this->individualesDelDia($dia), 'tomas' => $tomas];
         }
 
         $inicio = CarbonImmutable::parse($this->fecha_inicio);
 
         return [
-            'titulo' => $this->nombre,
+            'titulo' => $this->titulo(),
             'hogar' => $this->hogar->nombre,
             'inicio' => $inicio,
             'fin' => $inicio->addDays(max(0, count($dias) - 1)),
             'perfiles' => $this->encargo['perfiles'] ?? [],
             'dias' => $dias,
+            'explicaciones' => $this->explicaciones(),
             'compra' => $this->listaCompra(),
             'tomas' => $this->totalTomas(),
             'generado' => CarbonImmutable::now(),

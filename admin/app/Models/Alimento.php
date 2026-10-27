@@ -14,7 +14,7 @@ class Alimento extends Model
     /** @use HasFactory<AlimentoFactory> */
     use HasFactory;
 
-    /** Unidades admitidas en alimentos, existencias y compras. */
+    /** Unidades admitidas en alimentos, y existencias. */
     public const UNIDADES = ['g' => 'g', 'kg' => 'kg', 'ml' => 'ml', 'l' => 'l', 'ud' => 'unidades'];
 
     /** @return array<string, string> */

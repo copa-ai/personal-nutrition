@@ -124,7 +124,7 @@ class EjecutorAgenteTest extends TestCase
         $m = $this->ejecutar();
 
         $encargo = json_decode(file_get_contents($this->carpeta."/encargos/encargo-{$m->id}.json"), true);
-        $this->assertSame(['encargo-menu', 1, $m->id, "workspace/resultado-{$m->id}.json"], [$encargo['formato'], $encargo['version'], $encargo['encargo_id'], $encargo['salida']]);
+        $this->assertSame(['encargo-menu', 2, $m->id, "workspace/resultado-{$m->id}.json"], [$encargo['formato'], $encargo['version'], $encargo['encargo_id'], $encargo['salida']]);
         $this->assertSame(['Marta', 'Javier'], array_column($encargo['perfiles'], 'nombre'));
         $this->assertSame($m->encargo['semana'], $encargo['semana']);
     }
@@ -218,7 +218,7 @@ class EjecutorAgenteTest extends TestCase
         $this->runner(function () {
             $this->menu->refresh();
             $mala = $this->entregaValida();
-            $mala['dias'][0]['comida']['opciones'][0]['adaptaciones'] = [];
+            $mala['explicaciones'] = [];
             file_put_contents($this->resultado(), json_encode($mala));
         });
 
@@ -226,7 +226,7 @@ class EjecutorAgenteTest extends TestCase
 
         $this->assertSame(EstadoMenu::Fallido, $m->estado);
         $this->assertStringContainsString('La entrega del agente no es válida', $m->error);
-        $this->assertStringContainsString('una adaptación por perfil', $m->error);
+        $this->assertStringContainsString('una explicación por perfil', $m->error);
         $this->assertNull($m->contenido);
     }
 

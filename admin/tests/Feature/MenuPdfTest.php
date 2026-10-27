@@ -30,7 +30,7 @@ class MenuPdfTest extends TestCase
     }
 
     /**
-     * Importa un menú cuyo primer día tiene ingredientes conocidos; el resto de tomas llevan solo «agua» (en casa), para no mezclarse.
+     * Importa un menú cuyo primer día tiene ingredientes conocidos; el resto de tomas (también las individuales) llevan solo «agua» (en casa), para no mezclarse.
      * Comida del lunes: opción 0 = Arroz, opción 1 = Brócoli.
      */
     private function importarMenu(array $ingredientesPorOpcion = []): void
@@ -43,6 +43,12 @@ class MenuPdfTest extends TestCase
                     $opcion['ingredientes'] = $d === 0 && $momento === 'comida' ? $ingredientesPorOpcion[$i] : [$this->ingrediente('agua', 1, 'l', true)];
                 }
             }
+            foreach ($dia['individuales'] as &$ind) {
+                foreach (['desayuno', 'almuerzo', 'merienda'] as $toma) {
+                    $ind[$toma]['ingredientes'] = [$this->ingrediente('agua', 1, 'l', true)];
+                }
+            }
+            unset($ind);
         }
         unset($dia, $opcion);
         $entrega['dias'][0]['comida']['opciones'][0]['titulo'] = 'Arroz con tomate';
@@ -194,7 +200,7 @@ class MenuPdfTest extends TestCase
 
     // ---- el documento ----
 
-    public function test_la_vista_del_pdf_lleva_solo_la_opcion_elegida_y_las_adaptaciones(): void
+    public function test_la_vista_del_pdf_lleva_solo_la_opcion_elegida_y_las_tomas_individuales(): void
     {
         $this->importarMenu([[$this->ingrediente('arroz', 300, 'g', true)], [$this->ingrediente('brócoli', 1, 'ud', false)]]);
         $this->menu->elegirOpcion(self::DIA, 'comida', 1);
@@ -206,9 +212,49 @@ class MenuPdfTest extends TestCase
         $this->assertStringContainsString('Marta', $html);
         $this->assertStringContainsString('Javier', $html);
         $this->assertStringContainsString('sin lácteos', $html);
+        $this->assertStringContainsString('Tostada', $html);
+        $this->assertStringContainsString('Menú pensado para Marta.', $html);
         $this->assertStringContainsString('La compra', $html);
         $this->assertStringContainsString('no sustituye el consejo de un profesional sanitario', $html);
-        $this->assertStringContainsString('Del lunes 2 al domingo 8 de noviembre', $html);
+        $this->assertStringContainsString('Menú de la semana · del 2 al 8 de noviembre', $html);
+    }
+
+    public function test_el_pdf_pone_la_compra_antes_que_los_dias(): void
+    {
+        $this->importarMenu([[$this->ingrediente('arroz')], [$this->ingrediente('brócoli')]]);
+
+        $html = view('pdf.menu', ['d' => $this->menu->fresh()->datosDocumento()])->render();
+
+        $compra = strpos($html, '<h2>La compra</h2>');
+        $semana = strpos($html, '<h2>La semana</h2>');
+        $this->assertNotFalse($compra);
+        $this->assertNotFalse($semana);
+        $this->assertLessThan($semana, $compra);
+        $this->assertLessThan($semana, strpos($html, '<h2>Cada persona</h2>'));
+    }
+
+    public function test_la_compra_suma_las_tomas_individuales_y_deja_el_ingrediente_generico(): void
+    {
+        $this->importarMenu([[$this->ingrediente('arroz')], [$this->ingrediente('brócoli')]]);
+        $contenido = $this->menu->fresh()->contenido;
+        $contenido['dias'][0]['individuales'][0]['merienda']['ingredientes'] = [['nombre' => 'fruta', 'cantidad' => 1, 'unidad' => 'pieza', 'en_stock' => false]];
+        $contenido['dias'][0]['individuales'][1]['merienda']['ingredientes'] = [['nombre' => 'Fruta', 'cantidad' => 2, 'unidad' => 'pieza', 'en_stock' => false]];
+        $contenido['dias'][1]['individuales'][0]['desayuno']['ingredientes'] = [['nombre' => 'avena', 'cantidad' => 40, 'unidad' => 'g', 'en_stock' => true]];
+        $this->menu->update(['contenido' => $contenido]);
+
+        $lista = $this->menu->fresh()->listaCompra();
+
+        $this->assertSame([3.0, 'pieza'], $this->compraPorNombre($lista['comprar'])['fruta']);
+        $this->assertContains('avena', array_column($lista['en_casa'], 'nombre'));
+    }
+
+    public function test_los_contadores_de_tomas_no_cuentan_las_individuales(): void
+    {
+        $this->importarMenu([[$this->ingrediente('arroz')], [$this->ingrediente('brócoli')]]);
+
+        $this->assertSame(14, $this->menu->totalTomas());
+        $this->assertCount(2, $this->menu->tomas()[0]['individuales']);
+        $this->assertCount(2, $this->menu->explicaciones());
     }
 
     public function test_el_texto_del_menu_se_escapa_en_el_pdf(): void

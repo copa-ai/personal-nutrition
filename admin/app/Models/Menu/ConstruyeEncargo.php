@@ -34,8 +34,11 @@ trait ConstruyeEncargo
             'dia_semana' => $f->dayOfWeekIso,
             'minutos_comida' => $hogar->minutosParaCocinar($f, 'comida'),
             'minutos_cena' => $hogar->minutosParaCocinar($f, 'cena'),
+            'minutos_desayuno' => $hogar->minutosParaCocinar($f, 'desayuno'),
+            'minutos_almuerzo' => $hogar->minutosParaCocinar($f, 'almuerzo'),
+            'minutos_merienda' => $hogar->minutosParaCocinar($f, 'merienda'),
         ], $fechas);
-        if (collect($tiempos)->every(fn (array $t): bool => $t['minutos_comida'] === null && $t['minutos_cena'] === null)) {
+        if (collect($tiempos)->every(fn (array $t): bool => collect($t)->only(['minutos_comida', 'minutos_cena', 'minutos_desayuno', 'minutos_almuerzo', 'minutos_merienda'])->every(fn ($m): bool => $m === null))) {
             throw new InvalidArgumentException('El hogar no tiene tiempos de cocinado definidos para esa semana.');
         }
 

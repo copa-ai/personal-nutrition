@@ -27,9 +27,21 @@ class EncargoMenuTest extends TestCase
         $this->assertSame(['min' => 2, 'max' => 3], $encargo['opciones_por_comida']);
         $this->assertContains('carne_roja', $encargo['categorias_validas']);
         $this->assertCount(14, $encargo['categorias_validas']);
-        $this->assertSame(['fecha' => '2026-11-02', 'dia_semana' => 1, 'minutos_comida' => 30, 'minutos_cena' => 45], $encargo['hogar']['tiempos'][0]);
+        $this->assertSame(['fecha' => '2026-11-02', 'dia_semana' => 1, 'minutos_comida' => 30, 'minutos_cena' => 45,
+            'minutos_desayuno' => 10, 'minutos_almuerzo' => 10, 'minutos_merienda' => 5], $encargo['hogar']['tiempos'][0]);
         $this->assertSame(['Marta', 'Javier'], array_column($encargo['perfiles'], 'nombre'));
         $this->assertSame(['sin lácteos'], $encargo['perfiles'][0]['restricciones']);
+    }
+
+    public function test_las_tomas_individuales_sin_dato_viajan_como_null(): void
+    {
+        $this->crearHogar();
+        $this->hogar->disponibilidad()->where('dia_semana', 1)->update(['minutos_desayuno' => null]);
+
+        $tiempos = $this->menu->construirEncargo()['hogar']['tiempos'];
+
+        $this->assertNull($tiempos[0]['minutos_desayuno']);
+        $this->assertSame(10, $tiempos[1]['minutos_desayuno']);
     }
 
     public function test_el_modelo_nutricional_y_el_feedback_son_de_cada_perfil(): void
@@ -110,7 +122,7 @@ class EncargoMenuTest extends TestCase
     public function test_sin_tiempos_de_cocinado_no_hay_encargo(): void
     {
         $this->crearHogar();
-        $this->hogar->disponibilidad()->update(['minutos_comida' => null, 'minutos_cena' => null]);
+        $this->hogar->disponibilidad()->update(['minutos_comida' => null, 'minutos_cena' => null, 'minutos_desayuno' => null, 'minutos_almuerzo' => null, 'minutos_merienda' => null]);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('tiempos de cocinado');

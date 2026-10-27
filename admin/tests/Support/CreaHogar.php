@@ -22,7 +22,8 @@ trait CreaHogar
     {
         $this->hogar = Hogar::factory()->create(['nombre' => 'Casa']);
         foreach (DiaSemana::cases() as $dia) {
-            $d = $this->hogar->disponibilidad()->make(['dia_semana' => $dia, 'minutos_comida' => $minutosComida, 'minutos_cena' => $minutosCena]);
+            $d = $this->hogar->disponibilidad()->make(['dia_semana' => $dia, 'minutos_comida' => $minutosComida, 'minutos_cena' => $minutosCena,
+                'minutos_desayuno' => 10, 'minutos_almuerzo' => 10, 'minutos_merienda' => 5]);
             $d->save();
         }
         $this->marta = Perfil::factory()->for($this->hogar)->create(['nombre' => 'Marta', 'restricciones' => ['sin lácteos']]);
@@ -30,25 +31,32 @@ trait CreaHogar
         $this->menu = Menu::factory()->for($this->hogar)->create(['fecha_inicio' => '2026-11-02']);
     }
 
-    /** Entrega válida para el encargo guardado en $this->menu: 2 opciones por comida y cena, con una adaptación por perfil. */
+    /** Entrega válida (versión 2) para el encargo guardado en $this->menu: categorías por toma, 2 opciones por comida y cena, tomas individuales y explicaciones por perfil. */
     protected function entregaValida(): array
     {
         $encargo = $this->menu->encargo;
-        $adaptaciones = array_map(fn (array $p): array => ['perfil_id' => $p['id'], 'cambios' => 'Sin cambios.'], $encargo['perfiles']);
-        $opcion = fn (string $titulo, int $minutos): array => [
-            'titulo' => $titulo, 'categorias' => ['verdura'], 'ingredientes' => [['nombre' => 'tomate', 'cantidad' => 200, 'unidad' => 'g']],
-            'duracion_previa_min' => 0, 'duracion_momento_min' => $minutos, 'adaptaciones' => $adaptaciones,
+        $receta = fn (string $titulo, int $minutos): array => [
+            'titulo' => $titulo, 'ingredientes' => [['nombre' => 'tomate', 'cantidad' => 200, 'unidad' => 'g', 'en_stock' => false]],
+            'duracion_previa_min' => 0, 'duracion_momento_min' => $minutos,
         ];
+        $opcion = fn (string $titulo, int $minutos): array => $receta($titulo, $minutos) + ['categorias' => ['verdura']];
+        $toma = fn (string $titulo): array => $receta($titulo, 5) + ['descripcion' => 'Rápido.', 'nota' => null];
 
         $dias = [];
         foreach ($encargo['hogar']['tiempos'] as $t) {
             $dias[] = [
                 'fecha' => $t['fecha'],
-                'comida' => ['opciones' => $t['minutos_comida'] === null ? [] : [$opcion('Ensalada', $t['minutos_comida']), $opcion('Crema', 10)]],
-                'cena' => ['opciones' => $t['minutos_cena'] === null ? [] : [$opcion('Tortilla', 20), $opcion('Pescado', $t['minutos_cena'])]],
+                'comida' => $t['minutos_comida'] === null ? ['categorias' => [], 'opciones' => []]
+                    : ['categorias' => ['verdura'], 'opciones' => [$opcion('Ensalada', $t['minutos_comida']), $opcion('Crema', 10)]],
+                'cena' => $t['minutos_cena'] === null ? ['categorias' => [], 'opciones' => []]
+                    : ['categorias' => ['verdura'], 'opciones' => [$opcion('Tortilla', 20), $opcion('Pescado', $t['minutos_cena'])]],
+                'individuales' => array_map(fn (array $p): array => [
+                    'perfil_id' => $p['id'], 'desayuno' => $toma('Tostada'), 'almuerzo' => $toma('Fruta'), 'merienda' => $toma('Yogur'),
+                ], $encargo['perfiles']),
             ];
         }
+        $explicaciones = array_map(fn (array $p): array => ['perfil_id' => $p['id'], 'texto' => 'Menú pensado para '.$p['nombre'].'.'], $encargo['perfiles']);
 
-        return ['entrega' => ['completo' => true], 'dias' => $dias];
+        return ['entrega' => ['completo' => true, 'version' => 2], 'dias' => $dias, 'explicaciones' => $explicaciones];
     }
 }

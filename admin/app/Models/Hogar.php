@@ -35,19 +35,13 @@ class Hogar extends Model
         return $this->hasMany(Existencia::class);
     }
 
-    /** @return HasMany<Compra, $this> */
-    public function compras(): HasMany
-    {
-        return $this->hasMany(Compra::class);
-    }
-
     /** @return HasMany<Menu, $this> */
     public function menus(): HasMany
     {
         return $this->hasMany(Menu::class);
     }
 
-    /** Minutos que el hogar tiene para cocinar «al momento» en esa fecha y momento. Null = ese día no se cocina. */
+    /** Minutos que el hogar tiene para cocinar «al momento» en esa fecha y momento (desayuno, almuerzo, comida, merienda o cena). Null = sin dato o ese día no se cocina. */
     public function minutosParaCocinar(CarbonInterface $fecha, string $momento): ?int
     {
         $dia = $this->disponibilidad->firstWhere('dia_semana.value', $fecha->dayOfWeekIso);

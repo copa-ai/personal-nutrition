@@ -20,6 +20,7 @@ class HogarSeeder extends Seeder
             $finDeSemana = $dia->value >= 6;
             $hogar->disponibilidad()->create([
                 'dia_semana' => $dia, 'minutos_comida' => $finDeSemana ? 60 : 30, 'minutos_cena' => $finDeSemana ? 90 : 45,
+                'minutos_desayuno' => $finDeSemana ? 20 : 10, 'minutos_almuerzo' => $finDeSemana ? 15 : 10, 'minutos_merienda' => 5,
             ]);
         }
 

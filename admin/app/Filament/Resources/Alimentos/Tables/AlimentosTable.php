@@ -29,6 +29,6 @@ class AlimentosTable
                 ]),
             ])
             ->emptyStateHeading('El catálogo está vacío')
-            ->emptyStateDescription('Los alimentos también se pueden crear al registrar una compra o una existencia.');
+            ->emptyStateDescription('Los alimentos también se pueden crear al registrar una existencia.');
     }
 }

@@ -7,6 +7,7 @@
     $dias = $record->tomas();
     $perfiles = collect($record->encargo['perfiles'] ?? []);
     $nombres = $perfiles->pluck('nombre', 'id');
+    $explicaciones = $record->explicaciones();
     $puedeElegir = ! $record->estado->enCurso();
     $cantidad = fn ($n, $unidad) => rtrim(rtrim(number_format((float) $n, 2, ',', '.'), '0'), ',').($unidad !== '' ? ' '.$unidad : '');
 @endphp
@@ -45,6 +46,18 @@
             @endforeach
         </div>
 
+        @if ($explicaciones)
+            <div class="mn-bloque mn-explicaciones">
+                <span class="mn-etiqueta">Cómo se ha pensado el menú</span>
+                @foreach ($explicaciones as $e)
+                    <div class="mn-persona-fila">
+                        <span class="quien">{{ $e['nombre'] }}</span>
+                        <span>{{ $e['texto'] }}</span>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
         @if ($puedeElegir)
             <div class="mn-ayuda">
                 <span><strong>Elige una opción por toma.</strong> El PDF y la lista de la compra se hacen con lo que elijas.</span>
@@ -75,6 +88,14 @@
                                 <span class="nombre">{{ $t['etiqueta'] }}</span>
                                 @if ($t['minutos'] !== null)<span class="disp">{{ $t['minutos'] }} min disponibles</span>@endif
                             </div>
+
+                            @if ($t['categorias'])
+                                <div class="mn-op-chips" aria-label="Categorías de la toma">
+                                    @foreach ($t['categorias'] as $c)
+                                        <span class="mn-chip">{{ CategoriaComida::tryFrom($c)?->getLabel() ?? $c }}</span>
+                                    @endforeach
+                                </div>
+                            @endif
 
                             @if (! $t['opciones'])
                                 <p class="mn-nocina">No se cocina {{ $momento === 'comida' ? 'a mediodía' : 'por la noche' }}.</p>
@@ -135,16 +156,6 @@
                                                             <ol class="mn-pasos">@foreach ($o['pasos'] as $paso)<li>{{ $paso }}</li>@endforeach</ol>
                                                         </div>
                                                     @endif
-
-                                                    <div class="mn-bloque">
-                                                        <span class="mn-etiqueta">Para cada persona</span>
-                                                        @foreach ($o['adaptaciones'] ?? [] as $a)
-                                                            <div class="mn-persona-fila">
-                                                                <span class="quien">{{ $nombres[$a['perfil_id']] ?? 'Perfil '.$a['perfil_id'] }}</span>
-                                                                <span>{{ $a['cambios'] }}@if (! empty($a['kcal_aprox'])) <span class="mn-suave">(≈ {{ $a['kcal_aprox'] }} kcal)</span>@endif</span>
-                                                            </div>
-                                                        @endforeach
-                                                    </div>
                                                 </div>
                                             @endunless
                                         </div>
@@ -154,6 +165,31 @@
                         </div>
                     @endforeach
                 </div>
+
+                @if ($d['individuales'])
+                    <div class="mn-bloque mn-individuales">
+                        <span class="mn-etiqueta">Desayuno, almuerzo y merienda por persona</span>
+                        @foreach ($d['individuales'] as $ind)
+                            <div class="mn-persona-fila">
+                                <span class="quien">{{ $ind['nombre'] }}</span>
+                                <span class="mn-ind-tomas">
+                                    @foreach ($ind['tomas'] as $x)
+                                        @php($tm = $x['toma'])
+                                        <span class="mn-ind-toma">
+                                            <strong>{{ $x['etiqueta'] }}</strong>: {{ $tm['titulo'] ?? '' }}
+                                            <span class="mn-suave">· {{ $tm['duracion_momento_min'] ?? 0 }} min{{ ($tm['duracion_previa_min'] ?? 0) > 0 ? ', '.$tm['duracion_previa_min'].' antes' : '' }}</span>
+                                            @if (! empty($tm['descripcion']))<span class="mn-suave"> {{ $tm['descripcion'] }}</span>@endif
+                                            @if (! empty($tm['ingredientes']))
+                                                <span class="mn-suave">({{ collect($tm['ingredientes'])->map(fn ($i) => (isset($i['cantidad']) ? $cantidad($i['cantidad'], (string) ($i['unidad'] ?? '')).' ' : '').$i['nombre'])->implode(', ') }})</span>
+                                            @endif
+                                            @if (! empty($tm['nota']))<em class="mn-suave"> {{ $tm['nota'] }}</em>@endif
+                                        </span>
+                                    @endforeach
+                                </span>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
             </section>
         @endforeach
     </div>

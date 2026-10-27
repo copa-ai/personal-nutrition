@@ -38,6 +38,6 @@ class ExistenciasTable
                 ]),
             ])
             ->emptyStateHeading('No hay nada en la despensa')
-            ->emptyStateDescription('Se llena al registrar compras; también puedes añadir o corregir existencias a mano.');
+            ->emptyStateDescription('Añade o corrige existencias a mano.');
     }
 }

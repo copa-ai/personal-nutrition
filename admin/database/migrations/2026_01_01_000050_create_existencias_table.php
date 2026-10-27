@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/** Stock actual del hogar: lo que hay ahora en casa. Se suma al registrar una compra y se corrige a mano. */
+/** Stock actual del hogar: lo que hay ahora en casa. Se corrige a mano. */
 return new class extends Migration
 {
     public function up(): void

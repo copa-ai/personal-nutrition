@@ -67,7 +67,7 @@ class EjecutorAgente
             $archivoEncargo = $carpeta."/encargos/encargo-{$e->id}.json";
             @mkdir(dirname($archivoEncargo), 0775, true);
             file_put_contents($archivoEncargo, json_encode(
-                ['formato' => 'encargo-menu', 'version' => 1, 'encargo_id' => $e->id, 'salida' => static::salidaRelativa($e)] + $e->encargo,
+                ['formato' => 'encargo-menu', 'version' => 2, 'encargo_id' => $e->id, 'salida' => static::salidaRelativa($e)] + $e->encargo,
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE,
             ));
             @unlink($e->archivo_resultado);                       // asi se sabe si ESTA tanda dejo su entrega

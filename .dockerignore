@@ -12,3 +12,5 @@ agentic-laravel
 .claude
 agente/tests
 catorce-platos
+# Carpetas que deja el sandbox de Claude Code (modo 700, de root en la imagen): el cp del entrypoint falla con ellas.
+**/.cc-writes

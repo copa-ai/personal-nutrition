@@ -40,10 +40,8 @@ class PanelMenuTest extends TestCase
         $this->menu->update(['encargo' => $this->menu->construirEncargo()]);
         $entrega = $this->entregaValida();
         $entrega['dias'][0]['comida']['opciones'][0]['titulo'] = 'Arroz con pollo';
-        $entrega['dias'][0]['comida']['opciones'][0]['adaptaciones'] = [
-            ['perfil_id' => $this->marta->id, 'cambios' => 'Sin queso y doble de verdura.'],
-            ['perfil_id' => $this->javier->id, 'cambios' => 'Ración doble.'],
-        ];
+        $entrega['dias'][0]['individuales'][0]['desayuno']['titulo'] = 'Tostada con aguacate';
+        $entrega['explicaciones'][0]['texto'] = 'Lunes y miércoles, que vas al gimnasio, más proteína.';
         $entrega['consumo'] = ['filas' => [[
             'mensaje_id' => 'm1', 'fase' => 'planificacion', 'modelo' => 'claude-sonnet-5-5', 'input_tokens' => 12000, 'output_tokens' => 3000,
         ]]];
@@ -160,15 +158,17 @@ class PanelMenuTest extends TestCase
         $this->assertSame(EstadoMenu::Terminado, $this->menu->fresh()->estado);
     }
 
-    public function test_la_ficha_muestra_el_menu_con_las_adaptaciones_por_perfil(): void
+    public function test_la_ficha_muestra_el_menu_con_las_tomas_individuales_y_las_explicaciones(): void
     {
         $this->crearHogar();
         $this->terminarMenu();
 
         $this->ver()
             ->assertSee('Arroz con pollo')
-            ->assertSee('Marta')->assertSee('Sin queso y doble de verdura.')
-            ->assertSee('Javier')->assertSee('Ración doble.')
+            ->assertSee('Marta')->assertSee('Tostada con aguacate')
+            ->assertSee('Javier')->assertSee('Yogur')
+            ->assertSee('Lunes y miércoles, que vas al gimnasio, más proteína.')
+            ->assertSee('Verdura')
             ->assertSee('Lunes 2 de noviembre')
             ->assertSee('7 de 7');
     }
@@ -224,12 +224,12 @@ class PanelMenuTest extends TestCase
         $this->ver()->assertSee('Estimación según la fase')->assertSee('El agente está preparando el menú');
     }
 
-    public function test_la_pestana_compra_lista_lo_que_hay_que_comprar_con_lo_elegido(): void
+    public function test_la_ficha_no_tiene_pestana_compra(): void
     {
         $this->crearHogar();
         $this->terminarMenu();
 
-        $this->ver()->assertSee('por comprar')->assertSee('Hay que comprar')->assertSee('tomate');
+        $this->ver()->assertDontSee('Hay que comprar');
     }
 
     public function test_los_importes_y_duraciones_se_formatean_con_claridad(): void

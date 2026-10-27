@@ -18,6 +18,9 @@ class DisponibilidadDiaFactory extends Factory
             'dia_semana' => fake()->randomElement(DiaSemana::cases()),
             'minutos_comida' => 30,
             'minutos_cena' => 45,
+            'minutos_desayuno' => 10,
+            'minutos_almuerzo' => 10,
+            'minutos_merienda' => 5,
         ];
     }
 }

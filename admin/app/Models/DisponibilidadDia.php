@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['dia_semana', 'minutos_comida', 'minutos_cena'])]
+#[Fillable(['dia_semana', 'minutos_comida', 'minutos_cena', 'minutos_desayuno', 'minutos_almuerzo', 'minutos_merienda'])]
 class DisponibilidadDia extends Model
 {
     /** @use HasFactory<DisponibilidadDiaFactory> */
@@ -20,7 +20,10 @@ class DisponibilidadDia extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['dia_semana' => DiaSemana::class, 'minutos_comida' => 'integer', 'minutos_cena' => 'integer'];
+        return [
+            'dia_semana' => DiaSemana::class, 'minutos_comida' => 'integer', 'minutos_cena' => 'integer',
+            'minutos_desayuno' => 'integer', 'minutos_almuerzo' => 'integer', 'minutos_merienda' => 'integer',
+        ];
     }
 
     /** @return BelongsTo<Hogar, $this> */

@@ -7,8 +7,6 @@ use App\Enums\MomentoComida;
 use App\Enums\OrigenComida;
 use App\Enums\TipoFeedback;
 use App\Filament\Resources\Alimentos\Pages\ListAlimentos;
-use App\Filament\Resources\Compras\Pages\CreateCompra;
-use App\Filament\Resources\Compras\Pages\ListCompras;
 use App\Filament\Resources\Existencias\Pages\CreateExistencia;
 use App\Filament\Resources\Existencias\Pages\ListExistencias;
 use App\Filament\Resources\Hogares\Pages\EditHogar;
@@ -21,7 +19,6 @@ use App\Filament\Resources\Perfiles\RelationManagers\FeedbackRelationManager;
 use App\Filament\Resources\RegistrosComida\Pages\CreateRegistroComida;
 use App\Filament\Resources\RegistrosComida\Pages\ListRegistrosComida;
 use App\Models\Alimento;
-use App\Models\Compra;
 use App\Models\Existencia;
 use App\Models\Hogar;
 use App\Models\Perfil;
@@ -47,7 +44,7 @@ class PanelHogarTest extends TestCase
         $hogar = Hogar::factory()->create();
         Perfil::factory()->for($hogar)->create();
 
-        foreach ([ListHogares::class, ListPerfiles::class, ListAlimentos::class, ListExistencias::class, ListCompras::class, ListRegistrosComida::class] as $pagina) {
+        foreach ([ListHogares::class, ListPerfiles::class, ListAlimentos::class, ListExistencias::class, ListRegistrosComida::class] as $pagina) {
             Livewire::test($pagina)->assertSuccessful();
         }
     }
@@ -123,39 +120,6 @@ class PanelHogarTest extends TestCase
 
         $this->assertSame('coliflor', $perfil->feedback()->sole()->elemento);
         $this->assertSame(TipoFeedback::NoGusta, $perfil->feedback()->sole()->tipo);
-    }
-
-    public function test_registrar_una_compra_con_lineas_llena_las_existencias(): void
-    {
-        $hogar = Hogar::factory()->create();
-        $arroz = Alimento::factory()->create(['nombre' => 'arroz']);
-
-        Livewire::test(CreateCompra::class)
-            ->fillForm([
-                'hogar_id' => $hogar->id, 'fecha' => '2026-11-01', 'tienda' => 'Súper',
-                'lineas' => [['alimento_id' => $arroz->id, 'cantidad' => 1000, 'unidad' => 'g']],
-            ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $compra = Compra::query()->sole();
-        $this->assertSame($hogar->id, $compra->hogar_id);
-        $this->assertSame($arroz->id, $compra->lineas()->sole()->alimento_id);
-        $existencia = Existencia::query()->sole();
-        $this->assertSame('1000.00', $existencia->cantidad);
-        $this->assertSame($hogar->id, $existencia->hogar_id);
-    }
-
-    public function test_una_compra_necesita_al_menos_una_linea(): void
-    {
-        $hogar = Hogar::factory()->create();
-
-        Livewire::test(CreateCompra::class)
-            ->fillForm(['hogar_id' => $hogar->id, 'fecha' => '2026-11-01', 'lineas' => []])
-            ->call('create')
-            ->assertHasFormErrors(['lineas']);
-
-        $this->assertSame(0, Compra::query()->count());
     }
 
     public function test_crear_una_existencia_a_mano(): void

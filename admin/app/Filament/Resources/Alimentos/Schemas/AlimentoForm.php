@@ -16,7 +16,7 @@ class AlimentoForm
     }
 
     /**
-     * Campos del alimento; también los usa el «crear al vuelo» de los Select de existencias y compras.
+     * Campos del alimento; también los usa el «crear al vuelo» de los Select de existencias.
      *
      * @return list<mixed>
      */

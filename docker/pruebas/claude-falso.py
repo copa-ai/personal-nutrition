@@ -80,23 +80,26 @@ def main() -> int:
     texto("Planifico el menú de la semana.")
     if modo == "lento":
         time.sleep(120)
-    adaptaciones = [{"perfil_id": p["id"], "cambios": f"Para {p['nombre']}: ajusto raciones y evito sus restricciones."} for p in encargo["perfiles"]]
+    categoria = encargo["categorias_validas"][0]
     receta = lambda titulo, minutos: {
-        "titulo": titulo, "categorias": [encargo["categorias_validas"][0]], "ingredientes": [{"nombre": "tomate", "cantidad": 200, "unidad": "g", "en_stock": True}],
-        "duracion_previa_min": 0, "duracion_momento_min": minutos, "pasos": ["Cortar", "Cocinar"], "adaptaciones": adaptaciones}
+        "titulo": titulo, "ingredientes": [{"nombre": "tomate", "cantidad": 200, "unidad": "g", "en_stock": True}],
+        "duracion_previa_min": 0, "duracion_momento_min": minutos, "pasos": ["Cortar", "Cocinar"]}
+    opcion = lambda titulo, minutos: {**receta(titulo, minutos), "categorias": [categoria]}
+    toma = lambda titulo: receta(titulo, 0)
     dias = []
     for t in encargo["hogar"]["tiempos"]:
         dias.append({"fecha": t["fecha"],
-                     "comida": {"opciones": [] if t["minutos_comida"] is None else [receta(f"Plato A {t['fecha']}", min(10, t["minutos_comida"])), receta(f"Plato B {t['fecha']}", min(15, t["minutos_comida"]))]},
-                     "cena": {"opciones": [] if t["minutos_cena"] is None else [receta(f"Cena A {t['fecha']}", min(10, t["minutos_cena"])), receta(f"Cena B {t['fecha']}", min(20, t["minutos_cena"]))]}})
+                     "comida": {"categorias": [], "opciones": []} if t["minutos_comida"] is None else {"categorias": [categoria], "opciones": [opcion(f"Plato A {t['fecha']}", min(10, t["minutos_comida"])), opcion(f"Plato B {t['fecha']}", min(15, t["minutos_comida"]))]},
+                     "cena": {"categorias": [], "opciones": []} if t["minutos_cena"] is None else {"categorias": [categoria], "opciones": [opcion(f"Cena A {t['fecha']}", min(10, t["minutos_cena"])), opcion(f"Cena B {t['fecha']}", min(20, t["minutos_cena"]))]},
+                     "individuales": [{"perfil_id": p["id"], "desayuno": toma("Tostada con tomate"), "almuerzo": toma("Fruta"), "merienda": toma("Yogur")} for p in encargo["perfiles"]]})
+    explicaciones = [{"perfil_id": p["id"], "texto": f"Menú de prueba para {p['nombre']}."} for p in encargo["perfiles"]]
     apuntar_consumo(n, "planificacion", 15000, 9000)
     borrador = f"workspace/borrador-{n}.json"
-    (RAIZ / borrador).write_text(json.dumps({"dias": dias}, ensure_ascii=False), encoding="utf-8")
+    (RAIZ / borrador).write_text(json.dumps({"entrega": {"version": 2}, "dias": dias, "explicaciones": explicaciones}, ensure_ascii=False), encoding="utf-8")
     herramienta("Write", {"file_path": borrador})
 
     if modo == "invalido":
-        dias[0]["comida"]["opciones"][0]["adaptaciones"] = []
-        (RAIZ / encargo["salida"]).write_text(json.dumps({"entrega": {"completo": True}, "dias": dias}), encoding="utf-8")
+        (RAIZ / encargo["salida"]).write_text(json.dumps({"entrega": {"completo": True, "version": 2}, "dias": dias, "explicaciones": []}), encoding="utf-8")
         texto("Entrego (sin validar).")
         emitir({"type": "result", "result": "Menú entregado", "num_turns": 6, "duration_ms": int((time.time() - T0) * 1000)})
         return 0

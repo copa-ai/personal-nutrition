@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/** Catálogo de alimentos que se compran o se guardan en casa. */
+/** Catálogo de alimentos que se guardan en casa. */
 return new class extends Migration
 {
     public function up(): void

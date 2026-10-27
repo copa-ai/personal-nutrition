@@ -18,7 +18,7 @@ class MenusTable
     {
         return $table
             ->columns([
-                TextColumn::make('nombre')->label('Menú')->searchable()->sortable(),
+                TextColumn::make('nombre')->label('Menú')->formatStateUsing(fn (Menu $r): string => $r->titulo())->searchable()->sortable(),
                 TextColumn::make('hogar.nombre')->label('Hogar')->toggleable(),
                 TextColumn::make('fecha_inicio')->label('Semana desde')->date('d/m/Y')->sortable(),
                 TextColumn::make('estado')->label('Estado')->badge()->formatStateUsing(fn (Menu $r): string => $r->etiquetaEstado()),
