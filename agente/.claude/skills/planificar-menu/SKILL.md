@@ -35,7 +35,7 @@ Si tras varios intentos no consigues un borrador válido, **no entregues**. Resp
 
 ```json
 {
-  "formato": "encargo-menu", "version": 2, "encargo_id": 7, "salida": "workspace/resultado-7.json",
+  "formato": "encargo-menu", "version": 3, "encargo_id": 7, "salida": "workspace/resultado-7.json",
   "semana": {"inicio": "2026-11-02", "dias": 7, "fechas": ["2026-11-02", "…"]},
   "categorias_validas": ["carne_roja", "pescado", "…"],
   "opciones_por_comida": {"min": 2, "max": 3},
@@ -83,11 +83,11 @@ Razona **en este orden**, de lo general a lo concreto:
 
 ## El borrador (`workspace/borrador-N.json`)
 
-Lleva `entrega.version` = 2, una entrada en `dias` por cada fecha de `semana.fechas` **en ese orden**, y `explicaciones`. Cada día tiene `comida`, `cena` e `individuales` (una entrada por perfil, siempre).
+Lleva `entrega.version` = 3, una entrada en `dias` por cada fecha de `semana.fechas` **en ese orden**, y `explicaciones`. Cada día tiene `comida`, `cena` e `individuales` (una entrada por perfil, siempre).
 
 ```json
 {
-  "entrega": {"version": 2},
+  "entrega": {"version": 3},
   "dias": [
     {
       "fecha": "2026-11-02",
@@ -103,7 +103,8 @@ Lleva `entrega.version` = 2, una entrada en `dias` por cada fecha de `semana.fec
             ],
             "duracion_previa_min": 10,
             "duracion_momento_min": 25,
-            "pasos": ["Cortar el pollo en dados…", "Sofreír…"]
+            "pasos": ["Cortar el pollo en dados…", "Sofreír…"],
+            "ajustes": [{"perfil_id": 1, "texto": "Apartar el arroz antes de mezclar y añadir brócoli."}]
           }
         ]
       },
@@ -141,5 +142,6 @@ Lleva `entrega.version` = 2, una entrada en `dias` por cada fecha de `semana.fec
 
 - `comida` y `cena` llevan `categorias` y `opciones`; cada opción lleva `categorias` con **el mismo conjunto** que la toma (el orden no importa).
 - Cada toma individual lleva `titulo`, `ingredientes` (no vacío, cada uno con `nombre`), `duracion_previa_min` y `duracion_momento_min` (enteros ≥ 0). `descripcion` y `nota` son opcionales; `pasos` es opcional.
-- No hay adaptaciones por receta: la persona se refleja en las tomas individuales y en `explicaciones`.
+- `ajustes` (opcional, en cada opción de comida o cena): lista de `{perfil_id, texto}`, con un perfil del encargo y sin repetir perfil. Sirve para que cada persona adapte **el mismo plato** sin cocinar platos distintos (añadir brócoli, doble ración, apartar el arroz antes de mezclar). Dalos **solo si aportan**; si el plato ya sirve a todos tal cual, omite la clave. El texto no puede ir vacío.
+- Los `ajustes` no cambian los ingredientes ni los tiempos de la opción: son indicaciones al cocinar. No hay recetas distintas por persona; la persona se refleja en los `ajustes`, en las tomas individuales y en `explicaciones`.
 - No añadas `consumo` ni `entrega.completo`: lo pone `menu.py entregar`.

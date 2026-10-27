@@ -229,7 +229,7 @@ class PanelMenuTest extends TestCase
         $this->crearHogar();
         $this->terminarMenu();
 
-        $this->ver()->assertDontSee('Hay que comprar');
+        $this->ver()->assertDontSee('Compra');
     }
 
     public function test_los_importes_y_duraciones_se_formatean_con_claridad(): void

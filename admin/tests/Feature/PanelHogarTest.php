@@ -142,7 +142,7 @@ class PanelHogarTest extends TestCase
 
         Livewire::test(CreateRegistroComida::class)
             ->fillForm([
-                'perfil_id' => $perfil->id, 'fecha' => '2026-11-02', 'momento' => MomentoComida::Cena->value,
+                'perfiles' => [$perfil->id], 'fecha' => '2026-11-02', 'momento' => MomentoComida::Cena->value,
                 'origen' => OrigenComida::Fuera->value, 'descripcion' => 'Pizza en el restaurante', 'categorias' => ['cereal', 'lacteo'],
             ])
             ->call('create')

@@ -2,7 +2,7 @@
 """«Claude» de mentira para probar la cadena completa sin el modelo (solo para pruebas; ver docker-compose.pruebas.yml).
 
 Imita lo justo de `claude -p PROMPT --output-format stream-json --verbose`: lee el encargo, marca las fases con el consumos.py real,
-escribe un menu valido y lo entrega con el menu.py real. Emite los mismos eventos stream-json que el Claude de verdad.
+escribe un menu valido (o, segun encargo.tarea, el menu editado o los cambios de un intercambio) y lo entrega con el menu.py real. Emite los mismos eventos stream-json que el Claude de verdad.
 
 El modo se lee de /app/agente/modo-falso (se cambia sin recrear el contenedor):
   ok (por defecto)  entrega un menu valido
@@ -86,20 +86,42 @@ def main() -> int:
         "duracion_previa_min": 0, "duracion_momento_min": minutos, "pasos": ["Cortar", "Cocinar"]}
     opcion = lambda titulo, minutos: {**receta(titulo, minutos), "categorias": [categoria]}
     toma = lambda titulo: receta(titulo, 0)
-    dias = []
-    for t in encargo["hogar"]["tiempos"]:
-        dias.append({"fecha": t["fecha"],
-                     "comida": {"categorias": [], "opciones": []} if t["minutos_comida"] is None else {"categorias": [categoria], "opciones": [opcion(f"Plato A {t['fecha']}", min(10, t["minutos_comida"])), opcion(f"Plato B {t['fecha']}", min(15, t["minutos_comida"]))]},
-                     "cena": {"categorias": [], "opciones": []} if t["minutos_cena"] is None else {"categorias": [categoria], "opciones": [opcion(f"Cena A {t['fecha']}", min(10, t["minutos_cena"])), opcion(f"Cena B {t['fecha']}", min(20, t["minutos_cena"]))]},
-                     "individuales": [{"perfil_id": p["id"], "desayuno": toma("Tostada con tomate"), "almuerzo": toma("Fruta"), "merienda": toma("Yogur")} for p in encargo["perfiles"]]})
-    explicaciones = [{"perfil_id": p["id"], "texto": f"Menú de prueba para {p['nombre']}."} for p in encargo["perfiles"]]
+    tarea = encargo.get("tarea", "generar")
+    if tarea == "intercambiar":
+        # Cambia la primera toma de comida o cena en la que el hogar cocina, con las mismas categorias que ya tenia.
+        cambios = {}
+        for d in encargo["menu_activo"]:
+            t = next(t for t in encargo["hogar"]["tiempos"] if t["fecha"] == d["fecha"])
+            momento = next((m for m in ("comida", "cena") if t[f"minutos_{m}"] is not None), None)
+            if momento:
+                cambios[f"{d['fecha']}/{momento}"] = {"categorias": [categoria], "opciones": [opcion(f"Cambio A {d['fecha']}", min(10, t[f"minutos_{momento}"])), opcion(f"Cambio B {d['fecha']}", min(15, t[f"minutos_{momento}"]))]}
+                break
+        contenido = {"entrega": {"version": 3}, "cambios": cambios}
+    else:
+        dias = []
+        for t in encargo["hogar"]["tiempos"]:
+            dias.append({"fecha": t["fecha"],
+                         "comida": {"categorias": [], "opciones": []} if t["minutos_comida"] is None else {"categorias": [categoria], "opciones": [opcion(f"Plato A {t['fecha']}", min(10, t["minutos_comida"])), opcion(f"Plato B {t['fecha']}", min(15, t["minutos_comida"]))]},
+                         "cena": {"categorias": [], "opciones": []} if t["minutos_cena"] is None else {"categorias": [categoria], "opciones": [opcion(f"Cena A {t['fecha']}", min(10, t["minutos_cena"])), opcion(f"Cena B {t['fecha']}", min(20, t["minutos_cena"]))]},
+                         "individuales": [{"perfil_id": p["id"], "desayuno": toma("Tostada con tomate"), "almuerzo": toma("Fruta"), "merienda": toma("Yogur")} for p in encargo["perfiles"]]})
+        explicaciones = [{"perfil_id": p["id"], "texto": f"Menú de prueba para {p['nombre']}."} for p in encargo["perfiles"]]
+        contenido = {"entrega": {"version": 3}, "dias": dias, "explicaciones": explicaciones}
+        if tarea == "editar":
+            # Parte del menu actual y solo toca la primera toma de comida con opciones, y la explicacion de cada perfil.
+            contenido = {"entrega": {"version": 3}, "dias": encargo["contenido_actual"]["dias"], "explicaciones": encargo["contenido_actual"]["explicaciones"]}
+            for d in contenido["dias"]:
+                if d["comida"]["opciones"]:
+                    d["comida"]["opciones"][0]["titulo"] = f"{d['comida']['opciones'][0]['titulo']} (editado)"
+                    break
+            for x in contenido["explicaciones"]:
+                x["texto"] += f" Editado: {encargo['instruccion']}"
     apuntar_consumo(n, "planificacion", 15000, 9000)
     borrador = f"workspace/borrador-{n}.json"
-    (RAIZ / borrador).write_text(json.dumps({"entrega": {"version": 2}, "dias": dias, "explicaciones": explicaciones}, ensure_ascii=False), encoding="utf-8")
+    (RAIZ / borrador).write_text(json.dumps(contenido, ensure_ascii=False), encoding="utf-8")
     herramienta("Write", {"file_path": borrador})
 
     if modo == "invalido":
-        (RAIZ / encargo["salida"]).write_text(json.dumps({"entrega": {"completo": True, "version": 2}, "dias": dias, "explicaciones": []}), encoding="utf-8")
+        (RAIZ / encargo["salida"]).write_text(json.dumps({"entrega": {"completo": True, "version": 3}, **({"cambios": {"2000-01-01/comida": {}}} if tarea == "intercambiar" else {"dias": dias, "explicaciones": []})}), encoding="utf-8")
         texto("Entrego (sin validar).")
         emitir({"type": "result", "result": "Menú entregado", "num_turns": 6, "duration_ms": int((time.time() - T0) * 1000)})
         return 0

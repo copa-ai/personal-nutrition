@@ -44,7 +44,8 @@ trait ConstruyeEncargo
 
         $desde = $inicio->subDays((int) config('agente.menu.historial_dias'))->toDateString();
 
-        return [
+        $encargo = [
+            'tarea' => $this->tarea ?? 'generar',
             'semana' => ['inicio' => $inicio->toDateString(), 'dias' => $dias, 'fechas' => array_map(fn (CarbonImmutable $f): string => $f->toDateString(), $fechas)],
             'categorias_validas' => array_column(CategoriaComida::cases(), 'value'),
             'opciones_por_comida' => ['min' => (int) config('agente.menu.opciones_min'), 'max' => (int) config('agente.menu.opciones_max')],
@@ -70,6 +71,52 @@ trait ConstruyeEncargo
             ])->all(),
             'calendario_previo' => $this->menusPrevios($hogar->id, $inicio),
         ];
+
+        return $encargo + $this->encargoDeTarea();
+    }
+
+    /**
+     * Lo que añade cada tarea al encargo base (ver `tarea`):
+     *  - generar: nada.
+     *  - editar: `instruccion` y `contenido_actual` (el menú tal como está, sin consumo); el agente devuelve el menú completo.
+     *  - intercambiar: `instruccion` (qué se comió o qué estaba programado) y `menu_activo` (comida y cena de cada día, con los cambios
+     *    ya aplicados); el agente devuelve solo `cambios`. Solo vale para el menú activo del hogar.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException
+     */
+    private function encargoDeTarea(): array
+    {
+        if ($this->tarea === 'editar') {
+            if (empty($this->contenido) || blank($this->instruccion)) {
+                throw new InvalidArgumentException('Para editar un menú hace falta que ya esté generado y un comentario.');
+            }
+            $actual = $this->contenido;
+            unset($actual['consumo']);
+
+            return ['instruccion' => $this->instruccion, 'contenido_actual' => $actual];
+        }
+        if ($this->tarea === 'intercambiar') {
+            $this->unsetRelation('hogar');
+            if (empty($this->contenido) || blank($this->instruccion)) {
+                throw new InvalidArgumentException('Para intercambiar hace falta un menú generado y saber qué se comió.');
+            }
+            if ($this->hogar?->menu_id !== $this->id) {
+                throw new InvalidArgumentException('Solo se puede intercambiar en el menú activo del hogar.');
+            }
+
+            return [
+                'instruccion' => $this->instruccion,
+                'cambios_aplicados' => $this->tomasCambiadas(),
+                'menu_activo' => array_map(
+                    fn (array $d): array => ['fecha' => $d['fecha'], 'comida' => $d['comida'] ?? null, 'cena' => $d['cena'] ?? null],
+                    $this->contenidoVigente()['dias'] ?? [],
+                ),
+            ];
+        }
+
+        return [];
     }
 
     /**

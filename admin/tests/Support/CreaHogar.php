@@ -31,7 +31,7 @@ trait CreaHogar
         $this->menu = Menu::factory()->for($this->hogar)->create(['fecha_inicio' => '2026-11-02']);
     }
 
-    /** Entrega válida (versión 2) para el encargo guardado en $this->menu: categorías por toma, 2 opciones por comida y cena, tomas individuales y explicaciones por perfil. */
+    /** Entrega válida (versión 3) para el encargo guardado en $this->menu: categorías por toma, 2 opciones por comida y cena, tomas individuales y explicaciones por perfil. */
     protected function entregaValida(): array
     {
         $encargo = $this->menu->encargo;
@@ -57,6 +57,6 @@ trait CreaHogar
         }
         $explicaciones = array_map(fn (array $p): array => ['perfil_id' => $p['id'], 'texto' => 'Menú pensado para '.$p['nombre'].'.'], $encargo['perfiles']);
 
-        return ['entrega' => ['completo' => true, 'version' => 2], 'dias' => $dias, 'explicaciones' => $explicaciones];
+        return ['entrega' => ['completo' => true, 'version' => 3], 'dias' => $dias, 'explicaciones' => $explicaciones];
     }
 }

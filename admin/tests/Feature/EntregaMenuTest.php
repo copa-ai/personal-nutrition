@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ConsumoMenu;
+use App\Models\Menu;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
 use Tests\Support\CreaHogar;
@@ -28,6 +29,34 @@ class EntregaMenuTest extends TestCase
 
         $this->assertCount(7, $this->menu->fresh()->contenido['dias']);
         $this->assertNotNull($this->menu->fresh()->huella);
+    }
+
+    public function test_al_importar_un_menu_generado_se_activa_solo_si_el_hogar_no_tiene_activo(): void
+    {
+        $this->menu->importarEntrega($this->entregaValida());
+        $this->assertSame($this->menu->id, $this->hogar->fresh()->menu_id);
+
+        $otro = Menu::factory()->for($this->hogar)->create(['fecha_inicio' => '2026-11-02']);
+        $otro->update(['encargo' => $otro->construirEncargo()]);
+        $otro->importarEntrega($this->entregaValida());
+
+        $this->assertSame($this->menu->id, $this->hogar->fresh()->menu_id);
+    }
+
+    public function test_el_contenido_vigente_fusiona_los_cambios_solo_en_el_menu_activo(): void
+    {
+        $this->menu->importarEntrega($this->entregaValida());
+        $cambio = ['categorias' => ['verdura'], 'opciones' => [['titulo' => 'Cambiada']]];
+        $this->hogar->fresh()->forceFill(['cambios' => ['2026-11-02/comida' => $cambio]])->save();
+        $menu = $this->menu->fresh();
+
+        $this->assertSame('Cambiada', $menu->contenidoVigente()['dias'][0]['comida']['opciones'][0]['titulo']);
+        $this->assertSame('Ensalada', $menu->contenidoVigente(false)['dias'][0]['comida']['opciones'][0]['titulo']);
+        $this->assertSame(['2026-11-02/comida'], $menu->tomasCambiadas());
+
+        $this->hogar->fresh()->activar(Menu::factory()->for($this->hogar)->create());
+        $this->assertSame('Ensalada', $menu->fresh()->contenidoVigente()['dias'][0]['comida']['opciones'][0]['titulo']);
+        $this->assertNull($this->hogar->fresh()->cambios);
     }
 
     public function test_el_consumo_va_al_libro_y_no_se_queda_en_el_contenido(): void
@@ -60,12 +89,30 @@ class EntregaMenuTest extends TestCase
         $this->assertNull($this->menu->fresh()->contenido);
     }
 
-    public function test_hace_falta_la_version_2(): void
+    public function test_hace_falta_la_version_3(): void
     {
         $datos = $this->entregaValida();
-        $datos['entrega']['version'] = 1;
+        $datos['entrega']['version'] = 2;
 
-        $this->assertStringContainsString('versión 2', $this->menu->validarEntrega($datos)[0]);
+        $this->assertStringContainsString('versión 3', $this->menu->validarEntrega($datos)[0]);
+    }
+
+    public function test_los_ajustes_de_una_opcion_son_opcionales_y_se_validan(): void
+    {
+        $datos = $this->entregaValida();
+        $datos['dias'][0]['comida']['opciones'][0]['ajustes'] = [
+            ['perfil_id' => $this->marta->id, 'texto' => 'Añadir brócoli.'], ['perfil_id' => $this->javier->id, 'texto' => 'Doble ración.'],
+        ];
+        $this->assertSame([], $this->menu->validarEntrega($datos));
+
+        $datos['dias'][0]['comida']['opciones'][0]['ajustes'] = [['perfil_id' => $this->marta->id, 'texto' => 'A'], ['perfil_id' => $this->marta->id, 'texto' => 'B']];
+        $this->assertStringContainsString('más de un ajuste', $this->menu->validarEntrega($datos)[0]);
+
+        $datos['dias'][0]['comida']['opciones'][0]['ajustes'] = [['perfil_id' => 999, 'texto' => 'A']];
+        $this->assertStringContainsString('perfil del encargo', $this->menu->validarEntrega($datos)[0]);
+
+        $datos['dias'][0]['comida']['opciones'][0]['ajustes'] = [['perfil_id' => $this->marta->id, 'texto' => ' ']];
+        $this->assertStringContainsString('necesita «texto»', $this->menu->validarEntrega($datos)[0]);
     }
 
     public function test_cada_dia_necesita_una_entrada_individual_por_perfil_tambien_el_fin_de_semana(): void

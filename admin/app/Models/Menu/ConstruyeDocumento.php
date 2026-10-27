@@ -36,7 +36,7 @@ trait ConstruyeDocumento
             }
         };
 
-        foreach ($this->contenido['dias'] ?? [] as $dia) {
+        foreach ($this->contenidoLeido()['dias'] ?? [] as $dia) {
             foreach (['comida', 'cena'] as $momento) {
                 $suma($this->opcionElegida($dia['fecha'], $momento)['ingredientes'] ?? []);
             }
@@ -59,17 +59,32 @@ trait ConstruyeDocumento
     /**
      * Todo lo que necesita la vista del PDF: la lista de la compra, y por día una opción por toma (la elegida) más las tomas individuales por perfil, las explicaciones y los datos de los perfiles.
      *
+     * Con `$vigente` = false se usa el menú por defecto, sin los cambios que el hogar tenga por intercambio. Cada toma lleva `cambiada`.
+     *
      * @return array<string, mixed>
      */
-    public function datosDocumento(): array
+    public function datosDocumento(bool $vigente = true): array
+    {
+        $previo = $this->leerConCambios;
+        $this->conCambios($vigente);
+        try {
+            return $this->construirDatosDocumento();
+        } finally {
+            $this->conCambios($previo);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function construirDatosDocumento(): array
     {
         $dias = [];
-        foreach ($this->contenido['dias'] ?? [] as $dia) {
+        foreach ($this->contenidoLeido()['dias'] ?? [] as $dia) {
             $fecha = CarbonImmutable::parse($dia['fecha']);
             $tomas = [];
             foreach (['comida' => 'Comida', 'cena' => 'Cena'] as $momento => $etiqueta) {
                 $opcion = $this->opcionElegida($dia['fecha'], $momento);
                 $tomas[$momento] = [
+                    'cambiada' => $this->leerConCambios && in_array("{$dia['fecha']}/{$momento}", $this->tomasCambiadas(), true),
                     'etiqueta' => $etiqueta, 'opcion' => $opcion, 'alternativas' => count($this->opcionesDe($dia['fecha'], $momento)),
                     'minutos' => $this->minutosDelHogar($dia['fecha'], $momento),
                     'categorias' => $this->categoriasDe($dia['fecha'], $momento),
@@ -87,6 +102,7 @@ trait ConstruyeDocumento
             'inicio' => $inicio,
             'fin' => $inicio->addDays(max(0, count($dias) - 1)),
             'perfiles' => $this->encargo['perfiles'] ?? [],
+            'vigente' => $this->leerConCambios,
             'dias' => $dias,
             'explicaciones' => $this->explicaciones(),
             'compra' => $this->listaCompra(),
@@ -95,10 +111,10 @@ trait ConstruyeDocumento
         ];
     }
 
-    /** El PDF del menú con la opción elegida en cada toma. Se genera cada vez, así siempre refleja las elecciones actuales. */
-    public function generarPdf(): string
+    /** El PDF del menú con la opción elegida en cada toma. Se genera cada vez, así siempre refleja las elecciones actuales. `$vigente` = false lo hace con el menú por defecto. */
+    public function generarPdf(bool $vigente = true): string
     {
-        $datos = $this->datosDocumento();
+        $datos = $this->datosDocumento($vigente);
         $pdf = Pdf::loadView('pdf.menu', ['d' => $datos])
             ->setPaper('a4')
             ->setOption(['defaultFont' => 'DejaVu Sans', 'isFontSubsettingEnabled' => true, 'dpi' => 110]);

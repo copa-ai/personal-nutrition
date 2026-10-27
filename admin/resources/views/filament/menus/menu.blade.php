@@ -4,11 +4,16 @@
 
     /** @var \App\Models\Menu $record */
     $record = $getRecord();
+    // El interruptor «Menú vigente / por defecto» de la ficha: por defecto se ve el menú tal como lo generó el agente.
+    $porDefecto = (bool) ($getLivewire()->verPorDefecto ?? false);
+    $hayCambios = $record->tomasCambiadas() !== [];
+    $record->conCambios(! $porDefecto);
     $dias = $record->tomas();
     $perfiles = collect($record->encargo['perfiles'] ?? []);
     $nombres = $perfiles->pluck('nombre', 'id');
     $explicaciones = $record->explicaciones();
-    $puedeElegir = ! $record->estado->enCurso();
+    // Las elecciones se guardan sobre las tomas vigentes: en la vista «por defecto» no se pueden cambiar.
+    $puedeElegir = ! $record->estado->enCurso() && ! $porDefecto;
     $cantidad = fn ($n, $unidad) => rtrim(rtrim(number_format((float) $n, 2, ',', '.'), '0'), ',').($unidad !== '' ? ' '.$unidad : '');
 @endphp
 @include('filament.menus._estilos')
@@ -45,6 +50,16 @@
                 </span>
             @endforeach
         </div>
+
+        @if ($hayCambios)
+            <div class="mn-ayuda">
+                @if ($porDefecto)
+                    <span><strong>Estás viendo el menú por defecto</strong>, tal como lo generó el agente. Pulsa «Ver menú vigente» para volver a lo que se sigue ahora.</span>
+                @else
+                    <span><strong>Menú vigente:</strong> {{ count($record->tomasCambiadas()) }} {{ count($record->tomasCambiadas()) === 1 ? 'toma cambiada' : 'tomas cambiadas' }} por lo comido. Las tomas con la marca «Cambiada» ya no son las del menú original.</span>
+                @endif
+            </div>
+        @endif
 
         @if ($explicaciones)
             <div class="mn-bloque mn-explicaciones">
@@ -86,6 +101,7 @@
                             <div class="mn-toma-cab">
                                 <x-filament::icon :icon="$momento === 'comida' ? 'heroicon-o-sun' : 'heroicon-o-moon'" class="mn-icono" />
                                 <span class="nombre">{{ $t['etiqueta'] }}</span>
+                                @if ($t['cambiada'])<span class="mn-chip" style="color:var(--warning-600);border-color:var(--warning-600)" title="Esta toma se ha cambiado respecto al menú original">Cambiada</span>@endif
                                 @if ($t['minutos'] !== null)<span class="disp">{{ $t['minutos'] }} min disponibles</span>@endif
                             </div>
 
@@ -147,6 +163,18 @@
                                                                     </li>
                                                                 @endforeach
                                                             </ul>
+                                                        </div>
+                                                    @endif
+
+                                                    @if (! empty($o['ajustes']))
+                                                        <div class="mn-bloque">
+                                                            <span class="mn-etiqueta">Ajustes por persona</span>
+                                                            @foreach ($o['ajustes'] as $a)
+                                                                <div class="mn-persona-fila">
+                                                                    <span class="quien">{{ $nombres[$a['perfil_id']] ?? 'Perfil '.$a['perfil_id'] }}</span>
+                                                                    <span>{{ $a['texto'] }}</span>
+                                                                </div>
+                                                            @endforeach
                                                         </div>
                                                     @endif
 

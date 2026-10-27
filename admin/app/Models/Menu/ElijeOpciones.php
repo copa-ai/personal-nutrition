@@ -10,8 +10,25 @@ trait ElijeOpciones
 {
     private const MOMENTOS = ['comida', 'cena'];
 
+    /** Qué contenido lee esta instancia: el vigente (con los cambios del hogar) o el «por defecto». No se guarda. */
+    private bool $leerConCambios = true;
+
     /** Tomas individuales por perfil: no tienen opciones, solo una propuesta. */
     private const INDIVIDUALES = ['desayuno' => 'Desayuno', 'almuerzo' => 'Almuerzo', 'merienda' => 'Merienda'];
+
+    /** Elige si esta instancia lee el menú vigente (con los cambios por intercambio) o el por defecto. Afecta a tomas, elecciones y lista de la compra. */
+    public function conCambios(bool $conCambios): static
+    {
+        $this->leerConCambios = $conCambios;
+
+        return $this;
+    }
+
+    /** @return array<string, mixed> el contenido que se lee ahora (ver conCambios) */
+    private function contenidoLeido(): array
+    {
+        return $this->contenidoVigente($this->leerConCambios);
+    }
 
     /**
      * Opciones de una toma del menú importado. Vacío si el hogar no cocina ese momento o el día no existe.
@@ -20,7 +37,7 @@ trait ElijeOpciones
      */
     public function opcionesDe(string $fecha, string $momento): array
     {
-        $dia = collect($this->contenido['dias'] ?? [])->firstWhere('fecha', $fecha);
+        $dia = collect($this->contenidoLeido()['dias'] ?? [])->firstWhere('fecha', $fecha);
 
         return array_values($dia[$momento]['opciones'] ?? []);
     }
@@ -57,7 +74,7 @@ trait ElijeOpciones
     /** Categorías de alimento comunes a todas las opciones de una toma (comida o cena). Vacío si no se cocina. */
     public function categoriasDe(string $fecha, string $momento): array
     {
-        $dia = collect($this->contenido['dias'] ?? [])->firstWhere('fecha', $fecha);
+        $dia = collect($this->contenidoLeido()['dias'] ?? [])->firstWhere('fecha', $fecha);
 
         return array_values($dia[$momento]['categorias'] ?? []);
     }
@@ -115,12 +132,12 @@ trait ElijeOpciones
      *
      * Cada día lleva además `individuales` (desayuno, almuerzo y merienda por perfil, sin elección) y cada toma sus `categorias`.
      *
-     * @return list<array{fecha: string, titulo: string, corto: string, inicial: string, individuales: list<array<string, mixed>>, tomas: array<string, array{etiqueta: string, minutos: ?int, categorias: list<string>, elegida: int, hay_eleccion: bool, opciones: list<array<string, mixed>>}>}>
+     * @return list<array{fecha: string, titulo: string, corto: string, inicial: string, individuales: list<array<string, mixed>>, tomas: array<string, array{etiqueta: string, minutos: ?int, categorias: list<string>, cambiada: bool, elegida: int, hay_eleccion: bool, opciones: list<array<string, mixed>>}>}>
      */
     public function tomas(): array
     {
         $dias = [];
-        foreach ($this->contenido['dias'] ?? [] as $dia) {
+        foreach ($this->contenidoLeido()['dias'] ?? [] as $dia) {
             $fecha = CarbonImmutable::parse($dia['fecha'])->locale('es');
             $tomas = [];
             foreach (['comida' => 'Comida', 'cena' => 'Cena'] as $momento => $etiqueta) {
@@ -129,6 +146,7 @@ trait ElijeOpciones
                 ], $this->opcionesDe($dia['fecha'], $momento));
                 $tomas[$momento] = [
                     'etiqueta' => $etiqueta,
+                    'cambiada' => $this->leerConCambios && in_array("{$dia['fecha']}/{$momento}", $this->tomasCambiadas(), true),
                     'minutos' => $this->minutosDelHogar($dia['fecha'], $momento),
                     'categorias' => $this->categoriasDe($dia['fecha'], $momento),
                     'elegida' => $this->indiceElegido($dia['fecha'], $momento),
@@ -152,7 +170,7 @@ trait ElijeOpciones
     /** Tomas elegibles: las de comida y cena en las que el hogar cocina (las que tienen opciones). Las individuales no se cuentan: no se eligen. */
     public function totalTomas(): int
     {
-        return collect($this->contenido['dias'] ?? [])->sum(
+        return collect($this->contenidoLeido()['dias'] ?? [])->sum(
             fn (array $d): int => (int) (count($d['comida']['opciones'] ?? []) > 0) + (int) (count($d['cena']['opciones'] ?? []) > 0)
         );
     }

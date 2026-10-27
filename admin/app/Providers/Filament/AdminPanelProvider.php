@@ -30,6 +30,7 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->spa()
             ->sidebarCollapsibleOnDesktop()
+            ->databaseNotifications()
             ->maxContentWidth('full')
             ->navigationGroups(['Menús', 'Hogar', 'Despensa', 'Seguimiento', 'Ajustes'])
             ->colors([

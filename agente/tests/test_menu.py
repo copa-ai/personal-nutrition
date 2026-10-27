@@ -14,7 +14,7 @@ FECHAS = [f"2026-11-0{d}" for d in range(2, 9)]
 
 def encargo_base() -> dict:
     return {
-        "formato": "encargo-menu", "version": 2, "encargo_id": 7, "salida": "workspace/resultado-7.json",
+        "formato": "encargo-menu", "version": 3, "encargo_id": 7, "salida": "workspace/resultado-7.json",
         "semana": {"inicio": FECHAS[0], "dias": 7, "fechas": FECHAS},
         "categorias_validas": ["verdura", "pescado", "cereal"],
         "opciones_por_comida": {"min": 2, "max": 3},
@@ -53,7 +53,7 @@ def borrador_valido(encargo: dict) -> dict:
                              for p in encargo["perfiles"]],
         })
     explicaciones = [{"perfil_id": p["id"], "texto": f"Menú pensado para {p['nombre']}."} for p in encargo["perfiles"]]
-    return {"entrega": {"version": 2}, "dias": dias, "explicaciones": explicaciones}
+    return {"entrega": {"version": 3}, "dias": dias, "explicaciones": explicaciones}
 
 
 class ValidarEntrega(unittest.TestCase):
@@ -74,11 +74,11 @@ class ValidarEntrega(unittest.TestCase):
         self.datos["dias"][6]["fecha"] = "2026-11-09"
         self.assertIn("no coinciden con la semana", self.menu.validar_entrega(self.datos, self.encargo)[0])
 
-    def test_hace_falta_la_version_2(self):
-        self.datos["entrega"]["version"] = 1
-        self.assertIn("versión 2", self.menu.validar_entrega(self.datos, self.encargo)[0])
+    def test_hace_falta_la_version_3(self):
+        self.datos["entrega"]["version"] = 2
+        self.assertIn("versión 3", self.menu.validar_entrega(self.datos, self.encargo)[0])
         del self.datos["entrega"]
-        self.assertIn("versión 2", self.menu.validar_entrega(self.datos, self.encargo)[0])
+        self.assertIn("versión 3", self.menu.validar_entrega(self.datos, self.encargo)[0])
 
     def test_una_entrada_individual_por_perfil_tambien_el_fin_de_semana(self):
         self.datos["dias"][5]["individuales"] = self.datos["dias"][5]["individuales"][:1]
@@ -124,6 +124,26 @@ class ValidarEntrega(unittest.TestCase):
         self.assertIn("lista no vacía", self.menu.validar_entrega(self.datos, self.encargo)[0])
         del self.datos["dias"][0]["cena"]["categorias"]
         self.assertIn("falta la lista «categorias»", self.menu.validar_entrega(self.datos, self.encargo)[0])
+
+    def test_los_ajustes_son_opcionales_y_validos(self):
+        opcion_ = self.datos["dias"][0]["comida"]["opciones"][0]
+        opcion_["ajustes"] = [{"perfil_id": 1, "texto": "Añadir brócoli."}, {"perfil_id": 2, "texto": "Doble ración."}]
+        self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
+        opcion_["ajustes"] = []
+        self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
+
+    def test_los_ajustes_con_perfil_repetido_inexistente_o_sin_texto_fallan(self):
+        opcion_ = self.datos["dias"][0]["comida"]["opciones"][0]
+        opcion_["ajustes"] = [{"perfil_id": 1, "texto": "A"}, {"perfil_id": 1, "texto": "B"}]
+        self.assertIn("más de un ajuste", self.menu.validar_entrega(self.datos, self.encargo)[0])
+        opcion_["ajustes"] = [{"perfil_id": 9, "texto": "A"}]
+        self.assertIn("perfil del encargo", self.menu.validar_entrega(self.datos, self.encargo)[0])
+        opcion_["ajustes"] = [{"perfil_id": 1, "texto": " "}]
+        self.assertIn("necesita «texto»", self.menu.validar_entrega(self.datos, self.encargo)[0])
+        opcion_["ajustes"] = "brócoli"
+        self.assertIn("«ajustes» debe ser una lista", self.menu.validar_entrega(self.datos, self.encargo)[0])
+        opcion_["ajustes"] = ["brócoli"]
+        self.assertEqual(2, len(self.menu.validar_entrega(self.datos, self.encargo)))
 
     def test_una_explicacion_por_perfil_con_texto(self):
         self.datos["explicaciones"] = self.datos["explicaciones"][:1]
@@ -173,6 +193,49 @@ class ValidarEntrega(unittest.TestCase):
         self.assertIn("tiene que ser un objeto", self.menu.validar_entrega(self.datos, self.encargo)[0])
 
 
+class Intercambio(unittest.TestCase):
+    def setUp(self):
+        os.environ["CLAUDE_PROJECT_DIR"] = tempfile.mkdtemp()
+        sys.path.insert(0, str(SCRIPTS))
+        self.menu = importlib.reload(importlib.import_module("menu"))
+        self.encargo = {**encargo_base(), "tarea": "intercambiar"}
+        self.datos = {"entrega": {"version": 3}, "cambios": {
+            "2026-11-03/comida": {"categorias": ["verdura"], "opciones": [opcion("Crema", 10), opcion("Ensalada", 20)]}}}
+
+    def test_un_intercambio_valido(self):
+        self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
+
+    def test_sin_cambios_es_valido_pero_el_objeto_es_obligatorio(self):
+        self.datos["cambios"] = {}
+        self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
+        self.datos["cambios"] = []  # asi serializa PHP un objeto vacio
+        self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
+        del self.datos["cambios"]
+        self.assertIn("Falta el objeto «cambios»", self.menu.validar_entrega(self.datos, self.encargo)[0])
+
+    def test_la_clave_tiene_que_ser_una_toma_de_la_semana(self):
+        toma = self.datos["cambios"]["2026-11-03/comida"]
+        self.datos["cambios"] = {"2026-11-20/comida": toma, "2026-11-03/desayuno": toma, "sin-barra": toma}
+        self.assertEqual(3, len(self.menu.validar_entrega(self.datos, self.encargo)))
+
+    def test_no_se_cambia_una_toma_que_no_se_cocina(self):
+        self.encargo["hogar"]["tiempos"][1]["minutos_comida"] = None
+        self.assertIn("no se puede cambiar", self.menu.validar_entrega(self.datos, self.encargo)[0])
+
+    def test_cada_toma_cumple_las_reglas_de_opciones(self):
+        toma = self.datos["cambios"]["2026-11-03/comida"]
+        toma["opciones"] = toma["opciones"][:1]
+        toma["opciones"][0]["duracion_momento_min"] = 99
+        errores = self.menu.validar_entrega(self.datos, self.encargo)
+        self.assertEqual(2, len(errores))
+        self.assertIn("2026-11-03/comida", errores[0])
+
+    def test_editar_se_valida_como_generar(self):
+        encargo = {**encargo_base(), "tarea": "editar"}
+        self.assertEqual([], self.menu.validar_entrega(borrador_valido(encargo), encargo))
+        self.assertEqual(["Falta la lista «dias» en la entrega."], self.menu.validar_entrega(self.datos, encargo))
+
+
 class Entregar(unittest.TestCase):
     def setUp(self):
         self.raiz = Path(tempfile.mkdtemp())
@@ -204,7 +267,7 @@ class Entregar(unittest.TestCase):
         self.assertEqual(0, self.entregar())
 
         salida = json.loads((self.raiz / "workspace/resultado-7.json").read_text(encoding="utf-8"))
-        self.assertEqual({"version": 2, "completo": True}, salida["entrega"])
+        self.assertEqual({"version": 3, "completo": True}, salida["entrega"])
         self.assertEqual(7, len(salida["dias"]))
         self.assertEqual(sorted(["m1", "m2"]), sorted(f["mensaje_id"] for f in salida["consumo"]["filas"]))
         self.assertEqual(2, salida["consumo"]["totales"]["respuestas"])

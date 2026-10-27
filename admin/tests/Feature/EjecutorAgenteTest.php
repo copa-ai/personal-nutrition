@@ -88,7 +88,7 @@ class EjecutorAgenteTest extends TestCase
         return function (): void {
             $this->menu->refresh();
             $entrega = $this->entregaValida();
-            $entrega['entrega'] = ['completo' => true];
+            $entrega['entrega'] = ['completo' => true, 'version' => 3];
             $entrega['consumo'] = ['totales' => ['respuestas' => 1], 'filas' => [[
                 'mensaje_id' => 'm1', 'fase' => 'planificacion', 'modelo' => 'claude-sonnet-5-5', 'input_tokens' => 12000, 'output_tokens' => 3000,
             ]]];
@@ -124,7 +124,7 @@ class EjecutorAgenteTest extends TestCase
         $m = $this->ejecutar();
 
         $encargo = json_decode(file_get_contents($this->carpeta."/encargos/encargo-{$m->id}.json"), true);
-        $this->assertSame(['encargo-menu', 2, $m->id, "workspace/resultado-{$m->id}.json"], [$encargo['formato'], $encargo['version'], $encargo['encargo_id'], $encargo['salida']]);
+        $this->assertSame(['encargo-menu', 3, $m->id, "workspace/resultado-{$m->id}.json"], [$encargo['formato'], $encargo['version'], $encargo['encargo_id'], $encargo['salida']]);
         $this->assertSame(['Marta', 'Javier'], array_column($encargo['perfiles'], 'nombre'));
         $this->assertSame($m->encargo['semana'], $encargo['semana']);
     }
@@ -346,5 +346,70 @@ class EjecutorAgenteTest extends TestCase
 
         $this->assertSame(EstadoMenu::Terminado, $this->menu->fresh()->estado);
         Http::assertNothingSent();
+    }
+
+    /** Deja el menú ya generado y activo, listo para pedirle una tarea nueva al agente. */
+    private function menuGenerado(): void
+    {
+        $this->menu->update(['encargo' => $this->menu->construirEncargo()]);
+        $this->menu->importarEntrega($this->entregaValida());
+        $this->menu->update(['estado' => EstadoMenu::Terminado]);
+    }
+
+    public function test_un_intercambio_del_agente_se_importa_en_los_cambios_del_hogar_sin_tocar_el_menu(): void
+    {
+        $this->menuGenerado();
+        $contenido = $this->menu->fresh()->contenido;
+        $this->menu->fresh()->pedirIntercambio('Comimos pizza en vez de la comida del lunes');
+        $this->runner(function () {
+            $this->menu->refresh();
+            $toma = $this->entregaValida()['dias'][0]['comida'];
+            $toma['opciones'][0]['titulo'] = 'Cambio A';
+            file_put_contents($this->resultado(), json_encode(['entrega' => ['completo' => true, 'version' => 3], 'cambios' => ['2026-11-02/comida' => $toma],
+                'consumo' => ['totales' => ['respuestas' => 1], 'filas' => [[
+                    'mensaje_id' => 'i1', 'fase' => 'planificacion', 'modelo' => 'claude-sonnet-5-5', 'input_tokens' => 1000, 'output_tokens' => 500,
+                ]]]]));
+        });
+
+        $m = $this->ejecutar();
+
+        $this->assertSame([EstadoMenu::Terminado, null, 'intercambiar'], [$m->estado, $m->error, $m->tarea]);
+        $this->assertSame($contenido['dias'], $m->contenido['dias']);
+        $this->assertSame('Cambio A', $this->hogar->fresh()->cambios['2026-11-02/comida']['opciones'][0]['titulo']);
+        $this->assertSame('Cambio A', $m->opcionesDe('2026-11-02', 'comida')[0]['titulo']);
+        $this->assertSame(1, ConsumoMenu::query()->where('menu_id', $m->id)->where('mensaje_id', 'i1')->count());
+        $encargo = json_decode(file_get_contents($this->carpeta."/encargos/encargo-{$m->id}.json"), true);
+        $this->assertSame(['intercambiar', 'Comimos pizza en vez de la comida del lunes'], [$encargo['tarea'], $encargo['instruccion']]);
+        $this->assertArrayNotHasKey('menu_activo', $m->encargo);
+    }
+
+    public function test_un_intercambio_invalido_deja_el_menu_terminado_con_el_error_y_sin_cambios(): void
+    {
+        $this->menuGenerado();
+        $this->menu->fresh()->pedirIntercambio('Comimos pizza');
+        $this->runner(fn () => file_put_contents($this->resultado(), json_encode(['entrega' => ['completo' => true, 'version' => 3], 'cambios' => ['2000-01-01/comida' => []]])));
+
+        $m = $this->ejecutar();
+
+        $this->assertSame(EstadoMenu::Terminado, $m->estado);
+        $this->assertStringContainsString('La entrega del agente no es válida', $m->error);
+        $this->assertNull($this->hogar->fresh()->cambios);
+    }
+
+    public function test_una_edicion_del_agente_se_importa(): void
+    {
+        $this->menuGenerado();
+        $this->menu->fresh()->pedirEdicion('Sin pescado');
+        $this->runner(function () {
+            $this->menu->refresh();
+            $entrega = $this->entregaValida();
+            $entrega['dias'][0]['comida']['opciones'][0]['titulo'] = 'Gazpacho';
+            file_put_contents($this->resultado(), json_encode($entrega));
+        });
+
+        $m = $this->ejecutar();
+
+        $this->assertSame([EstadoMenu::Terminado, null], [$m->estado, $m->error]);
+        $this->assertSame('Gazpacho', $m->contenido['dias'][0]['comida']['opciones'][0]['titulo']);
     }
 }

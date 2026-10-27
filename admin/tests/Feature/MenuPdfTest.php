@@ -351,4 +351,24 @@ class MenuPdfTest extends TestCase
 
         $this->ver()->assertActionVisible('pdf')->callAction('pdf')->assertFileDownloaded('menu-de-la-semana.pdf');
     }
+
+    public function test_el_pdf_lleva_los_cambios_vigentes_con_su_marca_y_por_defecto_no(): void
+    {
+        $this->importarMenu([[$this->ingrediente('arroz')], [$this->ingrediente('brócoli')]]);
+        $toma = $this->menu->fresh()->contenido['dias'][0]['comida'];
+        $toma['opciones'][0]['titulo'] = 'Pizza casera';
+        $this->hogar->fresh()->forceFill(['cambios' => [self::DIA.'/comida' => $toma]])->save();
+        $menu = $this->menu->fresh();
+
+        $vigente = view('pdf.menu', ['d' => $menu->datosDocumento()])->render();
+        $porDefecto = view('pdf.menu', ['d' => $menu->datosDocumento(false)])->render();
+
+        $this->assertStringContainsString('Pizza casera', $vigente);
+        $this->assertStringContainsString('Cambiada</span>', $vigente);
+        $this->assertStringNotContainsString('Pizza casera', $porDefecto);
+        $this->assertStringContainsString('Arroz con tomate', $porDefecto);
+        $this->assertStringNotContainsString('Cambiada</span>', $porDefecto);
+        $this->assertStringStartsWith('%PDF', $menu->generarPdf());
+        $this->assertStringStartsWith('%PDF', $menu->generarPdf(false));
+    }
 }

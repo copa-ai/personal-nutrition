@@ -5,6 +5,8 @@ Lo que queda abierto tras el rediseño de la ficha del menú. Ordenado por impor
 ## Calidad de lo que genera el agente
 
 - [ ] **Probar el contrato v2 con el modelo real.** Las reglas están probadas con entregas escritas a mano y con `claude-falso.py`, pero no con una ejecución real. Mirar si el agente respeta que todas las opciones de una toma compartan categorías y si las explicaciones salen concretas (gimnasio, horarios) y no una plantilla repetida.
+- [ ] **Probar el contrato v3 y las skills nuevas con el modelo real.** `ajustes` por opción (que solo salgan cuando aportan, no en todas), `editar-menu` (devuelve el menú entero y toca solo lo pedido) e `intercambiar-menu` (reubica platos y respeta las categorías de la toma). Hoy solo se han probado con `claude-falso.py` y entregas escritas a mano.
+- [ ] **Ejecutar `php artisan test` con los tests nuevos.** Se escribieron `EdicionIntercambioTest`, `InterfazEdicionTest` y casos nuevos en `EntregaMenuTest`, `EjecutorAgenteTest` y `MenuPdfTest` sin PHP ni Docker en el sandbox: no se han ejecutado. Ejecutar también `migrate:fresh` con las migraciones de `menu_id`, `cambios`, `tarea`, `instruccion` y `contenido_anterior`.
 - [ ] **Ejecutar `php artisan test` y `migrate:fresh` tras la migración a v2.** En la última revisión el sandbox no tenía PHP ni acceso a Docker: solo se pasaron los tests de Python.
 - [ ] **Tarifas sin verificar.** Los precios de `admin/config/agente.php` son los de la guía. Faltan los modelos 5.5 de Haiku y Fable. Hasta revisarlos, el coste en dólares es orientativo.
 

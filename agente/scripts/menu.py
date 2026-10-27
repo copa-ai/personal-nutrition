@@ -13,23 +13,29 @@ Uso (desde la carpeta agente/):
 ({por_fase, totales, filas}) y `entrega.completo = true`, y lo escribe en el campo `salida` del encargo (siempre dentro de workspace/).
 El agente no calcula dinero ni copia cifras de consumo: lo hace este script.
 
-Reglas del contrato (version 2):
-  - `entrega.version` = 2.
+Reglas del contrato (version 3):
+  - `entrega.version` = 3 (Laravel sigue leyendo las entregas v2 ya guardadas; las nuevas se validan como v3).
   - `dias`: una entrada por fecha de encargo.semana.fechas, en orden, con `comida`, `cena` e `individuales`.
   - `comida`/`cena`: `categorias` (lista no vacia de categorias validas) y `opciones` con entre `min` y `max` recetas; las dos van
     vacias si el hogar no cocina ese momento (minutos = null).
   - cada opcion: `titulo`, `categorias` (el mismo conjunto que la toma, sin importar el orden), `ingredientes` (con `nombre`),
     `duracion_previa_min` y `duracion_momento_min` (no mas que los minutos del hogar ese dia).
+    Opcional: `ajustes`, lista de `{perfil_id, texto}` con un perfil del encargo (sin repetir) y texto no vacio.
   - `individuales`: una entrada por perfil del encargo (`perfil_id`) con `desayuno`, `almuerzo` y `merienda`. Cada toma es una sola
     version: `titulo`, `ingredientes` (con `nombre`), `duracion_previa_min` y `duracion_momento_min` (no mas que los minutos del
     hogar ese dia si hay dato; con null no se limita).
   - `explicaciones`: una por perfil del encargo, con `perfil_id` y `texto`.
+
+Tareas (`encargo.tarea`, por defecto `generar`): `editar` entrega el menu completo, con las mismas reglas que `generar`.
+`intercambiar` no lleva `dias` ni `explicaciones`, sino `cambios`: un objeto «AAAA-MM-DD/comida|cena» -> toma (`categorias` y
+`opciones`, mismas reglas que una toma del menu) para tomas de la semana en las que el hogar cocina; puede ir vacio.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -41,7 +47,8 @@ TOMAS_INDIVIDUALES = ("desayuno", "almuerzo", "merienda")
 
 
 def _texto(valor) -> str:
-    return valor.strip() if isinstance(valor, str) else ""
+    # Mismos caracteres que trim() de PHP (no recorta espacios Unicode como U+00A0).
+    return valor.strip(" \t\n\r\0\x0b") if isinstance(valor, str) else ""
 
 
 def _entero(valor) -> bool:
@@ -54,7 +61,7 @@ def _ids_de_perfil(entradas) -> list[int]:
     ids = []
     for e in entradas:
         valor = e.get("perfil_id") if isinstance(e, dict) else None
-        ids.append(int(valor) if _entero(valor) or (isinstance(valor, str) and valor.lstrip("-").isdigit()) else -1)
+        ids.append(int(valor) if _entero(valor) or (isinstance(valor, str) and re.fullmatch(r"-?[0-9]+", valor) is not None) else -1)
     return sorted(ids)
 
 
@@ -75,7 +82,27 @@ def errores_de_receta(o: dict, donde: str, minutos) -> list[str]:
     return errores
 
 
-def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma) -> list[str]:
+def errores_de_ajustes(ajustes, donde: str, perfiles: list[int]) -> list[str]:
+    """`ajustes` es opcional (None = no hay): lista de `{perfil_id, texto}` con perfiles del encargo, sin repetir y con texto."""
+    if ajustes is None:
+        return []
+    if not isinstance(ajustes, list):
+        return [f"{donde}: «ajustes» debe ser una lista de objetos con «perfil_id» y «texto»."]
+    errores, vistos = [], []
+    for a in ajustes:
+        id_ = a.get("perfil_id") if isinstance(a, dict) else None
+        if not _entero(id_) or id_ not in perfiles:
+            errores.append(f"{donde}: cada ajuste necesita un «perfil_id» que sea un perfil del encargo (perfiles {', '.join(map(str, sorted(perfiles)))}).")
+        elif id_ in vistos:
+            errores.append(f"{donde}: el perfil {id_} tiene más de un ajuste.")
+        else:
+            vistos.append(id_)
+        if not isinstance(a, dict) or not _texto(a.get("texto")):
+            errores.append(f"{donde}: cada ajuste necesita «texto».")
+    return errores
+
+
+def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma, perfiles: list[int] | None = None) -> list[str]:
     if not isinstance(o, dict):
         return [f"{donde}: la opción tiene que ser un objeto."]
     errores = errores_de_receta(o, donde, minutos)
@@ -84,6 +111,7 @@ def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma) 
         errores.append(f"{donde}: «categorias» debe ser una lista no vacía de categorías válidas.")
     elif cats_toma is not None and set(cats) != set(cats_toma):
         errores.append(f"{donde}: «categorias» debe tener las mismas categorías que la toma ({', '.join(cats_toma)}).")
+    errores += errores_de_ajustes(o.get("ajustes"), donde, perfiles or [])
     return errores
 
 
@@ -107,7 +135,65 @@ def errores_de_individuales(individuales, fecha: str, tiempo: dict, perfiles: li
     return errores
 
 
+def errores_de_toma(toma, donde: str, minutos, categorias: list[str], minimo: int, maximo: int, perfiles: list[int]) -> list[str]:
+    """Una toma de comida o cena: `categorias` y entre `minimo` y `maximo` `opciones` (vacias las dos si el hogar no cocina: minutos = None).
+    La usan la entrega completa (generar y editar) y cada toma de un intercambio."""
+    opciones = toma.get("opciones") if isinstance(toma, dict) else None
+    if not isinstance(opciones, list):
+        return [f"{donde}: falta la lista «opciones»."]
+    errores = []
+    cats_toma = toma.get("categorias")
+    if not isinstance(cats_toma, list):
+        errores.append(f"{donde}: falta la lista «categorias».")
+        cats_toma = None
+    elif minutos is None and cats_toma:
+        errores.append(f"{donde}: el hogar no cocina en ese momento, «categorias» debe ir vacío.")
+    elif minutos is not None and (not cats_toma or any(c not in categorias for c in cats_toma)):
+        errores.append(f"{donde}: «categorias» debe ser una lista no vacía de categorías válidas.")
+    if minutos is None and opciones:
+        errores.append(f"{donde}: el hogar no cocina en ese momento, «opciones» debe ir vacío.")
+    elif minutos is not None and not minimo <= len(opciones) <= maximo:
+        errores.append(f"{donde}: hay {len(opciones)} opciones y tienen que ser entre {minimo} y {maximo}.")
+    for i, o in enumerate(opciones, 1):
+        errores += errores_de_opcion(o, f"{donde} · opción {i}", minutos, categorias, cats_toma, perfiles)
+    return errores
+
+
+def errores_de_intercambio(datos, encargo: dict) -> list[str]:
+    """Entrega de un intercambio: `cambios` es un objeto «fecha/momento» (comida o cena de una fecha de la semana en la que el hogar
+    cocina) -> toma completa, con las mismas reglas que una toma del menu. Puede ir vacio (nada que cambiar). No lleva `dias`."""
+    fechas = encargo.get("semana", {}).get("fechas", [])
+    opciones_por_comida = encargo.get("opciones_por_comida", {})
+    minimo, maximo = int(opciones_por_comida.get("min", 2)), int(opciones_por_comida.get("max", 3))
+    perfiles = [int(p["id"]) for p in encargo.get("perfiles", [])]
+    categorias = list(encargo.get("categorias_validas", []))
+    tiempos = {t["fecha"]: t for t in encargo.get("hogar", {}).get("tiempos", [])}
+
+    errores = []
+    entrega = datos.get("entrega") if isinstance(datos, dict) else None
+    if not (isinstance(entrega, dict) and entrega.get("version") == 3 and _entero(entrega.get("version"))):
+        errores.append("La entrega tiene que ser de la versión 3 («entrega.version»: 3).")
+    cambios = datos.get("cambios") if isinstance(datos, dict) else None
+    if cambios == []:  # el JSON de PHP serializa un objeto vacio como []
+        cambios = {}
+    if not isinstance(cambios, dict):
+        return errores + ["Falta el objeto «cambios» (clave «AAAA-MM-DD/comida» o «AAAA-MM-DD/cena»; vacío si no hay nada que cambiar)."]
+    for clave, toma in cambios.items():
+        fecha, _, momento = str(clave).partition("/")
+        if fecha not in fechas or momento not in MOMENTOS:
+            errores.append(f"{clave}: la clave tiene que ser «fecha/comida» o «fecha/cena» con una fecha de la semana del encargo.")
+            continue
+        minutos = tiempos.get(fecha, {}).get(f"minutos_{momento}")
+        if minutos is None:
+            errores.append(f"{clave}: el hogar no cocina en ese momento, no se puede cambiar.")
+            continue
+        errores += errores_de_toma(toma, clave, minutos, categorias, minimo, maximo, perfiles)
+    return errores
+
+
 def validar_entrega(datos, encargo: dict) -> list[str]:
+    if encargo.get("tarea", "generar") == "intercambiar":
+        return errores_de_intercambio(datos, encargo)
     fechas = encargo.get("semana", {}).get("fechas", [])
     opciones_por_comida = encargo.get("opciones_por_comida", {})
     minimo, maximo = int(opciones_por_comida.get("min", 2)), int(opciones_por_comida.get("max", 3))
@@ -120,8 +206,8 @@ def validar_entrega(datos, encargo: dict) -> list[str]:
         return ["Falta la lista «dias» en la entrega."]
     errores = []
     entrega = datos.get("entrega")
-    if not (isinstance(entrega, dict) and entrega.get("version") == 2 and _entero(entrega.get("version"))):
-        errores.append("La entrega tiene que ser de la versión 2 («entrega.version»: 2).")
+    if not (isinstance(entrega, dict) and entrega.get("version") == 3 and _entero(entrega.get("version"))):
+        errores.append("La entrega tiene que ser de la versión 3 («entrega.version»: 3).")
     if [d.get("fecha") if isinstance(d, dict) else None for d in dias] != fechas:
         errores.append(f"Las fechas de «dias» no coinciden con la semana del encargo ({', '.join(fechas)}).")
 
@@ -129,27 +215,7 @@ def validar_entrega(datos, encargo: dict) -> list[str]:
         d = d if isinstance(d, dict) else {}
         fecha = d.get("fecha", "?")
         for momento in MOMENTOS:
-            donde = f"{fecha} · {momento}"
-            toma = d.get(momento)
-            opciones = toma.get("opciones") if isinstance(toma, dict) else None
-            minutos = tiempos.get(fecha, {}).get(f"minutos_{momento}")
-            if not isinstance(opciones, list):
-                errores.append(f"{donde}: falta la lista «opciones».")
-                continue
-            cats_toma = toma.get("categorias")
-            if not isinstance(cats_toma, list):
-                errores.append(f"{donde}: falta la lista «categorias».")
-                cats_toma = None
-            elif minutos is None and cats_toma:
-                errores.append(f"{donde}: el hogar no cocina en ese momento, «categorias» debe ir vacío.")
-            elif minutos is not None and (not cats_toma or any(c not in categorias for c in cats_toma)):
-                errores.append(f"{donde}: «categorias» debe ser una lista no vacía de categorías válidas.")
-            if minutos is None and opciones:
-                errores.append(f"{donde}: el hogar no cocina en ese momento, «opciones» debe ir vacío.")
-            elif minutos is not None and not minimo <= len(opciones) <= maximo:
-                errores.append(f"{donde}: hay {len(opciones)} opciones y tienen que ser entre {minimo} y {maximo}.")
-            for i, o in enumerate(opciones, 1):
-                errores += errores_de_opcion(o, f"{donde} · opción {i}", minutos, categorias, cats_toma)
+            errores += errores_de_toma(d.get(momento), f"{fecha} · {momento}", tiempos.get(fecha, {}).get(f"minutos_{momento}"), categorias, minimo, maximo, perfiles)
         errores += errores_de_individuales(d.get("individuales"), fecha, tiempos.get(fecha, {}), perfiles)
 
     explicaciones = datos.get("explicaciones")

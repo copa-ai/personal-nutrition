@@ -66,6 +66,9 @@
     .indiv .mins { font-family: 'DejaVu Sans Mono', monospace; font-size: 6pt; color: #5D6874; }
     .indiv .sub { color: #5D6874; font-size: 6.8pt; margin-top: 1pt; }
     .indiv .nota { color: #A63D22; font-size: 6.8pt; font-style: italic; margin-top: 1pt; }
+    .ajustes { font-size: 7.2pt; margin-top: 4pt; }
+    .ajustes b { font-weight: normal; font-family: 'DejaVu Sans Mono', monospace; font-size: 6pt; letter-spacing: 0.8pt; text-transform: uppercase; color: #A63D22; }
+    .chip.cambiada { color: #A63D22; border-color: #A63D22; margin-left: 4pt; }
     .nada { font-size: 8pt; color: #5D6874; font-style: italic; }
 
     /* la compra */
@@ -104,6 +107,7 @@
             <span class="supuesto">{{ $p['nombre'] }}@if (! empty($p['kcal_diarias'])) · {{ number_format($p['kcal_diarias'], 0, ',', '.') }} kcal @endif</span>
         @endforeach
         <span class="supuesto">Una opción por toma</span>
+        @if (! $d['vigente'])<span class="supuesto">Menú por defecto, sin cambios</span>@endif
     </div>
 </div>
 
@@ -160,7 +164,7 @@
                 @php($o = $t['opcion'])
                 <td class="toma {{ $momento }}">
                     <div class="cab">
-                        {{ $t['etiqueta'] }}
+                        {{ $t['etiqueta'] }}@if ($t['cambiada'])<span class="chip cambiada">Cambiada</span>@endif
                         @if ($o)
                             <span class="reloj">{{ $o['duracion_momento_min'] }} min @if (($o['duracion_previa_min'] ?? 0) > 0) · {{ $o['duracion_previa_min'] }} antes @endif</span>
                         @endif
@@ -178,6 +182,11 @@
                             <ol class="pasos">
                                 @foreach ($o['pasos'] as $paso)<li>{{ $paso }}</li>@endforeach
                             </ol>
+                        @endif
+                        @if (! empty($o['ajustes']))
+                            <p class="ajustes"><b>Ajustes</b>
+                                {{ collect($o['ajustes'])->map(fn ($a) => ($nombres[$a['perfil_id']] ?? 'Perfil '.$a['perfil_id']).': '.$a['texto'])->implode(' · ') }}
+                            </p>
                         @endif
                         @if (! empty($o['ingredientes']))
                             <p class="ing"><b>Con</b>

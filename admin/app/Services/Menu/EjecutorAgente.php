@@ -9,13 +9,14 @@ use App\Services\Agente\AlmacenS3;
 use App\Services\Claude\EjecutorClaude;
 use App\Services\Claude\LimiteUso;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
- * Una «tanda» (ciclo) de trabajo del agente (aqui, la generacion del menú semanal; es una sola tanda):
+ * Una «tanda» (ciclo) de trabajo del agente (aqui, generar, editar o intercambiar sobre el menú semanal; es una sola tanda):
  *   exportar encargo -> subir a S3 -> claude -p (stream) -> bajar resultado de S3 -> importar -> programar la siguiente tanda.
  * Si se agota la ventana de uso del plan («hit your session limit · resets 3:20pm») NO es un fallo:
  * la tanda se reintenta cuando se renueva (LimiteUso).
@@ -36,13 +37,24 @@ class EjecutorAgente
         return "workspace/resultado-{$e->id}.json";
     }
 
+    /** Skill que atiende cada tarea del menú (`menus.tarea`). */
+    public static function skill(Menu $e): string
+    {
+        return match ($e->tarea) {
+            'editar' => 'editar-menu',
+            'intercambiar' => 'intercambiar-menu',
+            default => 'planificar-menu',
+        };
+    }
+
     /**
      * Texto que recibe `claude -p`. No lleva datos: el agente lee su encargo de encargos/encargo-{id}.json.
-     * Es el mismo en cada intento (p. ej. tras agotarse el limite de uso): una tanda siempre rehace el menú entero.
+     * Es el mismo en cada intento (p. ej. tras agotarse el limite de uso): una tanda siempre rehace el trabajo entero.
+     * Solo cambia la skill segun la tarea; lo que hay que hacer (y el comentario o lo comido) va en el encargo.
      */
     public static function prompt(Menu $e, int $ciclo = 1): string
     {
-        return "Realiza el trabajo {$e->id}. Usa la skill planificar-menu en modo encargo (ciclo {$ciclo}): lee encargos/encargo-{$e->id}.json, no hagas preguntas, "
+        return "Realiza el trabajo {$e->id}. Usa la skill ".static::skill($e)." en modo encargo (ciclo {$ciclo}): lee encargos/encargo-{$e->id}.json, no hagas preguntas, "
             .'y deja el resultado exportado donde dice el campo «salida» de ese archivo.';
     }
 
@@ -63,11 +75,13 @@ class EjecutorAgente
 
             // 1) Encargo: se construye con los datos de ahora (si falta algo, lanza y el menú queda fallido con el motivo),
             //    se guarda en el menú para validar la entrega y se escribe en agente/encargos/. El agente lo baja del bucket al empezar.
-            $e->update(['encargo' => $e->construirEncargo()]);
+            //    En el menú no se guarda lo voluminoso de editar e intercambiar: la validación no lo necesita.
+            $encargo = $e->construirEncargo();
+            $e->update(['encargo' => Arr::except($encargo, ['contenido_actual', 'menu_activo'])]);
             $archivoEncargo = $carpeta."/encargos/encargo-{$e->id}.json";
             @mkdir(dirname($archivoEncargo), 0775, true);
             file_put_contents($archivoEncargo, json_encode(
-                ['formato' => 'encargo-menu', 'version' => 2, 'encargo_id' => $e->id, 'salida' => static::salidaRelativa($e)] + $e->encargo,
+                ['formato' => 'encargo-menu', 'version' => 3, 'encargo_id' => $e->id, 'salida' => static::salidaRelativa($e)] + $encargo,
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE,
             ));
             @unlink($e->archivo_resultado);                       // asi se sabe si ESTA tanda dejo su entrega
@@ -124,13 +138,15 @@ class EjecutorAgente
             $completo = (bool) ($datos['entrega']['completo'] ?? true);
             if ($completo || $ciclo >= (int) config('agente.ciclos.max')) {
                 $e->update(['estado' => 'terminado', 'terminado_en' => now(), 'detener_pedido' => false]);
+                $e->avisarResultado();
+                $e->tarea === 'intercambiar' && $e->lanzarPendiente();
             } else {
                 $this->esperar($e, now()->addMinutes(static::intervaloMinutos($e)));
             }
         } catch (Throwable $ex) {
             // Si se forzo la parada mientras corria, el trabajo ya esta cerrado: no se pisa con «fallido».
             if ($e->refresh()->estado === EstadoMenu::EnMarcha) {
-                $e->update(['estado' => 'fallido', 'terminado_en' => now(), 'proceso_pid' => null, 'ejecucion_id' => null, 'detener_pedido' => false, 'error' => $ex->getMessage()]);
+                $e->cerrarConError($ex->getMessage());   // generar: fallido. editar/intercambiar: el menú sigue vigente, queda terminado con el motivo
             }
         }
 
