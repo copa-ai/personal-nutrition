@@ -37,7 +37,6 @@ Lo que queda abierto tras el rediseño de la ficha del menú. Ordenado por impor
 - [ ] **Contraseña por defecto.** `admin@demo.com` / `password` queda expuesta mientras no se cambie (el panel solo se alcanza por `nodo tunnel`, pero conviene cambiarla en el primer acceso).
 - [ ] **Copia de seguridad sin ejecutar.** `CopiaBase`, la página `CopiaSeguridad` y `CopiaBaseTest` se escribieron sin PHP en el sandbox: ejecutar `php artisan test`. Falta probar una restauración real entre dos instancias y que el límite de subida (PHP 16 MB, Livewire 12 MB) basta.
 - [ ] **Copias automáticas.** Hoy la copia es manual; si el servicio muere sin haber descargado una, se pierde todo. Valorar una descarga periódica (`nodo` + tunel + cron externo).
-- [ ] **`.dockerignore` de la raíz** excluye `admin`. Si el empaquetador lo fusionara con `pack_config.json -> ignore` (la guía solo lo dice para la configuración en la raíz), el servicio quedaría sin Laravel. Verificar tras `nodo pack`.
 - [ ] **Red `*`.** El runner escucha en `0.0.0.0:9000` y no se puede cambiar de interfaz sin tocar `docker/agente/runner.py`; no se declara en `api`, así que no se puede tunelar, pero conviene acotar la interfaz.
 - [ ] **Recursos por medir.** Memoria (2 GiB), CPU (1) y disco (4 GiB) de `service.json` son un tope fijado por el usuario, con `at_init` igual a `at_most`; comprobar que bastan para una generación de menú real con `nodo observe <instancia>`.
-
+- [ ] **`docker/pruebas/claude-falso.py`** (Claude falso) quedó sin forma de uso al retirar docker compose. Se puede apuntar a él con `AGENTE_CLAUDE`; decidir si se conserva o se borra.

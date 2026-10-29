@@ -31,7 +31,7 @@ Una lista de días (`Dia[]`). Cada día contiene:
 
 # Cómo funciona
 
-Es una aplicación Laravel 13 + Filament 5 (`admin/`) que orquesta un agente Claude Code aislado en otro contenedor (`agente/`). La arquitectura, las decisiones y las plantillas vienen de la guía `agentic-laravel/`.
+Es una aplicación Laravel 13 + Filament 5 (`admin/`) que orquesta un agente Claude Code aislado en otro usuario del mismo microVM (`agente/`). La arquitectura, las decisiones y las plantillas vienen de la guía `agentic-laravel/`.
 
 ```
 navegador ──8000──▶ web ──┐                      ┌──────────────┐
@@ -41,7 +41,7 @@ navegador ──8000──▶ web ──┐                      ┌────
 ```
 
 - **Laravel nunca ejecuta `claude`.** Le pide la ejecución al runner del agente por HTTP interno y lee su salida por *polling*.
-- **Los ficheros viajan por S3** (Garage en desarrollo): el encargo hacia el agente y el resultado hacia Laravel. Los dos contenedores no comparten ningún volumen.
+- **Los ficheros viajan por S3** (Garage, dentro del servicio): el encargo hacia el agente y el resultado hacia Laravel. Administración y agente no comparten ficheros.
 - **El agente no ve** la base de datos, el `.env` ni `APP_KEY`. Solo recibe el token de Claude, y solo durante una ejecución.
 - **Cada respuesta del modelo se cuenta** (hook `Stop` + `consumos.py`) y Laravel guarda su coste con la tarifa de ese momento. Cambiar precios no reescribe el histórico.
 
@@ -65,20 +65,6 @@ Las tres tareas (generar, editar, intercambiar) comparten una sola infraestructu
 
 Encargo y entrega llevan `version: 3`. El encargo añade `minutos_desayuno`, `minutos_almuerzo` y `minutos_merienda` a `hogar.tiempos`. La entrega lleva `dias[]` con `comida` y `cena` (`categorias` + `opciones`), `individuales[]` (una entrada por perfil con `desayuno`, `almuerzo` y `merienda`, una sola versión cada una) y, arriba, `explicaciones[]` (una por perfil). Cada opción de comida o cena puede llevar `ajustes[]` (`perfil_id` + `texto`, sin perfil repetido) para que cada persona adapte el mismo plato; las entregas v2 ya guardadas se siguen leyendo. La entrega de un intercambio es distinta: `entrega.version` 3 y `cambios` (ver arriba). Las reglas están en `admin/app/Models/Menu/ValidaEntrega.php` y en `agente/scripts/menu.py`: son las mismas y hay que cambiarlas a la vez. Detalle en `agente/.claude/skills/planificar-menu/SKILL.md`.
 
-## Arranque
-
-Requisitos: Docker con Compose.
-
-```bash
-openssl rand -hex 24                       # copia el resultado
-printf 'AGENTE_SECRETO=<el valor>\n' > .env # fichero .env en la raíz (no se sube a git)
-docker compose up -d --build               # construye, instala, migra y arranca
-docker compose exec web php artisan db:seed --class=HogarSeeder   # opcional: hogar de ejemplo
-docker compose exec web php artisan make:filament-user            # tu usuario del panel
-```
-
-El panel está en <http://localhost:8000/admin>. En Fedora u otros sistemas con SELinux el volumen del repositorio lleva la etiqueta `:z` (ya puesta en `docker-compose.yml`).
-
 ## Conectar Claude
 
 El token **no va en el `.env`**: se pega en el panel y se guarda cifrado con `APP_KEY`.
@@ -87,13 +73,11 @@ El token **no va en el `.env`**: se pega en el panel y se guarda cifrado con `AP
 2. En el panel: **Ajustes → Conexión con Claude → Pegar clave**.
 3. Pulsa **Probar conexión**: debe responder «Claude responde».
 
-Alternativa sin token: `docker compose exec -it agente claude login` (la sesión queda en el volumen `agente-home`).
-
 Si cambias `APP_KEY`, el token guardado deja de poder descifrarse y hay que volver a pegarlo.
 
-### Como servicio Celaut (nodo)
+## Arranque (servicio Celaut)
 
-`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con lo que el compose reparte en contenedores: Garage (S3, solo en `127.0.0.1`), el runner del agente, `artisan serve` y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
+`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con todas las piezas: Garage (S3, solo en `127.0.0.1`), el runner del agente, `artisan serve` y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
 
 | Recurso | `at_init` = `at_most` | Por qué |
 |---|---|---|
@@ -122,37 +106,23 @@ Primera vez: al arrancar se crea el usuario **`admin@demo.com` / `password`** (`
 
 | Si cambias… | Haz… |
 |---|---|
-| `agente/` (skill, scripts) o `docker/agente/` | `docker compose up -d --build agente`. El kit del agente viaja dentro de su imagen. |
-| Servicios, modelos o jobs de `admin/` | `docker compose restart queue`. El worker no recarga código. |
-| `AGENTE_SECRETO` | Recrear `web`, `queue` **y** `agente`. |
+| Cualquier cosa de `admin/`, `agente/`, `docker/agente/`, `docker/servicio/` o `.service/` | Volver a empaquetar (`nodo pack .`) y ejecutar el servicio nuevo: el id cambia con el contenido. Haz antes una copia de seguridad desde el panel. |
 | Precios de los modelos | Editar `admin/config/agente.php` (`precios`). **Verifica las tarifas vigentes antes de fiarte del coste.** Solo afectan a lo que se registre desde ese momento. |
 
 ### Pruebas
 
 ```bash
-docker compose exec web php artisan test                                  # PHP
-docker run --rm -v "$PWD/agente":/w:z -w /w python:3.12-slim \
-  python3 -I -B -m unittest discover -s tests                             # Python del agente
+cd admin && php artisan test                                   # PHP
+cd agente && python3 -I -B -m unittest discover -s tests       # Python del agente
 ```
-
-Para probar la cadena completa **sin gastar el plan** hay un «Claude falso» que habla el mismo protocolo y usa los scripts reales:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.pruebas.yml up -d agente   # activar
-docker compose exec agente sh -c 'echo lento > /app/agente/modo-falso'            # modos: ok, lento, limite, sinresultado, invalido
-docker compose up -d agente                                                       # volver al Claude real
-```
-
-### Producción
-
-Se elimina el servicio `garage`, se definen `AGENTE_S3_*` reales en el `.env` del servidor (con `AGENTE_S3_ENDPOINT=` vacío se usa AWS) y no se publica nunca el puerto 9000 del agente. Las claves de S3 por defecto del compose son solo de desarrollo.
 
 ## Estructura
 
 ```
 admin/      Laravel + Filament (panel, modelos, cola, servicios del agente)
 agente/     Kit del agente: CLAUDE.md, skills planificar-menu, editar-menu e intercambiar-menu, scripts (consumos.py, menu.py) y sus tests
-docker/     Dockerfiles, runner HTTP del agente, Garage y el Claude falso (pruebas/)
+.service/   Empaquetado como servicio Celaut (Dockerfile de construcción, service.json, pack_config.json)
+docker/     agente/ (runner HTTP y almacén S3 del agente) y servicio/ (start.sh, arranque del microVM)
 agentic-laravel/   Guía de arquitectura origen (no se versiona)
 ```
 
