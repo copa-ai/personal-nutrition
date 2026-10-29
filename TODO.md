@@ -29,3 +29,15 @@ Lo que queda abierto tras el rediseño de la ficha del menú. Ordenado por impor
 - [ ] **Primer commit.** Decidir qué hacer con `admin/.claude/` (skills de Laravel Boost), `admin/public/` (assets de Filament que regenera `preparar`) y `.claude/` de la raíz (nodos especiales del sandbox; `git add .` falla con él). `catorce-platos/` ya está en `.gitignore` y `.dockerignore`.
 - [ ] Borrar `catorce-platos/` cuando ya no haga falta (está fuera de git).
 - [ ] El `README.md` no menciona el cambio de idioma a español (`APP_LOCALE=es`).
+
+## Servicio Celaut (`.service/`)
+
+- [ ] **Nada de esto se ha construido ni ejecutado.** Sin acceso al daemon de Docker y con `core_services.packer` sin configurar (`<SET_ME>`) en `/nodo/config.yaml`, solo se comprobó la sintaxis (`bash -n`, JSON). Primer paso: configurar el packer (o `packer.local: true`) y ejecutar `nodo pack .`.
+- [ ] **Persistencia.** Los datos (SQLite, bucket, secretos) viven en `/var/lib/nutrition` del disco de la instancia. La guía solo garantiza que un directorio *compartido* no sobrevive a un reinicio; no dice si el disco propio sí. Comprobar con `nodo kill` + `nodo execute` antes de fiarse; si no persiste, mover la base y el bucket a un S3/BD externos.
+- [ ] **Contraseña por defecto.** `admin@demo.com` / `password` queda expuesta mientras no se cambie (el panel solo se alcanza por `nodo tunnel`, pero conviene cambiarla en el primer acceso).
+- [ ] **Copia de seguridad sin ejecutar.** `CopiaBase`, la página `CopiaSeguridad` y `CopiaBaseTest` se escribieron sin PHP en el sandbox: ejecutar `php artisan test`. Falta probar una restauración real entre dos instancias y que el límite de subida (PHP 16 MB, Livewire 12 MB) basta.
+- [ ] **Copias automáticas.** Hoy la copia es manual; si el servicio muere sin haber descargado una, se pierde todo. Valorar una descarga periódica (`nodo` + tunel + cron externo).
+- [ ] **`.dockerignore` de la raíz** excluye `admin`. Si el empaquetador lo fusionara con `pack_config.json -> ignore` (la guía solo lo dice para la configuración en la raíz), el servicio quedaría sin Laravel. Verificar tras `nodo pack`.
+- [ ] **Red `*`.** El runner escucha en `0.0.0.0:9000` y no se puede cambiar de interfaz sin tocar `docker/agente/runner.py`; no se declara en `api`, así que no se puede tunelar, pero conviene acotar la interfaz.
+- [ ] **Recursos por medir.** Memoria (2 GiB), CPU (1) y disco (4 GiB) de `service.json` son un tope fijado por el usuario, con `at_init` igual a `at_most`; comprobar que bastan para una generación de menú real con `nodo observe <instancia>`.
+

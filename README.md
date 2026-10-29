@@ -91,6 +91,33 @@ Alternativa sin token: `docker compose exec -it agente claude login` (la sesión
 
 Si cambias `APP_KEY`, el token guardado deja de poder descifrarse y hay que volver a pegarlo.
 
+### Como servicio Celaut (nodo)
+
+`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con lo que el compose reparte en contenedores: Garage (S3, solo en `127.0.0.1`), el runner del agente, `artisan serve` y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
+
+| Recurso | `at_init` = `at_most` | Por qué |
+|---|---|---|
+| Memoria | 2 GiB | PHP (web + cola) y Garage ~0,5 GiB; cada `claude -p` ronda 0,5 GiB, así que `AGENTE_MAX_SIMULTANEAS` vale 1 por defecto |
+| CPU | 1 núcleo | el modelo es remoto; la CPU solo la usan PHP, el PDF y Claude Code |
+| Disco | 4 GiB | imagen (PHP + Node + Claude Code + `vendor`, ~1,5 GiB) + SQLite + bucket |
+| Red | `*` (salida abierta) | el agente llama a `api.anthropic.com` por nombre; el guest no resuelve nombres desde `__config__` |
+| API | puerto 8000 (HTTP) | único puerto declarado: el 9000 del agente y el 3900 de S3 **no** se pueden tunelar |
+
+```bash
+nodo pack .                                  # genera el .celaut.bee (requiere packer configurado, ver docs/PACKING.md)
+nodo estimate personal-nutrition             # veredicto de memoria y coste
+nodo inspect personal-nutrition              # variables aceptadas: APP_URL, APP_TIMEZONE, AGENTE_MODELO, AGENTE_MAX_SIMULTANEAS
+nodo execute -e APP_TIMEZONE Europe/Madrid personal-nutrition
+nodo instances                               # id (= token) de la instancia
+nodo tunnel <instancia> 8000 --listen 8000   # y abre http://127.0.0.1:8000/admin (Filament)
+```
+
+Primera vez: al arrancar se crea el usuario **`admin@demo.com` / `password`** (`php artisan usuario:inicial`, solo si no hay ningún usuario). Cambia correo y contraseña en el perfil del panel; al reiniciar no se vuelve a crear. Los secretos (`APP_KEY`, `AGENTE_SECRETO`, claves de S3) se generan en el primer arranque y se guardan en `/var/lib/nutrition/secretos`; el token de Claude se pega en el panel como siempre.
+
+**Copias de seguridad:** **Ajustes → Copia de seguridad** descarga toda la base (`.sqlite`) y permite restaurarla en un servicio nuevo (máx. 12 MB). Restaurar vuelca las tablas de la copia sobre las actuales (no sustituye el fichero), sin tocar sesiones, cola ni `migrations`. No incluye el token de Claude (va cifrado con `APP_KEY`, que cambia en un servicio nuevo): hay que volver a pegarlo.
+
+> Nodo es **alfa** y los pagos en Ergo son **definitivos e irreversibles** (`docs/KyA.md`). `nodo execute` descuenta saldo de la instancia: revisa `nodo estimate` antes.
+
 ## Trabajar en el proyecto
 
 | Si cambias… | Haz… |

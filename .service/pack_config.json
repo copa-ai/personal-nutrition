@@ -1,0 +1,27 @@
+{
+    "include": [
+        "admin",
+        "agente",
+        "docker/agente",
+        "docker/servicio",
+        ".service/pack_config.json"
+    ],
+    "ignore": [
+        "vendor/",
+        "node_modules/",
+        "tests/",
+        "__pycache__/",
+        "*.pyc",
+        "*.sqlite*",
+        "*.enc",
+        ".env",
+        ".env.*",
+        "storage/logs/*",
+        "storage/framework/*",
+        "agente/base/",
+        "agente/workspace/",
+        "agente/encargos/",
+        ".cc-writes/",
+        ".git/"
+    ]
+}

@@ -1,0 +1,35 @@
+{
+    "tag": "personal-nutrition",
+    "architecture": "linux/amd64",
+    "resources": {
+        "at_init": {
+            "mem_limit": 2147483648,
+            "disk_space": 4294967296,
+            "cpu_period": 100000,
+            "cpu_quota": 100000
+        },
+        "at_most": {
+            "mem_limit": 2147483648,
+            "disk_space": 4294967296,
+            "cpu_period": 100000,
+            "cpu_quota": 100000
+        }
+    },
+    "init": {
+        "entry_path": ["opt", "nutrition", "start.sh"]
+    },
+    "api": [
+        {
+            "port": 8000,
+            "transport": "tcp",
+            "protocol": ["http1.1", "http"]
+        }
+    ],
+    "envs": ["APP_URL", "APP_TIMEZONE", "AGENTE_MODELO", "AGENTE_MAX_SIMULTANEAS"],
+    "network": [
+        {
+            "tags": ["*"],
+            "prose": "Salida a internet abierta: el agente (Claude Code) llama a la API de Anthropic por nombre de host y el guest no resuelve nombres desde __config__"
+        }
+    ]
+}
