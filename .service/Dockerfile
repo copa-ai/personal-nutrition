@@ -14,11 +14,12 @@ FROM dxflrs/garage:v1.1.0 AS garage
 FROM node:22-bookworm-slim AS node
 
 # --- Imagen final ---
-FROM php:8.4-cli-bookworm
+# FrankenPHP = Caddy con PHP (ZTS) embebido: un solo proceso web, sin php-fpm.
+FROM dunglas/frankenphp:1-php8.4-bookworm
 
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 RUN chmod +x /usr/local/bin/install-php-extensions \
-    && install-php-extensions intl zip bcmath gd pcntl
+    && install-php-extensions intl zip bcmath gd pcntl opcache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash ca-certificates curl sqlite3 python3 python-is-python3 util-linux \
@@ -49,7 +50,7 @@ RUN cd /opt/nutrition/admin \
     && rm -rf /tmp/storage-build /opt/nutrition/admin/bootstrap/cache/*.php.tmp
 
 # Subidas de la copia de seguridad (por defecto PHP admite 2 MB; Livewire limita a 12 MB).
-RUN printf 'upload_max_filesize=16M\npost_max_size=20M\nmemory_limit=512M\n' > /usr/local/etc/php/conf.d/zz-nutrition.ini
+RUN printf 'upload_max_filesize=16M\npost_max_size=20M\nmemory_limit=512M\nopcache.enable=1\nopcache.validate_timestamps=0\n' > /usr/local/etc/php/conf.d/zz-nutrition.ini
 
 # Kit del agente + runner: las mismas rutas que en docker/Dockerfile.agente, porque se reutiliza su entrypoint.
 COPY ./agente /opt/agente-kit
@@ -60,6 +61,7 @@ COPY ./docker/agente/runner.py /opt/runner/runner.py
 COPY ./docker/agente/almacen_s3.py /opt/runner/almacen_s3.py
 COPY ./docker/agente/entrypoint.sh /opt/runner/entrypoint.sh
 COPY ./docker/servicio/start.sh /opt/nutrition/start.sh
+COPY ./docker/servicio/Caddyfile /opt/nutrition/Caddyfile
 RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/runner/almacen_s3.py /opt/nutrition/start.sh \
     && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh \
     && mkdir -p /var/lib/nutrition

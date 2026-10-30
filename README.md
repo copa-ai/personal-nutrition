@@ -77,7 +77,7 @@ Si cambias `APP_KEY`, el token guardado deja de poder descifrarse y hay que volv
 
 ## Arranque (servicio Celaut)
 
-`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con todas las piezas: Garage (S3, solo en `127.0.0.1`), el runner del agente, `artisan serve` y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
+`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con todas las piezas: Garage (S3, solo en `127.0.0.1`), el runner del agente, FrankenPHP (Caddy con PHP embebido; solo HTTP, el TLS lo pone `nodo tunnel`) y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
 
 | Recurso | `at_init` = `at_most` | Por qué |
 |---|---|---|

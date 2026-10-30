@@ -1,0 +1,19 @@
+# FrankenPHP (Caddy con PHP embebido), solo HTTP: el TLS lo pone `nodo tunnel`. Escucha en :8000 (service.json -> api).
+# Modo clasico (sin worker): 1 nucleo y 2 GiB compartidos con el agente, asi que pocos hilos de PHP.
+{
+	admin off
+	auto_https off
+	frankenphp {
+		num_threads 2
+		max_threads 6
+	}
+}
+
+:8000 {
+	root * /opt/nutrition/admin/public
+	encode zstd gzip
+	request_body {
+		max_size 20MB
+	}
+	php_server
+}

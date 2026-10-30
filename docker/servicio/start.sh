@@ -6,7 +6,7 @@
 #
 #   garage  (usuario garage)  S3 local            127.0.0.1:3900
 #   agente  (usuario agente)  runner de claude -p 0.0.0.0:9000 (el runner no deja elegir interfaz; fuera del VM no se declara)
-#   web     (usuario app)     artisan serve       0.0.0.0:8000  <- unico puerto declarado en service.json -> api
+#   web     (usuario app)     frankenphp (HTTP)   0.0.0.0:8000  <- unico puerto declarado en service.json -> api
 #   cola    (usuario app)     queue:work
 #
 # Usuario inicial del panel: admin@demo.com / password (php artisan usuario:inicial, solo si no hay ningun usuario).
@@ -114,7 +114,6 @@ ENTORNO_APP=(
     AGENTE_MODELO="${AGENTE_MODELO:-claude-sonnet-5-5}"
     AGENTE_S3_BUCKET="$S3_BUCKET" AGENTE_S3_PREFIJO= AGENTE_S3_REGION="$S3_REGION" AGENTE_S3_ENDPOINT="$S3_ENDPOINT"
     AGENTE_S3_CLAVE="$S3_CLAVE" AGENTE_S3_SECRETO="$S3_SECRETO" AGENTE_S3_RUTA_ESTILO=1
-    PHP_CLI_SERVER_WORKERS=4
 )
 app() { ( como app "${ENTORNO_APP[@]}" -- "$@" ); }
 
@@ -125,7 +124,8 @@ cd "$KIT_ADMIN"
 app php artisan migrate --force
 app php artisan usuario:inicial
 
-lanzar como app "${ENTORNO_APP[@]}" -- php artisan serve --host=0.0.0.0 --port=8000 --no-reload
+# --- Web: FrankenPHP (Caddy con PHP embebido; HTTP, el TLS lo pone el tunel), con el entorno de la app y nada mas ---
+lanzar como app "${ENTORNO_APP[@]}" -- frankenphp run --config /opt/nutrition/Caddyfile --adapter caddyfile
 lanzar como app "${ENTORNO_APP[@]}" -- php artisan queue:work --tries=1 --timeout=0 --sleep=3
 
 # Si cualquier pieza muere, el servicio entero cae: asi nodo lo ve parado en vez de «sano» sin cola o sin agente.
