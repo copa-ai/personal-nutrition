@@ -93,7 +93,7 @@ nodo estimate personal-nutrition             # veredicto de memoria y coste
 nodo inspect personal-nutrition              # variables aceptadas: APP_URL, APP_TIMEZONE, AGENTE_MODELO, AGENTE_MAX_SIMULTANEAS
 nodo execute -e APP_TIMEZONE Europe/Madrid personal-nutrition
 nodo instances                               # id (= token) de la instancia
-nodo tunnel <instancia> 8000 --listen 8000   # y abre http://127.0.0.1:8000/admin (Filament)
+nodo tunnel <instancia> 8000 --listen 8000   # y abre http://127.0.0.1:8000 (Filament)
 ```
 
 Primera vez: al arrancar se crea el usuario **`admin@demo.com` / `password`** (`php artisan usuario:inicial`, solo si no hay ningún usuario). Cambia correo y contraseña en el perfil del panel; al reiniciar no se vuelve a crear. Los secretos (`APP_KEY`, `AGENTE_SECRETO`, claves de S3) se generan en el primer arranque y se guardan en `/var/lib/nutrition/secretos`; el token de Claude se pega en el panel como siempre.

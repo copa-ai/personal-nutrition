@@ -1,7 +1,3 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-
-Route::get('/', function () {
-    return view('welcome');
-});
+// El panel de Filament vive en la raíz (AdminPanelProvider -> path('')), así que aquí no hay rutas.
