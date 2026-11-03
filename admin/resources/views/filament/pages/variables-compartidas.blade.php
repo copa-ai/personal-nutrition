@@ -39,9 +39,9 @@
                 <span x-text="copiado ? 'Copiado' : 'Copiar orden'"></span>
             </x-filament::button>
             <p class="text-sm text-gray-500">
-                El nodo de ese dispositivo tiene que poder llegar a la base: mientras Celaut no pregunte a otros nodos
-                (celaut-project/nodo#619), añade su dirección en <code>service_networks.default_instances</code> de su <code>config.yaml</code>
-                o pasa también <code>-e DB_HOST ... -e DB_PORT ...</code>.
+                Los nodos tienen que ser peers (<code>nodo connect</code>). El nodo solo ofrece la base de otro dispositivo si su dirección es
+                pública; en una red local pon <code>service_networks.ALLOW_PRIVATE_PEER_ADDRESSES: true</code> en el <code>config.yaml</code> del
+                nodo que pregunta, o pasa <code>-e DB_HOST ... -e DB_PORT ...</code>.
             </p>
         </div>
     </x-filament::section>

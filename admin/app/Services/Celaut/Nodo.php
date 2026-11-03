@@ -27,7 +27,7 @@ class Nodo
     }
 
     /**
-     * @return array{gateway: string, mem_limit: int, networks: list<array{tags: list<string>, peers: list<string>}>}
+     * @return array{gateway: string, mem_limit: int, networks: list<array{tags: list<string>, peers: list<string>, members: list<array{slots: list<array<string, mixed>>}>}>}
      */
     public function configuracion(): array
     {
@@ -35,18 +35,59 @@ class Nodo
     }
 
     /**
-     * Direcciones «ip:puerto» que el nodo resolvio para la red con ese tag al lanzar este servicio.
+     * Direcciones «ip:puerto» del puerto con ese protocolo de los miembros que el nodo resolvio para la red al lanzar este servicio
+     * (`celaut config`; `networks[].members` trae todos los puertos de cada miembro).
      *
      * @return list<string>
      */
-    public function miembrosDeRed(string $tag): array
+    public function miembrosDeRed(string $tag, string $protocolo): array
     {
-        $peers = [];
+        $miembros = [];
         foreach ($this->configuracion()['networks'] ?? [] as $red) {
-            in_array($tag, $red['tags'] ?? [], true) && $peers = [...$peers, ...($red['peers'] ?? [])];
+            in_array($tag, $red['tags'] ?? [], true) && $miembros = [...$miembros, ...($red['members'] ?? [])];
         }
 
-        return array_values(array_unique($peers));
+        return static::direccionesDe($miembros, $protocolo);
+    }
+
+    /**
+     * Pregunta al nodo por los miembros de una red (`celaut resolve` = Gateway.ResolveNetwork). El nodo pregunta ademas a sus peers y
+     * abre en el firewall de este servicio las direcciones que devuelve. La peticion tiene que caber en lo que el servicio declaro
+     * (mismos tags, claves fijas iguales; `db.cluster` se rellena), si no el nodo la rechaza.
+     *
+     * @param  array<string, string>  $formal  clave => valor, ya sin variables ${...}
+     * @return list<string> direcciones «ip:puerto» del puerto con $protocolo
+     */
+    public function resolverRed(string $tag, array $formal, string $protocolo): array
+    {
+        $args = ['resolve', '--tag', $tag, '--protocol', $protocolo];
+        foreach ($formal as $clave => $valor) {
+            array_push($args, '--formal', "{$clave}={$valor}");
+        }
+
+        // El nodo puede tener que preguntar a varios peers: tarda mas que una orden local.
+        return static::direccionesDe($this->ejecutar($args, 120)['peers'] ?? [], $protocolo);
+    }
+
+    /**
+     * De una lista de miembros (`{slots: [{internal_port, transport, protocol_stack: [[tag...]], uris: [«ip:puerto»]}]}`), las
+     * direcciones de los puertos cuyo protocolo es $protocolo. Un miembro que viene de otro nodo trae un solo puerto con la pila de
+     * protocolos que pedimos; uno local, el puerto real con la que declara: no se adivina el protocolo por el numero de puerto.
+     *
+     * @param  list<array<string, mixed>>  $miembros
+     * @return list<string>
+     */
+    public static function direccionesDe(array $miembros, string $protocolo): array
+    {
+        $direcciones = [];
+        foreach ($miembros as $miembro) {
+            foreach ($miembro['slots'] ?? [] as $slot) {
+                $etiquetas = array_merge([], ...($slot['protocol_stack'] ?? []));
+                in_array($protocolo, $etiquetas, true) && $direcciones = [...$direcciones, ...($slot['uris'] ?? [])];
+            }
+        }
+
+        return array_values(array_unique($direcciones));
     }
 
     /**

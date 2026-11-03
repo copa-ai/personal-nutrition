@@ -13,8 +13,10 @@ use Illuminate\Support\Str;
  * Localiza (o crea) la base PostgreSQL compartida y escribe su direccion para que start.sh arranque el resto con ella.
  *
  *  1. DB_HOST/DB_PORT en el entorno: se usan tal cual.
- *  2. Las instancias de la red «postgres:personal-nutrition» que el nodo resolvio para este servicio (celaut config).
- *  3. Ninguna: se lanza nutrition-postgres como hijo de este servicio (celaut acquire) con la misma clave de red.
+ *  2. Las instancias de la red «postgres:personal-nutrition» que el nodo resolvio al lanzar este servicio (celaut config).
+ *  3. Preguntarle al nodo ahora, con la clave de red ya rellena (celaut resolve = Gateway.ResolveNetwork): mira sus instancias, las
+ *     semillas del operador y lo que ofrecen sus peers (service_networks.ASK_PEERS).
+ *  4. Ninguna: se lanza nutrition-postgres como hijo de este servicio (celaut acquire) con la misma clave de red.
  *
  * Salida (JSON): {"host", "port", "cluster"}. Hay que correrlo sin base de datos (no la usa).
  */
@@ -36,7 +38,23 @@ class BaseDatosCompartida extends Command
 
         $nodo = Nodo::desdeConfig();
 
-        foreach ($nodo->miembrosDeRed(config('nutrition.red.tag')) as $direccion) {
+        $red = config('nutrition.red');
+        $formal = [...$red['formal'], 'db.cluster' => $cluster];
+
+        $candidatas = [];
+        try {
+            $candidatas = $nodo->miembrosDeRed($red['tag'], $red['protocolo']);
+        } catch (NodoException $e) {
+            $this->warn($e->getMessage());
+        }
+        try {
+            $candidatas = [...$candidatas, ...$nodo->resolverRed($red['tag'], $formal, $red['protocolo'])];
+        } catch (NodoException $e) {
+            // Rechazado por la politica del nodo o nodo sin respuesta: no es motivo para no arrancar, se lanza una base propia.
+            $this->warn($e->getMessage());
+        }
+
+        foreach (array_values(array_unique($candidatas)) as $direccion) {
             [$host, $puerto] = $this->separar($direccion);
             if ($this->abierto($host, $puerto)) {
                 $this->info("El nodo ofrecio una base: {$direccion}");

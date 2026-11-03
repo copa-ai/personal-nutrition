@@ -11,6 +11,9 @@ return [
         'tag' => 'postgres:personal-nutrition',
         'dependencia' => 'NUTRITION_POSTGRES',   // entrada de .dependencies del servicio empaquetado
         'puerto' => 5432,
+        'protocolo' => 'postgresql',            // protocol_stack de la red y del api de la base: de ahi se elige el puerto de un miembro
+        // Claves fijas del `formal` (las de seleccion, `db.cluster`, las pone quien instancia). Iguales a las de service.json.
+        'formal' => ['db.engine' => 'postgresql', 'db.schema' => 'personal-nutrition'],
     ],
 
     // Base indicada a mano (DB_HOST/DB_PORT): no se busca ni se lanza nada. Y con que usuario/base se crea nutrition-postgres.
