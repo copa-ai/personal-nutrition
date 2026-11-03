@@ -2,10 +2,13 @@
 """Servidor interno que ejecuta `claude -p` dentro del contenedor del agente.
 
 La administracion (Laravel) no ejecuta claude: le pide las ejecuciones a este servidor por HTTP, de modo que
-el agente solo ve su volumen (agente/) y nunca la base de datos, el .env ni las claves de la administracion.
+el agente solo ve su carpeta (agente/) y nunca la base de datos, el .env ni las claves de la administracion. Los archivos que
+intercambian (encargo, resultado, base del agente) viajan en las peticiones HTTP: es la administracion quien los guarda en la base.
 
-  POST   /ejecuciones        {prompt, herramientas?, timeout?, token?} -> 202 {id}
+  POST   /ejecuciones        {prompt, herramientas?, timeout?, token?, archivos?: {ruta: base64}} -> 202 {id}
+                             `archivos` (encargos/ y base/) se escriben en agente/ antes de lanzar claude
   GET    /ejecuciones/<id>?desde=N -> {estado, codigo, tiempo_agotado, interrumpida, chunks: [[tipo, texto], ...], siguiente}
+  GET    /ejecuciones/<id>/archivos -> {archivos: {ruta: base64}}  lo que dejo la ejecucion en workspace/ y base/ (solo si ya termino)
   DELETE /ejecuciones/<id>   mata la ejecucion
   GET    /salud              sin autenticacion (para el healthcheck)
 
@@ -16,10 +19,10 @@ quien las seguia recibe una respuesta clara en vez de un 404.
 
 Todo lo demas exige `Authorization: Bearer $AGENTE_SECRETO`. Solo biblioteca estandar.
 """
+import base64
 import hmac
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -28,8 +31,6 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-
-import almacen_s3
 
 SECRETO = os.environ.get("AGENTE_SECRETO", "")
 CARPETA = os.environ.get("AGENTE_CARPETA", "/app/agente")
@@ -42,19 +43,17 @@ ESTADO = os.environ.get("AGENTE_ESTADO", "/var/lib/agente-estado")
 SOLO_HERRAMIENTAS = os.environ.get("AGENTE_SOLO_HERRAMIENTAS", "").strip()
 DIRECTORIOS_EXTRA = [d for d in os.environ.get("AGENTE_DIRECTORIOS_EXTRA", "").split(":") if d]
 MAX_SIMULTANEAS = int(os.environ.get("AGENTE_MAX_SIMULTANEAS", "3"))
-MAX_CUERPO = 1_000_000          # bytes de una peticion
+MAX_CUERPO = 64_000_000         # bytes de una peticion (el prompt y, en base64, los archivos de entrada)
 MAX_SALIDA = 20_000_000         # caracteres que se guardan de una ejecucion; el resto se descarta
 RETENCION = 3600                # segundos que se recuerda una ejecucion terminada
 TIMEOUT_MAXIMO = 4 * 3600
 POSIX = os.name == "posix"
 
-# Modo S3 (AGENTE_S3_BUCKET): antes de lanzar claude se baja lo que la administracion deja para el agente y al terminar se sube lo que produce.
-SINCRONIZAR_BAJADA = ("encargos",)   # administracion -> agente
-SINCRONIZAR_BASE = "base"            # la base se baja solo si no hay otra ejecucion usandola
-SINCRONIZAR_SUBIDA = ("workspace", "base")   # agente -> administracion
-SUBIR_SIEMPRE = (".sqlite", "estado-actual.json")   # la base es un unico archivo (y su estado-actual.json va con ella): se suben enteros aunque la ejecucion no los haya tocado
-COPIAS_BASE = os.path.join(ESTADO, "copias-base")   # copia de la base local antes de reemplazarla por la del bucket
-MAX_COPIAS_BASE = 5
+# Archivos que se intercambian con la administracion (rutas relativas a agente/).
+ENTRADA = ("encargos/", "base/")      # administracion -> agente, en la peticion que lanza la ejecucion
+SALIDA = ("workspace/", "base/")      # agente -> administracion, GET /ejecuciones/<id>/archivos
+SUBIR_SIEMPRE = (".sqlite", "estado-actual.json")   # la base es un unico archivo (y su estado-actual.json va con ella): se devuelven aunque la ejecucion no los haya tocado
+MAX_ARCHIVO = 8_000_000
 
 ejecuciones = {}
 cerrojo = threading.Lock()
@@ -72,7 +71,6 @@ class Ejecucion:
         self.codigo = None
         self.tiempo_agotado = False
         self.interrumpida = False
-        self.error_subida = None    # por que no se pudo subir el resultado a S3 (la ejecucion no vale aunque claude saliera bien)
         self.terminado_en = None
         self.cerrojo = threading.Lock()
         self.inicio = time.time()
@@ -103,7 +101,6 @@ class Ejecucion:
         e.codigo = datos.get("codigo")
         e.tiempo_agotado = bool(datos.get("tiempo_agotado"))
         e.interrumpida = bool(datos.get("interrumpida"))
-        e.error_subida = datos.get("error_subida")
         e.terminado_en = datos.get("terminado_en")
         e.cerrojo = threading.Lock()
         e.proceso = None
@@ -140,7 +137,7 @@ class Ejecucion:
         destino = _ruta(self.id, "json")
         with open(destino + ".tmp", "w", encoding="utf-8") as f:
             json.dump({"id": self.id, "inicio": self.inicio, "codigo": self.codigo, "tiempo_agotado": self.tiempo_agotado,
-                       "interrumpida": self.interrumpida, "error_subida": self.error_subida, "terminado_en": self.terminado_en}, f)
+                       "interrumpida": self.interrumpida, "terminado_en": self.terminado_en}, f)
         os.replace(destino + ".tmp", destino)
 
     def _anadir(self, tipo, texto):
@@ -172,23 +169,10 @@ class Ejecucion:
         # Que los lectores vacien las tuberias antes de dar la ejecucion por terminada (un nieto puede mantenerlas abiertas).
         for l in self.lectores:
             l.join(timeout=5)
-        self._subir()
         with self.cerrojo:
             self.terminado_en = time.time()
             self._guardar_estado()   # despues de que la salida este completa en disco
             self.archivo_chunks.close()
-
-    def _subir(self):
-        # Modo S3: lo que esta ejecucion dejo (el menú en workspace/, la base) sale al bucket antes de darla por terminada.
-        if not almacen_s3.activo():
-            return
-        try:
-            for carpeta in SINCRONIZAR_SUBIDA:
-                almacen_s3.subir_prefijo(CARPETA, carpeta, self.inicio, SUBIR_SIEMPRE)
-        except Exception as ex:   # noqa: BLE001 - la administracion lo recibe como fallo de la tanda (error_subida) y en el registro
-            self.error_subida = str(ex)
-            with self.cerrojo:
-                self._anadir("err", "\n[runner] no se pudo subir el resultado a S3: %s\n" % ex)
 
     def matar(self):
         if self.proceso is None or self.proceso.poll() is not None:
@@ -205,6 +189,22 @@ class Ejecucion:
     def corriendo(self):
         return self.terminado_en is None
 
+    def archivos(self):
+        """Lo que dejo esta ejecucion en workspace/ y base/: lo modificado desde que empezo, y la base entera (SUBIR_SIEMPRE)."""
+        salida = {}
+        for carpeta in SALIDA:
+            raiz = os.path.join(CARPETA, carpeta)
+            for dirpath, _, nombres in os.walk(raiz):
+                for nombre in nombres:
+                    ruta = os.path.join(dirpath, nombre)
+                    relativa = os.path.relpath(ruta, CARPETA).replace(os.sep, "/")
+                    if os.path.islink(ruta) or not os.path.isfile(ruta) or os.path.getsize(ruta) > MAX_ARCHIVO:
+                        continue
+                    if os.path.getmtime(ruta) >= self.inicio - 2 or relativa.endswith(SUBIR_SIEMPRE):
+                        with open(ruta, "rb") as f:
+                            salida[relativa] = base64.b64encode(f.read()).decode("ascii")
+        return salida
+
     def estado(self, desde):
         with self.cerrojo:
             trozo = self.chunks[desde:]
@@ -214,34 +214,27 @@ class Ejecucion:
             "codigo": self.codigo if not self.corriendo else None,
             "tiempo_agotado": self.tiempo_agotado,
             "interrumpida": self.interrumpida,
-            "error_subida": self.error_subida,
             "chunks": trozo,
             "siguiente": siguiente,
         }
 
 
-def bajar_base():
-    """Baja base/ del bucket, pero sin pisar una copia local mas reciente que la del bucket (trabajo de una ejecucion
-    cuya subida fallo) y guardando una copia de la base local en COPIAS_BASE antes de reemplazarla."""
-    for clave, remoto in almacen_s3.listar_con_fecha(SINCRONIZAR_BASE):
-        if clave.endswith("/"):
-            continue
-        destino = os.path.join(CARPETA, clave)
-        if os.path.isfile(destino):
-            if os.path.getmtime(destino) > remoto + 2:
-                continue
-            if destino.endswith(".sqlite"):
-                guardar_copia_base(destino)
-        almacen_s3.bajar(CARPETA, clave)
-
-
-def guardar_copia_base(archivo):
-    os.makedirs(COPIAS_BASE, exist_ok=True)
-    nombre = os.path.basename(archivo)
-    shutil.copy2(archivo, os.path.join(COPIAS_BASE, "%s.%s" % (nombre, time.strftime("%Y%m%d-%H%M%S"))))
-    antiguas = sorted(f for f in os.listdir(COPIAS_BASE) if f.startswith(nombre + "."))
-    for f in antiguas[:-MAX_COPIAS_BASE]:
-        os.remove(os.path.join(COPIAS_BASE, f))
+def escribir_entrada(archivos):
+    """Escribe en agente/ los archivos de entrada que manda la administracion. Solo encargos/ y base/, sin salir de agente/."""
+    if archivos is None:
+        return
+    if not isinstance(archivos, dict):
+        raise ValueError("archivos tiene que ser un objeto ruta -> base64")
+    raiz = os.path.realpath(CARPETA)
+    for relativa, contenido in archivos.items():
+        if not isinstance(relativa, str) or not isinstance(contenido, str) or not relativa.startswith(ENTRADA) or ".." in relativa.split("/"):
+            raise ValueError("archivo no permitido: %r" % (relativa,))
+        destino = os.path.realpath(os.path.join(CARPETA, relativa))
+        if not destino.startswith(raiz + os.sep):
+            raise ValueError("archivo fuera de agente/: %r" % (relativa,))
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        with open(destino, "wb") as f:
+            f.write(base64.b64decode(contenido, validate=True))
 
 
 def limpiar():
@@ -326,7 +319,10 @@ class Manejador(BaseHTTPRequestHandler):
 
     def _id(self):
         partes = urlparse(self.path).path.strip("/").split("/")
-        return partes[1] if len(partes) == 2 and partes[0] == "ejecuciones" else None
+        return partes[1] if len(partes) in (2, 3) and partes[0] == "ejecuciones" else None
+
+    def _pide_archivos(self):
+        return urlparse(self.path).path.strip("/").endswith("/archivos")
 
     def do_GET(self):
         ruta = urlparse(self.path)
@@ -337,6 +333,10 @@ class Manejador(BaseHTTPRequestHandler):
         e = ejecuciones.get(self._id() or "")
         if e is None:
             return self._responder(404, {"error": "no existe esa ejecucion"})
+        if self._pide_archivos():
+            if e.corriendo:
+                return self._responder(409, {"error": "la ejecucion sigue en marcha"})
+            return self._responder(200, {"archivos": e.archivos()})
         try:
             desde = max(0, int(parse_qs(ruta.query).get("desde", ["0"])[0]))
         except ValueError:
@@ -354,6 +354,7 @@ class Manejador(BaseHTTPRequestHandler):
                 return self._responder(413, {"error": "cuerpo vacio o demasiado grande"})
             datos = json.loads(self.rfile.read(largo))
             orden, entorno, timeout = orden_de(datos)
+            archivos = datos.get("archivos")
         except (ValueError, json.JSONDecodeError) as ex:
             return self._responder(400, {"error": str(ex)})
         with cerrojo:
@@ -361,18 +362,12 @@ class Manejador(BaseHTTPRequestHandler):
             if sum(1 for e in ejecuciones.values() if e.corriendo) >= MAX_SIMULTANEAS:
                 return self._responder(429, {"error": "demasiadas ejecuciones a la vez"})
             try:
-                if almacen_s3.activo():
-                    for carpeta in SINCRONIZAR_BAJADA:
-                        almacen_s3.bajar_prefijo(CARPETA, carpeta)
-                    if not any(x.corriendo for x in ejecuciones.values()):   # la base solo se baja si ninguna otra ejecucion la esta usando
-                        bajar_base()
+                escribir_entrada(archivos)
                 e = Ejecucion(orden, entorno, timeout)
             except OSError as ex:
                 return self._responder(500, {"error": "no se pudo lanzar claude: %s" % ex})
             except ValueError as ex:   # p. ej. un byte nulo en el prompt: Popen lo rechaza
                 return self._responder(400, {"error": "no se pudo lanzar claude: %s" % ex})
-            except RuntimeError as ex:   # S3
-                return self._responder(502, {"error": str(ex)})
             ejecuciones[e.id] = e
         self._responder(202, {"id": e.id})
 

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Menus\Schemas;
 use App\Enums\EstadoMenu;
 use App\Filament\Support\PestanaConsumo;
 use App\Models\Menu;
+use App\Services\Agente\AlmacenAgente;
 use Filament\Infolists\Components\ViewEntry;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -25,7 +26,7 @@ class MenuInfolist
     /** Mientras se genera, o si falló y hay un registro que explique por qué. Si no, el menú (o su estado vacío) es lo que interesa. */
     private static function quiereVerElRegistro(Menu $menu): bool
     {
-        return $menu->estado->enCurso() || ($menu->estado === EstadoMenu::Fallido && $menu->archivo_log && is_file($menu->archivo_log));
+        return $menu->estado->enCurso() || ($menu->estado === EstadoMenu::Fallido && AlmacenAgente::registro($menu, 1) !== null);
     }
 
     public static function configure(Schema $schema): Schema

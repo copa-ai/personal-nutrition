@@ -1,5 +1,5 @@
 # Servicio Celaut de Personal Nutrition: UN solo microVM con todo lo que docker-compose.yml reparte en contenedores
-# (web + cola + agente + Garage). Aqui el Dockerfile solo construye el sistema de ficheros: CMD/ENTRYPOINT/EXPOSE se
+# (web + cola + agente). Aqui el Dockerfile solo construye el sistema de ficheros: CMD/ENTRYPOINT/EXPOSE se
 # ignoran; el arranque es service.json -> init.entry_path (/opt/nutrition/start.sh) y el puerto, service.json -> api.
 # Los COPY de origen del proyecto llevan «./»: el empaquetador los reescribe a service/...
 
@@ -10,7 +10,6 @@ COPY ./admin /app
 RUN composer install --no-dev --no-scripts --prefer-dist --no-interaction --optimize-autoloader --ignore-platform-reqs
 
 # --- Binarios que se copian tal cual ---
-FROM dxflrs/garage:v1.1.0 AS garage
 FROM node:22-bookworm-slim AS node
 
 # --- Imagen final ---
@@ -19,7 +18,7 @@ FROM dunglas/frankenphp:1-php8.4-bookworm
 
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 RUN chmod +x /usr/local/bin/install-php-extensions \
-    && install-php-extensions intl zip bcmath gd pcntl opcache
+    && install-php-extensions intl zip bcmath gd pcntl opcache pdo_pgsql pgsql
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash ca-certificates curl sqlite3 python3 python-is-python3 util-linux \
@@ -32,12 +31,23 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force
 
-COPY --from=garage /garage /usr/local/bin/garage
+
+# `celaut`: la service-library de Celaut (celaut-project/service-library) como binario estatico. Laravel habla con el nodo con el
+# (App\Services\Celaut\Nodo): lee las redes resueltas, lanza nutrition-postgres si no hay base y lo para al terminar.
+ARG CELAUT_VERSION=v0.1.0
+ARG CELAUT_SHA256=77cb247c1a841ce76d696c33743d1d161ca8e4fc311c4bbece0e4305fca0e2ca
+ADD https://github.com/celaut-project/service-library/releases/download/${CELAUT_VERSION}/celaut-linux-arm64 /usr/local/bin/celaut
+RUN echo "${CELAUT_SHA256}  /usr/local/bin/celaut" | sha256sum -c - && chmod 755 /usr/local/bin/celaut
+
+# Dependencia Celaut empaquetada por el packer (nutrition-postgres) y su hash (.dependencies).
+COPY ./__services__ /opt/nutrition/celaut/__services__
+COPY ./__metadata__ /opt/nutrition/celaut/__metadata__
+COPY ./__block__ /opt/nutrition/celaut/__block__
+COPY ./.dependencies /opt/nutrition/celaut/.dependencies
 
 # Un usuario por pieza: lo que el agente (que ejecuta Bash) puede leer no incluye ni la base ni APP_KEY.
 RUN groupadd -g 1000 app     && useradd -m -u 1000 -g 1000 -s /bin/bash app \
-    && groupadd -g 1001 agente && useradd -m -u 1001 -g 1001 -s /bin/bash agente \
-    && groupadd -g 1002 garage && useradd -m -u 1002 -g 1002 -s /bin/bash garage
+    && groupadd -g 1001 agente && useradd -m -u 1001 -g 1001 -s /bin/bash agente
 
 # Administracion (Laravel + Filament): codigo de solo lectura, todo lo que escribe va a /var/lib/nutrition/admin.
 COPY ./admin /opt/nutrition/admin
@@ -58,12 +68,12 @@ RUN mkdir -p /opt/agente-kit/.claude \
     && echo '{"fecha": "imagen-celaut", "sistema": "Linux (microVM Celaut)", "python": "python", "persona": "Personal Nutrition"}' \
         > /opt/agente-kit/.claude/setup-completado.json
 COPY ./docker/agente/runner.py /opt/runner/runner.py
-COPY ./docker/agente/almacen_s3.py /opt/runner/almacen_s3.py
 COPY ./docker/agente/entrypoint.sh /opt/runner/entrypoint.sh
 COPY ./docker/servicio/start.sh /opt/nutrition/start.sh
 COPY ./docker/servicio/Caddyfile /opt/nutrition/Caddyfile
-RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/runner/almacen_s3.py /opt/nutrition/start.sh \
+RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh \
     && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh \
     && mkdir -p /var/lib/nutrition
 
-# Los datos (SQLite, bucket, sesion de Claude) viven en /var/lib/nutrition, creado y repartido por start.sh.
+# Los datos locales (sesion de Claude, estado del runner y del pool de celaut) viven en /var/lib/nutrition, creado y repartido por start.sh.
+# Todo lo demas (datos, cache, sesiones, cola y archivos del agente) vive en la PostgreSQL compartida.

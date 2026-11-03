@@ -5,7 +5,7 @@ namespace App\Services\Menu;
 use App\Enums\EstadoMenu;
 use App\Jobs\GenerarMenu;
 use App\Models\Menu;
-use App\Services\Agente\AlmacenS3;
+use App\Services\Agente\AlmacenAgente;
 use App\Services\Claude\EjecutorClaude;
 use App\Services\Claude\LimiteUso;
 use Carbon\CarbonInterface;
@@ -17,12 +17,13 @@ use Throwable;
 
 /**
  * Una «tanda» (ciclo) de trabajo del agente (aqui, generar, editar o intercambiar sobre el menú semanal; es una sola tanda):
- *   exportar encargo -> subir a S3 -> claude -p (stream) -> bajar resultado de S3 -> importar -> programar la siguiente tanda.
+ *   exportar encargo -> guardarlo en la base -> claude -p (stream; el runner recibe y devuelve los archivos por HTTP) -> bajar resultado
+ *   de la base -> importar -> programar la siguiente tanda.
  * Si se agota la ventana de uso del plan («hit your session limit · resets 3:20pm») NO es un fallo:
  * la tanda se reintenta cuando se renueva (LimiteUso).
  *
  * El encargo lo construye Menu::construirEncargo() y la entrega se valida e importa con Menu::importarEntrega().
- * Lo demas (estados, log, S3, limite de uso, parada pedida, cancelacion) es infraestructura: no tocar sin motivo.
+ * Lo demas (estados, log, almacen del agente, limite de uso, parada pedida, cancelacion) es infraestructura: no tocar sin motivo.
  */
 class EjecutorAgente
 {
@@ -74,7 +75,7 @@ class EjecutorAgente
                 + ($ciclo === 1 ? ['iniciado_en' => now()] : []));
 
             // 1) Encargo: se construye con los datos de ahora (si falta algo, lanza y el menú queda fallido con el motivo),
-            //    se guarda en el menú para validar la entrega y se escribe en agente/encargos/. El agente lo baja del bucket al empezar.
+            //    se guarda en el menú para validar la entrega y se escribe en agente/encargos/ y en la base (AlmacenAgente): el runner lo recibe al lanzar.
             //    En el menú no se guarda lo voluminoso de editar e intercambiar: la validación no lo necesita.
             $encargo = $e->construirEncargo();
             $e->update(['encargo' => Arr::except($encargo, ['contenido_actual', 'menu_activo'])]);
@@ -85,18 +86,28 @@ class EjecutorAgente
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE,
             ));
             @unlink($e->archivo_resultado);                       // asi se sabe si ESTA tanda dejo su entrega
-            AlmacenS3::borrar(static::salidaRelativa($e));
-            AlmacenS3::subir($carpeta, 'encargos/encargo-'.$e->id.'.json');
+            AlmacenAgente::borrar(static::salidaRelativa($e));
+            AlmacenAgente::subir($carpeta, 'encargos/encargo-'.$e->id.'.json');
             @mkdir(dirname($log), 0775, true);
-            $ciclo === 1 ? @unlink($log) : file_put_contents($log, "\n===== Ciclo {$ciclo} · ".now()->toDateTimeString()." =====\n", FILE_APPEND);
+            // Una tanda posterior puede atenderla otro dispositivo: el registro de las anteriores esta en la base, no en su disco.
+            $ciclo === 1 ? @unlink($log) : AlmacenAgente::bajar($carpeta, AlmacenAgente::rutaRegistro($e->id));
+            $ciclo === 1 || file_put_contents($log, "\n===== Ciclo {$ciclo} · ".now()->toDateTimeString()." =====\n", FILE_APPEND);
 
             // 2) Ejecucion. stream:true => el log muestra cada paso del agente (herramientas, textos) y no solo la respuesta final.
             $cola = '';
+            $subidoEn = 0.0;
+            $guardarRegistro = function (bool $forzar = false) use ($carpeta, $e, &$subidoEn) {
+                if (AlmacenAgente::activo() && ($forzar || microtime(true) - $subidoEn >= 3)) {   // el panel de cualquier dispositivo lo lee de la base
+                    $subidoEn = microtime(true);
+                    AlmacenAgente::subir($carpeta, AlmacenAgente::rutaRegistro($e->id));
+                }
+            };
             $r = (new EjecutorClaude)->ejecutar(
                 static::prompt($e, $ciclo), config('agente.herramientas'), (float) config('agente.timeout'),
                 function (string $tipo, string $texto) use ($log, $salida, &$cola) {
                     $cola = mb_substr($cola.$texto, -4000);       // la cola basta para ver el aviso de limite
                     file_put_contents($log, $texto, FILE_APPEND);
+                    $guardarRegistro();
                     $salida && $salida($texto);
                 },
                 fn (?int $pid) => $e->update(['proceso_pid' => $pid]),          // solo si claude corre en este proceso
@@ -105,9 +116,11 @@ class EjecutorAgente
                 alAlta: fn (string $id) => $e->update(['ejecucion_id' => $id]), // id remoto: para cancelar si se fuerza la parada
             );
 
-            // 3) Modo S3: lo que dejo el agente esta en el bucket; se trae al disco.
-            if (AlmacenS3::activo() && $r->exitoso()) {
-                AlmacenS3::bajar($carpeta, static::salidaRelativa($e));
+            $guardarRegistro(true);
+
+            // 3) Almacen en la base: EjecutorClaude guardo lo que devolvio el agente; el resultado se trae al disco.
+            if (AlmacenAgente::activo() && $r->exitoso()) {
+                AlmacenAgente::bajar($carpeta, static::salidaRelativa($e));
             }
             $entregado = is_file($e->archivo_resultado);
 

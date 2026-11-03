@@ -2,6 +2,7 @@
 
 namespace App\Services\Claude;
 
+use App\Services\Agente\AlmacenAgente;
 use App\Services\Menu\TokenClaude;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -98,6 +99,8 @@ class EjecutorClaude
         try {
             $alta = $http()->post('/ejecuciones', array_filter([
                 'prompt' => $prompt, 'modelo' => config('agente.modelo'), 'herramientas' => $herramientas, 'timeout' => $timeout, 'token' => TokenClaude::obtener(), 'stream' => $stream ?: null,
+                // Encargo y base del agente, de la base de datos: el runner no tiene acceso a ella (solo en las tandas de trabajo).
+                'archivos' => $stream && AlmacenAgente::activo() ? AlmacenAgente::entrada() : null,
             ], fn ($v) => $v !== null));
             if ($alta->failed()) {
                 throw new RuntimeException('El agente no aceptó la ejecución ('.$alta->status().'): '.($alta->json('error') ?? mb_substr($alta->body(), 0, 200)));
@@ -125,8 +128,12 @@ class EjecutorClaude
                     if ($r->json('tiempo_agotado')) {
                         throw new RuntimeException('claude se pasó del tiempo ('.(int) $timeout.' s) y se cortó.');
                     }
-                    if ($r->json('error_subida')) {
-                        throw new RuntimeException('El agente terminó pero no pudo subir el resultado al almacén S3: '.$r->json('error_subida'));
+                    if ($stream && AlmacenAgente::activo()) {
+                        $a = $http()->timeout(120)->get("/ejecuciones/{$id}/archivos");
+                        if ($a->failed()) {
+                            throw new RuntimeException('El agente terminó pero no se pudieron recoger sus archivos ('.$a->status().').');
+                        }
+                        AlmacenAgente::recibir((array) $a->json('archivos', []));
                     }
 
                     return new ResultadoClaude($out, $err, $r->json('codigo'));

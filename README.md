@@ -37,11 +37,11 @@ Es una aplicación Laravel 13 + Filament 5 (`admin/`) que orquesta un agente Cla
 navegador ──8000──▶ web ──┐                      ┌──────────────┐
                     queue ┼─ HTTP interno ──────▶│ agente       │ claude -p (skill planificar-menu)
                           │  (Bearer)            └──────┬───────┘
-                          └───── S3 (garage) ◀──────────┘   encargo ▶  /  ◀ resultado
+                          └── archivos por HTTP ◀────────┘   encargo ▶  /  ◀ resultado (guardados en PostgreSQL)
 ```
 
 - **Laravel nunca ejecuta `claude`.** Le pide la ejecución al runner del agente por HTTP interno y lee su salida por *polling*.
-- **Los ficheros viajan por S3** (Garage, dentro del servicio): el encargo hacia el agente y el resultado hacia Laravel. Administración y agente no comparten ficheros.
+- **Los ficheros viajan en las peticiones HTTP** al runner (encargo y base del agente al lanzar, resultado al terminar) y **Laravel los guarda en PostgreSQL** (`agente_archivos`, `AlmacenAgente`), igual que el registro de cada tanda. El runner no tiene credenciales de la base; así cualquier Laravel que comparta la base ve el resultado y el registro, aunque la ejecución la haya hecho el agente de otro dispositivo.
 - **El agente no ve** la base de datos, el `.env` ni `APP_KEY`. Solo recibe el token de Claude, y solo durante una ejecución.
 - **Cada respuesta del modelo se cuenta** (hook `Stop` + `consumos.py`) y Laravel guarda su coste con la tarifa de ese momento. Cambiar precios no reescribe el histórico.
 
@@ -77,15 +77,15 @@ Si cambias `APP_KEY`, el token guardado deja de poder descifrarse y hay que volv
 
 ## Arranque (servicio Celaut)
 
-`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con todas las piezas: Garage (S3, solo en `127.0.0.1`), el runner del agente, FrankenPHP (Caddy con PHP embebido; solo HTTP, el TLS lo pone `nodo tunnel`) y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
+`.service/` empaqueta la aplicación como servicio de [celaut-project/nodo](https://github.com/celaut-project/nodo) (rama `dev`; guía: `docs/PACKING.md`, `docs/TUNNELING.md`). Es **un solo microVM** con todas las piezas: el runner del agente, FrankenPHP (Caddy con PHP embebido; solo HTTP, el TLS lo pone `nodo tunnel`) y la cola, arrancados por `docker/servicio/start.sh`. Mantiene la regla de oro: cada pieza corre con su usuario y un entorno vacío (`env -i`), de modo que el agente no ve `APP_KEY` ni la base.
 
 | Recurso | `at_init` = `at_most` | Por qué |
 |---|---|---|
-| Memoria | 2 GiB | PHP (web + cola) y Garage ~0,5 GiB; cada `claude -p` ronda 0,5 GiB, así que `AGENTE_MAX_SIMULTANEAS` vale 1 por defecto |
+| Memoria | 2 GiB | PHP (web + cola) ~0,5 GiB; cada `claude -p` ronda 0,5 GiB, así que `AGENTE_MAX_SIMULTANEAS` vale 1 por defecto |
 | CPU | 1 núcleo | el modelo es remoto; la CPU solo la usan PHP, el PDF y Claude Code |
 | Disco | 4 GiB | imagen (PHP + Node + Claude Code + `vendor`, ~1,5 GiB) + SQLite + bucket |
 | Red | `*` (salida abierta) | el agente llama a `api.anthropic.com` por nombre; el guest no resuelve nombres desde `__config__` |
-| API | puerto 8000 (HTTP) | único puerto declarado: el 9000 del agente y el 3900 de S3 **no** se pueden tunelar |
+| API | puerto 8000 (HTTP) | único puerto declarado: el 9000 del agente **no** se pueden tunelar |
 
 ```bash
 nodo pack .                                  # genera el .celaut.bee (requiere packer configurado, ver docs/PACKING.md)
@@ -96,9 +96,34 @@ nodo instances                               # id (= token) de la instancia
 nodo tunnel <instancia> 8000 --listen 8000   # y abre http://127.0.0.1:8000 (Filament)
 ```
 
-Primera vez: al arrancar se crea el usuario **`admin@demo.com` / `password`** (`php artisan usuario:inicial`, solo si no hay ningún usuario). Cambia correo y contraseña en el perfil del panel; al reiniciar no se vuelve a crear. Los secretos (`APP_KEY`, `AGENTE_SECRETO`, claves de S3) se generan en el primer arranque y se guardan en `/var/lib/nutrition/secretos`; el token de Claude se pega en el panel como siempre.
+Primera vez: al arrancar se crea el usuario **`admin@demo.com` / `password`** (`php artisan usuario:inicial`, solo si no hay ningún usuario). Cambia correo y contraseña en el perfil del panel; al reiniciar no se vuelve a crear. Los secretos (`APP_KEY`, `AGENTE_SECRETO`, contraseña de la base) se generan en el primer arranque y se guardan en `/var/lib/nutrition/secretos`; el token de Claude se pega en el panel como siempre.
 
-**Copias de seguridad:** **Ajustes → Copia de seguridad** descarga toda la base (`.sqlite`) y permite restaurarla en un servicio nuevo (máx. 12 MB). Restaurar vuelca las tablas de la copia sobre las actuales (no sustituye el fichero), sin tocar sesiones, cola ni `migrations`. No incluye el token de Claude (va cifrado con `APP_KEY`, que cambia en un servicio nuevo): hay que volver a pegarlo.
+### Base de datos compartida (PostgreSQL)
+
+Varios dispositivos pueden usar el sistema compartiendo **una sola base PostgreSQL**. La base es un servicio Celaut aparte (`dependencies/postgres`, `nutrition-postgres`) que **declara una red**; `personal-nutrition` declara la misma red y `php artisan nutrition:base-datos` (`start.sh`) la usa al arrancar:
+
+| Campo de la red | Valor |
+|---|---|
+| `tags` | `postgres:personal-nutrition` |
+| `prose` | PostgreSQL con el esquema de personal-nutrition |
+| `formal` | `db.engine=postgresql`, `db.schema=personal-nutrition`, `db.cluster=${NUTRITION_DB_CLUSTER}` |
+| `protocol_stack` | `postgresql` (el puerto 5432 de la base lo expone en su `api`) |
+
+El nodo indexa una instancia como miembro de la red si la declara **y** expone el protocolo (`docs/NETWORKS.md`, «Network Instance Indexing»). Al arrancar:
+
+1. `DB_HOST`/`DB_PORT` si se pasan: se usan tal cual.
+2. Si no, se pregunta al nodo por instancias de la red: lo que resolvió al lanzar el servicio (`celaut config`; hace falta pasar `NUTRITION_DB_CLUSTER` en `nodo execute -e`). Preguntarle después con `Gateway.ResolveNetwork` necesita un comando `celaut resolve` que `service-library` aún no tiene.
+3. Si no hay ninguna, se lanza una instancia de `nutrition-postgres` como hijo (paga el saldo de la instancia: `nodo increase_deposit`) con esa misma clave, y a partir de ahí otros la encuentran.
+
+Variables (`nodo execute -e`): `NUTRITION_DB_CLUSTER` (clave **pública** de la red; si falta se genera y se escribe en el log), `NUTRITION_DB_PASSWORD` (clave de acceso a la base: no va en `formal`, que se anuncia a otros nodos) y **`APP_KEY` igual en todos los dispositivos** (cifra el token de Claude y las sesiones guardadas en la base).
+
+> **Límite actual del nodo:** para una red que no es `pow:`, `resolve_network` solo ofrece las instancias que corre **ese mismo nodo** y las semillas del operador (`service_networks.default_instances` en `config.yaml`). No pregunta a otros nodos. Para que otro dispositivo (otro nodo) use la base, hay que añadir en su nodo `default_instances` para `postgres:personal-nutrition` con la dirección publicada de la base (`nodo instances` en el nodo que la corre) o pasar `DB_HOST`/`DB_PORT`.
+
+Cada dispositivo conserva su propio runner del agente (Claude Code), pero **el estado vive en la base**: datos, sesiones, caché, cola, archivos y registro del agente. Cualquier dispositivo puede atender un trabajo en cola. **Ajustes → Variables compartidas** muestra lo que hay que copiar para arrancar otro dispositivo (`NUTRITION_DB_CLUSTER`, `NUTRITION_DB_PASSWORD`, `APP_KEY`) y la orden `nodo execute` ya montada.
+
+Laravel habla con el nodo con `celaut` ([celaut-project/service-library](https://github.com/celaut-project/service-library), binario estático en la imagen) a través de `App\Services\Celaut\Nodo`; no hay código Python de orquestación. Limitación: parar un trabajo desde otro dispositivo solo pone `detener_pedido` (la ejecución en curso la cancela el dispositivo que la lanzó).
+
+**Copias de seguridad:** con SQLite (desarrollo local), **Ajustes → Copia de seguridad** descarga toda la base (`.sqlite`) y permite restaurarla en un servicio nuevo (máx. 12 MB). Restaurar vuelca las tablas de la copia sobre las actuales (no sustituye el fichero), sin tocar sesiones, cola ni `migrations`. No incluye el token de Claude (va cifrado con `APP_KEY`, que cambia en un servicio nuevo): hay que volver a pegarlo.
 
 > Nodo es **alfa** y los pagos en Ergo son **definitivos e irreversibles** (`docs/KyA.md`). `nodo execute` descuenta saldo de la instancia: revisa `nodo estimate` antes.
 
@@ -122,7 +147,7 @@ cd agente && python3 -I -B -m unittest discover -s tests       # Python del agen
 admin/      Laravel + Filament (panel, modelos, cola, servicios del agente)
 agente/     Kit del agente: CLAUDE.md, skills planificar-menu, editar-menu e intercambiar-menu, scripts (consumos.py, menu.py) y sus tests
 .service/   Empaquetado como servicio Celaut (Dockerfile de construcción, service.json, pack_config.json)
-docker/     agente/ (runner HTTP y almacén S3 del agente) y servicio/ (start.sh, arranque del microVM)
+docker/     agente/ (runner HTTP del agente) y servicio/ (start.sh, arranque del microVM)
 agentic-laravel/   Guía de arquitectura origen (no se versiona)
 ```
 

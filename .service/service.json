@@ -25,11 +25,38 @@
             "protocol": ["http1.1", "http"]
         }
     ],
-    "envs": ["APP_URL", "APP_TIMEZONE", "AGENTE_MODELO", "AGENTE_MAX_SIMULTANEAS"],
+    "envs": ["APP_URL", "APP_TIMEZONE", "AGENTE_MODELO", "AGENTE_MAX_SIMULTANEAS", "APP_KEY", "NUTRITION_DB_CLUSTER", "NUTRITION_DB_PASSWORD", "DB_HOST", "DB_PORT"],
     "network": [
         {
             "tags": ["*"],
             "prose": "Salida a internet abierta: el agente (Claude Code) llama a la API de Anthropic por nombre de host y el guest no resuelve nombres desde __config__"
+        },
+        {
+            "tags": ["postgres:personal-nutrition"],
+            "prose": "PostgreSQL database holding the personal-nutrition schema (the Laravel migrations of personal-nutrition). Every personal-nutrition instance that uses the same cluster key shares this database.",
+            "formal": {
+                "db.engine": "postgresql",
+                "db.schema": "personal-nutrition",
+                "db.cluster": "${NUTRITION_DB_CLUSTER}"
+            },
+            "protocol_stack": [
+                {
+                    "tags": ["postgresql"]
+                }
+            ]
+        }
+    ],
+    "possible_environment_workload": [
+        {
+            "workloads": [
+                {
+                    "count": 1,
+                    "resources": {
+                        "mem_limit": 1073741824,
+                        "disk_space": 10737418240
+                    }
+                }
+            ]
         }
     ]
 }

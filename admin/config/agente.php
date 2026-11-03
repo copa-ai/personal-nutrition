@@ -8,17 +8,10 @@
 return [
     'carpeta' => env('AGENTE_CARPETA', base_path('../agente')),
 
-    // Modo S3: en vez de compartir agente/ como volumen con el servicio del agente, los archivos que se intercambian
-    // (encargos/, workspace/, base/) viajan por un bucket. Activo solo con AGENTE_S3_BUCKET (ver docker/agente/almacen_s3.py).
-    's3' => [
-        'bucket' => env('AGENTE_S3_BUCKET'),
-        'prefijo' => env('AGENTE_S3_PREFIJO', ''),
-        'region' => env('AGENTE_S3_REGION', 'us-east-1'),
-        'endpoint' => env('AGENTE_S3_ENDPOINT') ?: null,   // vacio = AWS; con endpoint propio (Garage, MinIO...) se usa el bucket en la ruta
-        'clave' => env('AGENTE_S3_CLAVE'),
-        'secreto' => env('AGENTE_S3_SECRETO'),
-        'ruta_estilo' => filled(env('AGENTE_S3_RUTA_ESTILO')) ? (bool) env('AGENTE_S3_RUTA_ESTILO') : filled(env('AGENTE_S3_ENDPOINT')),   // vacio = segun haya endpoint propio
-    ],
+    // Donde viven los archivos que se intercambian con el agente (encargos/, workspace/, base/). «base» = en la base de datos
+    // (tabla agente_archivos, ver App\Services\Agente\AlmacenAgente): el runner los recibe y devuelve por HTTP y asi los ve cualquier
+    // Laravel que comparta la base. Vacio = solo en la carpeta de arriba (desarrollo y pruebas).
+    'almacen' => env('AGENTE_ALMACEN') ?: null,
 
     'claude' => env('AGENTE_CLAUDE', 'claude'),
 

@@ -3,6 +3,7 @@
 namespace App\Models\Menu;
 
 use App\Enums\EstadoMenu;
+use App\Services\Agente\AlmacenAgente;
 
 trait LeeProgreso
 {
@@ -17,13 +18,10 @@ trait LeeProgreso
     /** Última fase que el agente ha marcado, leída del final de su registro. Null si aún no ha marcado ninguna. */
     public function faseActual(): ?string
     {
-        if (! $this->archivo_log || ! is_file($this->archivo_log)) {
+        $cola = AlmacenAgente::registro($this, 60000);
+        if ($cola === null) {
             return null;
         }
-        $f = fopen($this->archivo_log, 'rb');
-        fseek($f, max(0, filesize($this->archivo_log) - 60000));
-        $cola = (string) stream_get_contents($f);
-        fclose($f);
 
         return preg_match_all('/consumos\.py\s+fase\s+(\w+)/', $cola, $m) ? end($m[1]) : null;
     }
