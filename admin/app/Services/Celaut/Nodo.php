@@ -107,6 +107,22 @@ class Nodo
         return $this->ejecutar($args, 1800);
     }
 
+    /**
+     * Las instancias del pool de `celaut` (las que lanzo este servicio, aunque sea en un arranque anterior, si el estado sobrevive).
+     *
+     * @return list<array{lease: int, service: string, uri: string, leased: bool, idle_secs: int, timeouts: int, failures: int}>
+     */
+    public function instancias(): array
+    {
+        return $this->ejecutar(['list'])['instances'] ?? [];
+    }
+
+    /** Para una instancia del pool y la saca de el (el saldo no gastado vuelve a este servicio). */
+    public function parar(int $lease): array
+    {
+        return $this->ejecutar(['stop', (string) $lease], 300);
+    }
+
     /** Para todas las instancias que este servicio lanzo (al terminar el servicio). */
     public function apagar(): array
     {

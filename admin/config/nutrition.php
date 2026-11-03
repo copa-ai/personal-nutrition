@@ -16,10 +16,8 @@ return [
         'formal' => ['db.engine' => 'postgresql', 'db.schema' => 'personal-nutrition'],
     ],
 
-    // Base indicada a mano (DB_HOST/DB_PORT): no se busca ni se lanza nada. Y con que usuario/base se crea nutrition-postgres.
+    // Con que usuario/base se crea nutrition-postgres.
     'db' => [
-        'host' => env('DB_HOST') ?: null,
-        'port' => (int) env('DB_PORT', 5432),
         'usuario' => env('DB_USERNAME', 'nutrition'),
         'nombre' => env('DB_DATABASE', 'personal_nutrition'),
     ],
@@ -29,6 +27,15 @@ return [
     'compartido' => [
         'cluster' => env('NUTRITION_DB_CLUSTER') ?: null,
         'clave_bd' => env('DB_PASSWORD') ?: null,
+    ],
+
+    // Esperas al arrancar. La base corre emulada si el nodo no es arm64 (minutos para arrancar) y lanzarla se paga del saldo de esta
+    // instancia: en vez de salir (y que el nodo reinicie el servicio, lanzando otra base), se espera y se reintenta.
+    'espera' => [
+        'arranque_s' => (int) env('NUTRITION_ESPERA_ARRANQUE_S', 1800),   // a que una base lanzada acepte conexiones
+        'reutilizar_s' => (int) env('NUTRITION_ESPERA_REUTILIZAR_S', 180), // a una base lanzada en un arranque anterior
+        'intentos_lanzar' => (int) env('NUTRITION_INTENTOS_LANZAR', 120),   // con saldo insuficiente u otro rechazo transitorio
+        'pausa_lanzar_s' => (int) env('NUTRITION_PAUSA_LANZAR_S', 15),
     ],
 
     'celaut' => [

@@ -16,8 +16,7 @@
 #
 # Variables de service.json -> envs (todas opcionales): APP_URL, APP_TIMEZONE, AGENTE_MODELO, AGENTE_MAX_SIMULTANEAS,
 # APP_KEY (misma en todos los dispositivos que comparten base: cifra el token de Claude y las sesiones),
-# NUTRITION_DB_CLUSTER (clave publica de la red de la base), NUTRITION_DB_PASSWORD (clave de acceso a la base),
-# DB_HOST/DB_PORT (base indicada a mano: no se busca ni se lanza nada).
+# NUTRITION_DB_CLUSTER (clave publica de la red de la base), NUTRITION_DB_PASSWORD (clave de acceso a la base).
 set -eu
 
 DATOS=/var/lib/nutrition
@@ -101,9 +100,12 @@ ENTORNO_DB=(DB_CONNECTION=pgsql DB_USERNAME="$DB_USUARIO" DB_DATABASE="$DB_NOMBR
 RUN_DB="$A/celaut/base-datos.json"
 rm -f "$RUN_DB"
 cd "$KIT_ADMIN"
-( como app "${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" DB_HOST="${DB_HOST:-}" DB_PORT="${DB_PORT:-5432}" -- \
+( como app "${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" -- \
     php artisan nutrition:base-datos "$RUN_DB" --estado="$A/celaut" ) || { echo "start.sh: no hay base de datos" >&2; parar; exit 1; }
-read -r DB_ANFITRION DB_PUERTO NUTRITION_DB_CLUSTER < <(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['host'], d['port'], d['cluster'])" "$RUN_DB")
+# Sin sustitucion de procesos (`< <(...)`) ni «here-strings»: el guest no tiene /dev/fd (el servicio moria con «/dev/fd/63: No such file»).
+DATOS_DB=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['host'], d['port'], d['cluster'])" "$RUN_DB")
+set -- $DATOS_DB
+DB_ANFITRION=$1; DB_PUERTO=$2; NUTRITION_DB_CLUSTER=$3
 
 ENTORNO_APP=("${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" DB_HOST="$DB_ANFITRION" DB_PORT="$DB_PUERTO" NUTRITION_DB_CLUSTER="$NUTRITION_DB_CLUSTER")
 app() { ( como app "${ENTORNO_APP[@]}" -- "$@" ); }

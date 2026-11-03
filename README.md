@@ -111,13 +111,15 @@ Varios dispositivos pueden usar el sistema compartiendo **una sola base PostgreS
 
 El nodo indexa una instancia como miembro de la red si la declara **y** expone el protocolo (`docs/NETWORKS.md`, «Network Instance Indexing»). Al arrancar:
 
-1. `DB_HOST`/`DB_PORT` si se pasan: se usan tal cual.
+1. Una base que este mismo servicio lanzó en un arranque anterior (pool de `celaut`): se reutiliza. El nodo no la reconoce por la red (compara el `formal` declarado, con `${NUTRITION_DB_CLUSTER}` sin rellenar, con el pedido ya relleno) y `celaut acquire` no reutiliza una instancia aún arrendada, así que sin esto cada reinicio lanzaría otra base.
 2. Si no, se pregunta al nodo por instancias de la red: lo que resolvió al lanzar el servicio (`celaut config`, con `NUTRITION_DB_CLUSTER` pasada en `nodo execute -e`) y, con la clave de red ya rellena, `celaut resolve` (`Gateway.ResolveNetwork`), donde el nodo mira sus instancias, las semillas del operador y lo que ofrecen sus peers (`service_networks.ASK_PEERS`, por defecto 4).
 3. Si no hay ninguna, se lanza una instancia de `nutrition-postgres` como hijo (paga el saldo de la instancia: `nodo increase_deposit`) con esa misma clave, y a partir de ahí otros la encuentran.
 
+El servicio **no sale con error** por falta de saldo ni porque la base tarde en arrancar (emulada, puede tardar minutos): el nodo lo reiniciaría y lanzaría otra base. Reintenta el lanzamiento cada 15 s (hasta 120 veces) y espera hasta 30 min a que la base acepte conexiones (`config/nutrition.php` → `espera`).
+
 Variables (`nodo execute -e`): `NUTRITION_DB_CLUSTER` (clave **pública** de la red; si falta se genera y se escribe en el log), `NUTRITION_DB_PASSWORD` (clave de acceso a la base: no va en `formal`, que se anuncia a otros nodos) y **`APP_KEY` igual en todos los dispositivos** (cifra el token de Claude y las sesiones guardadas en la base).
 
-> **Para que un dispositivo encuentre la base de otro** (nodo `dev` con celaut-project/nodo#620): los nodos tienen que ser peers (`nodo connect <ip:puerto>`), y el nodo solo ofrece una dirección de un peer si es una IP **pública** (sin nombres DNS ni rangos privados) que acepta una conexión TCP. En una red local hay que poner `service_networks.ALLOW_PRIVATE_PEER_ADDRESSES: true` en el `config.yaml` del nodo que pregunta. Sin eso, pasa `DB_HOST`/`DB_PORT` al servicio.
+> **Para que un dispositivo encuentre la base de otro** (nodo `dev` con celaut-project/nodo#620): los nodos tienen que ser peers (`nodo connect <ip:puerto>`), y el nodo solo ofrece una dirección de un peer si es una IP **pública** (sin nombres DNS ni rangos privados) que acepta una conexión TCP. En una red local hay que poner `service_networks.ALLOW_PRIVATE_PEER_ADDRESSES: true` en el `config.yaml` del nodo que pregunta.
 
 Cada dispositivo conserva su propio runner del agente (Claude Code), pero **el estado vive en la base**: datos, sesiones, caché, cola, archivos y registro del agente. Cualquier dispositivo puede atender un trabajo en cola. **Ajustes → Variables compartidas** muestra lo que hay que copiar para arrancar otro dispositivo (`NUTRITION_DB_CLUSTER`, `NUTRITION_DB_PASSWORD`, `APP_KEY`) y la orden `nodo execute` ya montada.
 
