@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Services\Agente\AlmacenAgente;
 use App\Services\Claude\EjecutorClaude;
 use App\Services\Menu\TokenClaude;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -13,6 +15,8 @@ use Tests\TestCase;
 
 class EjecutorClaudeTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -169,13 +173,42 @@ class EjecutorClaudeTest extends TestCase
         (new EjecutorClaude)->ejecutar('hola', timeout: 90);
     }
 
-    public function test_un_error_al_subir_el_resultado_a_s3_lanza(): void
+    public function test_con_el_almacen_en_la_base_el_agente_recibe_la_entrada_y_sus_archivos_se_guardan(): void
     {
-        $this->runner([['estado' => 'terminado', 'codigo' => 0, 'error_subida' => 'AccessDenied', 'chunks' => [], 'siguiente' => 0]]);
+        config(['agente.almacen' => 'base']);
+        AlmacenAgente::guardar('encargos/encargo-1.json', '{"encargo":1}');
+        AlmacenAgente::guardar('workspace/ajeno.json', 'no se manda: no es de entrada');
+        Http::fake(function (Request $r) {
+            return match (true) {
+                $r->method() === 'POST' => Http::response(['id' => 'abc123'], 202),
+                str_ends_with($r->url(), '/archivos') => Http::response(['archivos' => [
+                    'workspace/resultado-1.json' => base64_encode('{"ok":true}'),
+                    'base/estado-actual.json' => base64_encode('{"fase":"terminada"}'),
+                    '../fuera.json' => base64_encode('no'),
+                    'encargos/encargo-1.json' => base64_encode('no se acepta: el agente no escribe encargos'),
+                ]]),
+                default => Http::response(['estado' => 'terminado', 'codigo' => 0, 'chunks' => [], 'siguiente' => 0]),
+            };
+        });
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('no pudo subir el resultado al almacén S3: AccessDenied');
-        (new EjecutorClaude)->ejecutar('hola');
+        (new EjecutorClaude)->ejecutar('hola', stream: true);
+
+        $alta = $this->enviados('POST')[0]->data();
+        $this->assertSame(['encargos/encargo-1.json' => base64_encode('{"encargo":1}')], $alta['archivos']);
+        $this->assertSame('{"ok":true}', AlmacenAgente::leer('workspace/resultado-1.json'));
+        $this->assertSame('{"fase":"terminada"}', AlmacenAgente::leer('base/estado-actual.json'));
+        $this->assertNull(AlmacenAgente::leer('../fuera.json'));
+        $this->assertSame('{"encargo":1}', AlmacenAgente::leer('encargos/encargo-1.json'));
+    }
+
+    public function test_sin_almacen_en_la_base_no_se_mandan_archivos(): void
+    {
+        $this->runner([['estado' => 'terminado', 'codigo' => 0, 'chunks' => [], 'siguiente' => 0]]);
+
+        (new EjecutorClaude)->ejecutar('hola', stream: true);
+
+        $this->assertArrayNotHasKey('archivos', $this->enviados('POST')[0]->data());
+        $this->assertCount(0, array_filter($this->enviados('GET'), fn ($r) => str_ends_with($r->url(), '/archivos')));
     }
 
     public function test_si_falla_la_consulta_se_cancela_y_se_explica(): void

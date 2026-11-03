@@ -1,0 +1,43 @@
+{
+    "tag": ["nutrition-postgres", "postgresql"],
+    "architecture": "linux/arm64",
+    "resources": {
+        "at_init": {
+            "mem_limit": 268435456,
+            "disk_space": 2147483648,
+            "cpu_period": 100000,
+            "cpu_quota": 50000
+        },
+        "at_most": {
+            "mem_limit": 1073741824,
+            "disk_space": 10737418240,
+            "cpu_period": 100000,
+            "cpu_quota": 100000
+        }
+    },
+    "init": {
+        "entry_path": ["usr", "local", "bin", "nutrition-postgres-start"]
+    },
+    "api": [
+        {
+            "port": 5432,
+            "transport": "tcp",
+            "protocol": ["postgresql"]
+        }
+    ],
+    "envs": ["DB_USERNAME", "DB_PASSWORD", "DB_DATABASE", "NUTRITION_DB_CLUSTER"],
+    "network": [
+        {
+            "tags": ["postgres:personal-nutrition"],
+            "prose": "PostgreSQL database holding the personal-nutrition schema (the Laravel migrations of personal-nutrition). Every personal-nutrition instance that uses the same cluster key shares this database.",
+            "formal": {
+                "db.engine": "postgresql",
+                "db.schema": "personal-nutrition",
+                "db.cluster": "${NUTRITION_DB_CLUSTER}"
+            },
+            "protocol_stack": [
+                {"tags": ["postgresql"]}
+            ]
+        }
+    ]
+}

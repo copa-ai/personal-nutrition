@@ -1,13 +1,8 @@
 @php
     $record = $getRecord();
-    $archivo = $record->archivo_log;
     $lineas = [];
-    if ($archivo && is_file($archivo)) {
-        $tam = filesize($archivo);
-        $f = fopen($archivo, 'rb');
-        fseek($f, max(0, $tam - 60000));   // solo el final: una ejecucion larga genera un registro enorme
-        $lineas = array_slice(explode("\n", rtrim((string) stream_get_contents($f))), -300);
-        fclose($f);
+    if (($texto = \App\Services\Agente\AlmacenAgente::registro($record, 60000)) !== null) {   // solo el final: una ejecucion larga genera un registro enorme
+        $lineas = array_slice(explode("\n", rtrim($texto)), -300);
     }
 @endphp
 @include('filament.menus._estilos')

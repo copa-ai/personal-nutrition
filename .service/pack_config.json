@@ -1,4 +1,11 @@
 {
+    "service_dependencies_directory": "__services__",
+    "metadata_dependencies_directory": "__metadata__",
+    "blocks_directory": "__block__",
+    "dependencies": {
+        "NUTRITION_POSTGRES": "dependencies/postgres"
+    },
+    "dependencies_env": true,
     "include": [
         "admin",
         "agente",
