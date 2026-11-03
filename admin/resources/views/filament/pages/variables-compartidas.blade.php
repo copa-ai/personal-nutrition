@@ -41,7 +41,7 @@
             <p class="text-sm text-gray-500">
                 Los nodos tienen que ser peers (<code>nodo connect</code>). El nodo solo ofrece la base de otro dispositivo si su dirección es
                 pública; en una red local pon <code>service_networks.ALLOW_PRIVATE_PEER_ADDRESSES: true</code> en el <code>config.yaml</code> del
-                nodo que pregunta, o pasa <code>-e DB_HOST ... -e DB_PORT ...</code>.
+                nodo que pregunta.
             </p>
         </div>
     </x-filament::section>
