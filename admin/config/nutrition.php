@@ -61,7 +61,9 @@ return [
         'activa' => true,   // fusionar las bases que sobran en la elegida
     ],
     'baja' => [
-        'activa' => false,   // parar el hijo que sobra (solo si ya esta fusionado); apagado hasta probarlo con un nodo real
+        'activa' => true,   // parar el hijo que sobra, solo si ya esta fusionado y despues de guardar una copia de el
+        'copias' => storage_path('app/private/bases-retiradas'),   // la copia que se guarda de una base antes de pararla
+        'copias_guardadas' => 5,                                    // cuantas se conservan
         'silencio_min' => 10,   // minutos sin eventos de auditoria para que una base sobre
     ],
     'vigilancia_cada_s' => 300,

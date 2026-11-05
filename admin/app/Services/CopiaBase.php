@@ -108,11 +108,12 @@ class CopiaBase
      * Vuelca los datos de PostgreSQL como SQL, enviando cada trozo a $salida.
      *
      * @param  callable(string): void  $salida
+     * @param  PDO|null  $pdo  la base que se vuelca; sin ella, la de esta aplicacion
      * @return int numero de tablas volcadas
      */
-    public function volcarSql(callable $salida): int
+    public function volcarSql(callable $salida, ?PDO $pdo = null): int
     {
-        $pdo = DB::connection()->getPdo();
+        $pdo ??= DB::connection()->getPdo();
         $pdo->exec('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
 
         try {
@@ -160,8 +161,9 @@ class CopiaBase
      * Escribe en $salida el SQL .sql.gz de la copia, comprimido por bloques (para usar dentro de un streamDownload).
      *
      * @param  callable(string): void  $salida
+     * @param  PDO|null  $pdo  la base que se vuelca; sin ella, la de esta aplicacion
      */
-    public function volcarGzip(callable $salida): int
+    public function volcarGzip(callable $salida, ?PDO $pdo = null): int
     {
         $z = deflate_init(ZLIB_ENCODING_GZIP);
         $buffer = '';
@@ -171,7 +173,7 @@ class CopiaBase
                 $salida(deflate_add($z, $buffer, ZLIB_NO_FLUSH));
                 $buffer = '';
             }
-        });
+        }, $pdo);
         $salida(deflate_add($z, $buffer, ZLIB_FINISH));
 
         return $n;

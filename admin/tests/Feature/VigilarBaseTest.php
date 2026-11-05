@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\BaseCompartida\Candidata;
+use App\Services\BaseCompartida\CopiaDeRetirada;
 use App\Services\BaseCompartida\Sonda;
 use App\Services\Fusion\Fusionador;
 use Carbon\CarbonImmutable;
@@ -29,6 +30,14 @@ class VigilarBaseTest extends TestCase
 
     public bool $fusionFalla = false;
 
+    /** @var list<array{0: string, 1: string}> copias pedidas antes de parar una base: [direccion, identificador] */
+    public array $copias = [];
+
+    public bool $copiaFalla = false;
+
+    /** @var list<bool> por cada copia, si al hacerla la base todavia no se habia parado */
+    public array $copiasAntesDeParar = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -53,6 +62,15 @@ SH);
             'nutrition.eleccion.margen' => 0.05,
         ]);
         config(['nutrition.fusion.activa' => true]);
+        $this->app->instance(CopiaDeRetirada::class, new class($this) extends CopiaDeRetirada
+        {
+            public function __construct(private readonly VigilarBaseTest $prueba) {}
+
+            public function guardar(string $direccion, string $identificador): string
+            {
+                return $this->prueba->copiaPedida($direccion, $identificador);
+            }
+        });
         $this->app->instance(Fusionador::class, new class($this) extends Fusionador
         {
             public function __construct(private readonly VigilarBaseTest $prueba) {}
@@ -96,6 +114,17 @@ SH);
         $this->alFusionar && ($this->alFusionar)();
 
         return ['insertadas' => 1];
+    }
+
+    public function copiaPedida(string $direccion, string $identificador): string
+    {
+        if ($this->copiaFalla) {
+            throw new \RuntimeException('disco lleno');
+        }
+        $this->copias[] = [$direccion, $identificador];
+        $this->copiasAntesDeParar[] = ! str_contains($this->ordenesAlNodo(), ' stop ');
+
+        return "/copias/retirada-{$identificador}.sql.gz";
     }
 
     /** Cambia lo que la sonda ve de una base (alguien escribio en ella). */
@@ -455,5 +484,71 @@ SH);
         $this->vigilar()->assertSuccessful();
 
         $this->assertSame([], $this->fusiones);
+    }
+
+    public function test_guarda_una_copia_de_la_base_antes_de_pararla(): void
+    {
+        config(['nutrition.baja.activa' => true]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 500, '2026-11-05 11:59:00');
+        $this->hay('10.0.0.2:5432', '222', 40, '2026-11-05 11:00:00');
+        $this->pool(['lease' => 7, 'uri' => '10.0.0.2:5432']);
+
+        $this->vigilar()->expectsOutputToContain('Copia de 10.0.0.2:5432 guardada en /copias/retirada-222.sql.gz')->assertSuccessful();
+
+        $this->assertSame([['10.0.0.2:5432', '222']], $this->copias);
+        $this->assertSame([true], $this->copiasAntesDeParar, 'la copia se hace con la base todavia viva');
+        $this->assertStringContainsString(' stop 7', $this->ordenesAlNodo());
+    }
+
+    public function test_si_no_se_puede_guardar_la_copia_no_se_para_la_base(): void
+    {
+        config(['nutrition.baja.activa' => true]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 500, '2026-11-05 11:59:00');
+        $this->hay('10.0.0.2:5432', '222', 40, '2026-11-05 11:00:00');
+        $this->pool(['lease' => 7, 'uri' => '10.0.0.2:5432']);
+        $this->copiaFalla = true;
+
+        $this->vigilar()->expectsOutputToContain('No se pudo guardar una copia de 10.0.0.2:5432: no se para. disco lleno')->assertSuccessful();
+
+        $this->assertStringNotContainsString(' stop ', $this->ordenesAlNodo());
+
+        $this->copiaFalla = false;
+        $this->vigilar()->assertSuccessful();
+        $this->assertStringContainsString(' stop 7', $this->ordenesAlNodo(), 'al repetirse, con la copia posible, se para');
+    }
+
+    public function test_no_se_hace_copia_de_una_base_que_no_se_va_a_parar(): void
+    {
+        config(['nutrition.baja.activa' => true]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 500, '2026-11-05 11:59:00');      // la elegida
+        $this->hay('10.0.0.2:5432', '222', 40, '2026-11-05 11:55:00');       // escribieron hace 5 min
+        $this->hay('10.0.0.3:5432', '333', 7, '2026-11-05 11:00:00');        // no es suya (no esta en el pool)
+        $this->vecinas('10.0.0.3:5432');
+        $this->pool(['lease' => 1, 'uri' => '10.0.0.1:5432'], ['lease' => 2, 'uri' => '10.0.0.2:5432']);
+
+        $this->vigilar()->assertSuccessful();
+
+        $this->assertSame([], $this->copias);
+    }
+
+    public function test_con_la_baja_desactivada_no_se_hace_copia(): void
+    {
+        config(['nutrition.baja.activa' => false]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 500, '2026-11-05 11:59:00');
+        $this->hay('10.0.0.2:5432', '222', 40, '2026-11-05 11:00:00');
+        $this->pool(['lease' => 7, 'uri' => '10.0.0.2:5432']);
+
+        $this->vigilar()->assertSuccessful();
+
+        $this->assertSame([], $this->copias);
+    }
+
+    public function test_la_baja_automatica_esta_activada_por_defecto(): void
+    {
+        $this->assertTrue((bool) (require base_path('config/nutrition.php'))['baja']['activa']);
     }
 }

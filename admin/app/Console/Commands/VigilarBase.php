@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\BaseCompartida\Candidata;
+use App\Services\BaseCompartida\CopiaDeRetirada;
 use App\Services\BaseCompartida\Eleccion;
 use App\Services\BaseCompartida\EstadoBase;
 use App\Services\BaseCompartida\Sonda;
@@ -23,7 +24,8 @@ use Throwable;
  * eventos tenia la ultima vez que se fusiono, en «<estado>.fusiones»).
  *
  * Una base que este servicio lanzo (esta en su pool de `celaut`), sobra (no es la elegida y lleva N minutos sin eventos) y ya esta
- * fusionada con todo lo que tiene (nadie ha escrito desde la ultima fusion) se para solo con nutrition.baja.activa (apagado hasta probarlo con un nodo real).
+ * fusionada con todo lo que tiene (nadie ha escrito desde la ultima fusion) se para sola (nutrition.baja.activa), pero antes se guarda una
+ * copia entera de ella (App\Services\BaseCompartida\CopiaDeRetirada); si la copia falla, no se para.
  *
  * Nunca falla por no ver bases: si ninguna responde deja el estado como esta.
  */
@@ -31,7 +33,7 @@ use Throwable;
 #[Description('Elige la base compartida en la que escribir y, si esta activado, para las que sobran')]
 class VigilarBase extends Command
 {
-    public function handle(Sonda $sonda, Fusionador $fusionador): int
+    public function handle(Sonda $sonda, Fusionador $fusionador, CopiaDeRetirada $copia): int
     {
         $fichero = (string) $this->argument('estado');
         $estado = EstadoBase::leer($fichero);
@@ -70,7 +72,7 @@ class VigilarBase extends Command
         }
 
         $fusionadas = $this->fusionar($sonda, $fusionador, $fichero, $candidatas, $elegida);
-        $this->darDeBaja($nodo, $pool, $baseDe, $candidatas, $elegida, $eleccion, $fusionadas);
+        $this->darDeBaja($nodo, $copia, $pool, $baseDe, $candidatas, $elegida, $eleccion, $fusionadas);
 
         return self::SUCCESS;
     }
@@ -166,7 +168,7 @@ class VigilarBase extends Command
      * @param  list<Candidata>  $candidatas
      * @param  list<string>  $fusionadas  identificadores de las bases fusionadas con todo lo que tienen
      */
-    private function darDeBaja(Nodo $nodo, array $pool, array $baseDe, array $candidatas, Candidata $elegida, Eleccion $eleccion, array $fusionadas): void
+    private function darDeBaja(Nodo $nodo, CopiaDeRetirada $copia, array $pool, array $baseDe, array $candidatas, Candidata $elegida, Eleccion $eleccion, array $fusionadas): void
     {
         $sobrantes = $eleccion->sobrantes($candidatas, $elegida, CarbonImmutable::now(), (int) config('nutrition.baja.silencio_min'));
         foreach ($pool as $instancia) {
@@ -181,6 +183,15 @@ class VigilarBase extends Command
             }
             if (! config('nutrition.baja.activa')) {
                 $this->line("La base {$instancia['uri']} sobra (sin eventos desde hace {$this->minutos()} min), pero la baja automatica esta desactivada.");
+
+                continue;
+            }
+            // Antes de pararla, una copia entera de ella: si no se puede guardar, no se para.
+            try {
+                $ruta = $copia->guardar($instancia['uri'], $sobra->identificador);
+                $this->line("Copia de {$instancia['uri']} guardada en {$ruta}.");
+            } catch (Throwable $e) {
+                $this->warn("No se pudo guardar una copia de {$instancia['uri']}: no se para. ".$e->getMessage());
 
                 continue;
             }
