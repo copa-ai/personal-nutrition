@@ -15,7 +15,7 @@ Lo que queda abierto tras el rediseño de la ficha del menú. Ordenado por impor
 - [ ] **Modo oscuro sin verificar.** Los colores usan variables de Filament y `color-mix`, así que deberían adaptarse, pero el navegador sin interfaz que usé para las capturas no aplicó el esquema oscuro. Mirarlo a mano.
 - [ ] **Elegir opción en un navegador real.** La interacción (botones de radio de cada toma) está probada con Livewire, pero no con clics reales. Comprobar también el foco con teclado: ahora cada opción es un botón con `Tab`; las flechas no cambian de opción.
 - [ ] **Resto de pantallas sin el mismo repaso:** Hogares, Perfiles, Existencias, Alimentos y Lo comido. La lista de menús se vio antes de poner la interfaz en español.
-- [ ] **Zona horaria.** `config/app.php` sigue en `UTC`, así que el registro del agente muestra horas UTC. Valorar `APP_TIMEZONE=Europe/Madrid`.
+- [ ] **Zona horaria.** Todo corre en `UTC` (constante: la fusión de bases compara `updated_at` sin zona), así que el registro del agente muestra horas UTC. Si se quiere otra, hay que convertirla solo al mostrar.
 - [ ] **Convenciones del equipo (`tall-template`)** no aplicadas: tema (Neobrutalism) y plugins. La skill no era legible desde el sandbox. La interfaz usa estilos propios (`resources/views/filament/menus/_estilos.blade.php`) porque no hay tema compilado.
 
 ## PDF

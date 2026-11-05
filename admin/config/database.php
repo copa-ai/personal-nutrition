@@ -85,8 +85,8 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
-            // La hora de los triggers de auditoria es la de la sesion: la misma que la de Eloquent.
-            'timezone' => env('DB_TIMEZONE', env('APP_TIMEZONE', 'UTC')),
+            // La hora de los triggers de auditoria es la de la sesion: la misma que la de Eloquent (config/app.php, UTC en todos los dispositivos).
+            'timezone' => 'UTC',
         ],
 
         'sqlsrv' => [

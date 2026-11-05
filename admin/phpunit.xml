@@ -35,7 +35,6 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
-        <env name="NUTRITION_INSTANCIA" value="prueba" force="true"/>
         <env name="AGENTE_URL" value="" force="true"/>
         <server name="AGENTE_URL" value="" force="true"/>
         <env name="AGENTE_S3_BUCKET" value="" force="true"/>

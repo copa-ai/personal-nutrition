@@ -19,12 +19,11 @@ use Throwable;
  * Revisa las bases PostgreSQL de la red (las mismas que busca `nutrition:base-datos`), decide en cual escribir (App\Services\BaseCompartida\Eleccion)
  * y, si cambia, reescribe el fichero de estado: la aplicacion se reconecta sola. start.sh lo ejecuta cada pocos minutos.
  *
- * Los datos de cada base que no es la elegida se fusionan en la elegida (App\Services\Fusion\Fusionador; NUTRITION_FUSION_AUTOMATICA, activo por
- * defecto): es idempotente y no toca la base de origen, asi que se repite mientras esta siga recibiendo escrituras (se recuerda que
+ * Los datos de cada base que no es la elegida se fusionan en la elegida (App\Services\Fusion\Fusionador; config nutrition.fusion.activa, activo): es idempotente y no toca la base de origen, asi que se repite mientras esta siga recibiendo escrituras (se recuerda que
  * eventos tenia la ultima vez que se fusiono, en «<estado>.fusiones»).
  *
  * Una base que este servicio lanzo (esta en su pool de `celaut`), sobra (no es la elegida y lleva N minutos sin eventos) y ya esta
- * fusionada con todo lo que tiene (nadie ha escrito desde la ultima fusion) se para solo con NUTRITION_BAJA_AUTOMATICA, apagado por defecto.
+ * fusionada con todo lo que tiene (nadie ha escrito desde la ultima fusion) se para solo con nutrition.baja.activa (apagado hasta probarlo con un nodo real).
  *
  * Nunca falla por no ver bases: si ninguna responde deja el estado como esta.
  */

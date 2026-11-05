@@ -43,10 +43,10 @@ return [
     // Esperas al arrancar. La base corre emulada si el nodo no es arm64 (minutos para arrancar) y lanzarla se paga del saldo de esta
     // instancia: en vez de salir (y que el nodo reinicie el servicio, lanzando otra base), se espera y se reintenta.
     'espera' => [
-        'arranque_s' => (int) env('NUTRITION_ESPERA_ARRANQUE_S', 1800),   // a que una base lanzada acepte conexiones
-        'reutilizar_s' => (int) env('NUTRITION_ESPERA_REUTILIZAR_S', 180), // a una base lanzada en un arranque anterior
-        'intentos_lanzar' => (int) env('NUTRITION_INTENTOS_LANZAR', 120),   // con saldo insuficiente u otro rechazo transitorio
-        'pausa_lanzar_s' => (int) env('NUTRITION_PAUSA_LANZAR_S', 15),
+        'arranque_s' => 1800,   // a que una base lanzada acepte conexiones
+        'reutilizar_s' => 180, // a una base lanzada en un arranque anterior
+        'intentos_lanzar' => 120,   // con saldo insuficiente u otro rechazo transitorio
+        'pausa_lanzar_s' => 15,
     ],
 
     // La base en la que escribe este dispositivo: fichero JSON {host, port, cluster} que mantienen `nutrition:base-datos` y
@@ -55,19 +55,20 @@ return [
 
     // Entre varias bases con el mismo cluster (App\Services\BaseCompartida\Eleccion): en cual se escribe y cuales sobran.
     'eleccion' => [
-        'margen' => (float) env('NUTRITION_ELECCION_MARGEN', 0.05),   // la base actual se mantiene si la mejor no la supera en mas de esto
+        'margen' => 0.05,   // la base actual se mantiene si la mejor no la supera en mas de esto
     ],
     'fusion' => [
-        'activa' => filter_var(env('NUTRITION_FUSION_AUTOMATICA', true), FILTER_VALIDATE_BOOL),   // fusionar las bases que sobran en la elegida
+        'activa' => true,   // fusionar las bases que sobran en la elegida
     ],
     'baja' => [
-        'activa' => filter_var(env('NUTRITION_BAJA_AUTOMATICA', false), FILTER_VALIDATE_BOOL),   // parar el hijo que sobra (solo si ya esta fusionado)
-        'silencio_min' => (int) env('NUTRITION_BAJA_SILENCIO_MIN', 10),   // minutos sin eventos de auditoria para que una base sobre
+        'activa' => false,   // parar el hijo que sobra (solo si ya esta fusionado); apagado hasta probarlo con un nodo real
+        'silencio_min' => 10,   // minutos sin eventos de auditoria para que una base sobre
     ],
-    'vigilancia_cada_s' => (int) env('NUTRITION_VIGILANCIA_CADA_S', 300),
+    'vigilancia_cada_s' => 300,
 
-    // Identificador de esta instancia en la auditoria (App\Services\Instancia): el dado aqui o, si no, uno generado y guardado en storage/app.
-    'instancia' => env('NUTRITION_INSTANCIA') ?: null,
+    // Identificador de esta instancia en la auditoria (App\Services\Instancia): el dado aqui o, si no (siempre, salvo en las pruebas), uno
+    // generado la primera vez y guardado en storage/app.
+    'instancia' => null,
 
     'celaut' => [
         'binario' => env('CELAUT_BIN', 'celaut'),

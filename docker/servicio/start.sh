@@ -21,8 +21,9 @@
 # Base de datos: PostgreSQL compartida entre dispositivos. `php artisan nutrition:base-datos` (que habla con el nodo con `celaut`,
 # de celaut-project/service-library) la busca en la red «postgres» (PostgreSQL con el esquema de personal-nutrition) o lanza nutrition-postgres como hijo.
 #
-# Variables de service.json -> envs (todas opcionales): APP_URL, APP_TIMEZONE, AGENTE_MODELO, AGENTE_MAX_SIMULTANEAS,
-# NUTRITION_RED (opcional): lo que hay que compartir entre dispositivos que usan la misma base, en una sola variable corta
+# Variable de service.json -> envs: solo NUTRITION_RED (opcional). Todo lo demas (zona horaria, modelo y simultaneidad del agente, ajustes
+# de la eleccion y fusion de bases) es constante: no lo toca el usuario.
+# NUTRITION_RED: lo que hay que compartir entre dispositivos que usan la misma base, en una sola variable corta
 # (base64url de «APP_KEY|cluster|clave_bd»; la da Ajustes -> Variables compartidas). Trae APP_KEY (cifra el token de Claude y las
 # sesiones), la clave publica de la red de la base y su contraseña. Sin ella, el dispositivo genera las suyas y empieza una red nueva.
 set -eu
@@ -134,7 +135,7 @@ mkdir -p "$DATOS/agente/app" "$DATOS/agente/estado" "$DATOS/agente/home"
 chown -R agente:agente "$DATOS/agente"; chmod 700 "$DATOS/agente"
 fase agente "en curso" "arrancando el runner en 127.0.0.1:9000"
 lanzar como agente AGENTE_SECRETO="$AGENTE_SECRETO" AGENTE_CARPETA="$DATOS/agente/app" AGENTE_ESTADO="$DATOS/agente/estado" \
-    AGENTE_MAX_SIMULTANEAS="${AGENTE_MAX_SIMULTANEAS:-1}" -- /opt/runner/entrypoint.sh
+    AGENTE_MAX_SIMULTANEAS=1 -- /opt/runner/entrypoint.sh
 agente_sano() { python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:9000/salud', timeout=3)" 2>/dev/null; }
 # El agente ya no bloquea el arranque: la web solo lo necesita al generar menus. Se vigila mientras se hace lo demas.
 agente_vigilar() { [ "${F_ESTADO[agente]}" = ok ] || ! agente_sano || fase agente ok "responde en 127.0.0.1:9000"; }
@@ -151,7 +152,7 @@ chown -R app:app "$A"; chmod 700 "$A"
 
 ENTORNO_BASE=(
     APP_ENV=production APP_DEBUG=false APP_KEY="$APP_KEY" APP_LOCALE=es APP_FALLBACK_LOCALE=en APP_FAKER_LOCALE=es_ES
-    APP_NAME="Personal Nutrition" APP_URL="${APP_URL:-http://127.0.0.1:8000}" APP_TIMEZONE="${APP_TIMEZONE:-UTC}"
+    APP_NAME="Personal Nutrition" APP_URL=http://127.0.0.1:8000
     LARAVEL_STORAGE_PATH="$A/storage"
     APP_SERVICES_CACHE="$A/bootstrap-cache/services.php" APP_PACKAGES_CACHE="$A/bootstrap-cache/packages.php"
     APP_CONFIG_CACHE="$A/bootstrap-cache/config.php" APP_ROUTES_CACHE="$A/bootstrap-cache/routes-v7.php" APP_EVENTS_CACHE="$A/bootstrap-cache/events.php"
@@ -159,7 +160,6 @@ ENTORNO_BASE=(
     DB_QUEUE_RETRY_AFTER=14400
     CHAT_SECRETO="$CHAT_SECRETO"
     AGENTE_CARPETA="$A/agente" AGENTE_URL=http://127.0.0.1:9000 AGENTE_SECRETO="$AGENTE_SECRETO" AGENTE_ALMACEN=base
-    AGENTE_MODELO="${AGENTE_MODELO:-claude-sonnet-5-5}"
 )
 
 # --- Base de datos compartida: la busca en la red (o lanza nutrition-postgres) con `celaut`, el binario de service-library ---
@@ -180,10 +180,7 @@ fase base ok "$DB_ANFITRION:$DB_PUERTO"
 agente_vigilar
 
 # NUTRITION_BASE_ESTADO: el fichero con la base en la que se escribe; `nutrition:vigilar-base` lo cambia y la app se reconecta sin reiniciar.
-# Los ajustes de la eleccion de base solo se pasan si se dieron (vacios romperian los valores por defecto).
-ENTORNO_APP=("${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" DB_HOST="$DB_ANFITRION" DB_PORT="$DB_PUERTO" NUTRITION_DB_CLUSTER="$NUTRITION_DB_CLUSTER"
-    NUTRITION_BASE_ESTADO="$RUN_DB" ${NUTRITION_ELECCION_MARGEN:+NUTRITION_ELECCION_MARGEN=$NUTRITION_ELECCION_MARGEN}
-    ${NUTRITION_FUSION_AUTOMATICA:+NUTRITION_FUSION_AUTOMATICA=$NUTRITION_FUSION_AUTOMATICA} ${NUTRITION_BAJA_AUTOMATICA:+NUTRITION_BAJA_AUTOMATICA=$NUTRITION_BAJA_AUTOMATICA} ${NUTRITION_BAJA_SILENCIO_MIN:+NUTRITION_BAJA_SILENCIO_MIN=$NUTRITION_BAJA_SILENCIO_MIN})
+ENTORNO_APP=("${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" DB_HOST="$DB_ANFITRION" DB_PORT="$DB_PUERTO" NUTRITION_DB_CLUSTER="$NUTRITION_DB_CLUSTER" NUTRITION_BASE_ESTADO="$RUN_DB")
 app() { ( como app "${ENTORNO_APP[@]}" -- "$@" ); }
 
 app cp -R /opt/agente-kit/. "$A/agente/"
@@ -227,8 +224,8 @@ done
 fase web ok "escucha en :8000"
 fase cola ok
 
-# --- Vigilante de la base compartida: cada NUTRITION_VIGILANCIA_CADA_S (300 s) elige en que base escribir entre las de la red ---
-lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while sleep "$1"; do php artisan nutrition:vigilar-base "$2" || true; done' vigilante "${NUTRITION_VIGILANCIA_CADA_S:-300}" "$RUN_DB"
+# --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red ---
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while sleep "$1"; do php artisan nutrition:vigilar-base "$2" || true; done' vigilante 300 "$RUN_DB"
 
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"

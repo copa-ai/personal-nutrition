@@ -128,7 +128,7 @@ Piezas y quién habla con quién:
 ### (j) Límites
 
 - **2 GiB de memoria** para todo el microVM (`service.json`): FrankenPHP, la cola, el runner con `claude -p`, la página de estado, la base si la lanza como hijo, y ahora el traductor. Una instantánea grande o varios `claude -p` a la vez pueden agotarla.
-- **Un solo agente simultáneo** (`AGENTE_MAX_SIMULTANEAS=1` por defecto en `start.sh`), **compartido con la generación de menús**. Un runner ocupado devuelve 429. Además la cola es un único `queue:work` y la generación de un menú puede durar horas (`DB_QUEUE_RETRY_AFTER=14400`, `--timeout=0`): por eso el chat usa su propia cola (`chat`) con su propio worker en `start.sh`; aun así, la respuesta de **Claude** sigue compartiendo el único agente con la generación de menús. Es el coste más visible de la arquitectura de un solo microVM.
+- **Un solo agente simultáneo** (`AGENTE_MAX_SIMULTANEAS=1`, constante en `start.sh`), **compartido con la generación de menús**. Un runner ocupado devuelve 429. Además la cola es un único `queue:work` y la generación de un menú puede durar horas (`DB_QUEUE_RETRY_AFTER=14400`, `--timeout=0`): por eso el chat usa su propia cola (`chat`) con su propio worker en `start.sh`; aun así, la respuesta de **Claude** sigue compartiendo el único agente con la generación de menús. Es el coste más visible de la arquitectura de un solo microVM.
 - **Fotos de 4 MiB** como máximo, hasta 4 por mensaje, `image/jpeg` y `image/png` (§7; el audio no se acepta). Texto hasta 16 384 bytes.
 - Carga de petición: Caddy limita el cuerpo a 20 MB; el runner, a 64 MB y 8 MB por archivo.
 
@@ -200,7 +200,7 @@ Piezas y quién habla con quién:
 | Riesgo | Cómo vigilarlo |
 |---|---|
 | Chat bloqueado por un menú largo en la cola | Medir el tiempo entre mensaje y primera respuesta; si pasa de unos segundos con menú en marcha, separar cola y worker del chat |
-| Memoria (2 GiB) | Observar OOM del microVM; limitar tamaño de la instantánea; mantener `AGENTE_MAX_SIMULTANEAS=1` |
+| Memoria (2 GiB) | Observar OOM del microVM; limitar tamaño de la instantánea; mantener `AGENTE_MAX_SIMULTANEAS=1` (constante en `start.sh`) |
 | Crecimiento de la base por fotos | Tamaño de `chat_archivos` en la página de copia de seguridad; si pasa de unos cientos de MiB, plantear purga, miniaturas o almacenamiento de objetos |
 | Inyección de prompt desde fotos/texto | Revisar que el conjunto de acciones sea cerrado y que Laravel valide cada campo; mantener las pruebas con acciones maliciosas |
 | Spec que cambia (secretos ronda 8, título, sugerencias) | Seguir el historial de revisiones (§15) y mantener el traductor y el contrato versionados juntos |

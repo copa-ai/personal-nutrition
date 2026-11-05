@@ -16,7 +16,7 @@ return [
     'claude' => env('AGENTE_CLAUDE', 'claude'),
 
     // Modelo que se pasa a `claude -p --model` en todas las ejecuciones (la planificacion del menú).
-    'modelo' => env('AGENTE_MODELO') ?: 'claude-sonnet-5-5',
+    'modelo' => 'claude-sonnet-5-5',
 
     // Tarifas en USD por millon de tokens, por modelo. `busqueda_web` es USD por busqueda. Se aplican AL REGISTRAR cada respuesta del
     // modelo (RegistroConsumo) y la tarifa usada se guarda con ella: cambiar esto NO altera lo ya registrado, solo lo que llegue despues.
