@@ -32,6 +32,43 @@
         </div>
     </x-filament::section>
 
+    <x-filament::section heading="Código QR de NUTRITION_RED">
+        @if (filled($red))
+            <div class="space-y-3"
+                 data-qr-script="{{ asset('vendor/qrcode.min.js') }}"
+                 x-data="{
+                     async dibujar() {
+                         if (! window.qrcode) {
+                             window.qrcodeCargando = window.qrcodeCargando || new Promise((resolver, rechazar) => {
+                                 const script = document.createElement('script');
+                                 script.src = this.$el.dataset.qrScript;
+                                 script.onload = resolver;
+                                 script.onerror = () => { window.qrcodeCargando = null; rechazar(); };
+                                 document.head.appendChild(script);
+                             });
+                             try { await window.qrcodeCargando; } catch (e) { return; }
+                         }
+                         const qr = window.qrcode(0, 'M');
+                         qr.addData(@js($red));
+                         qr.make();
+                         this.$refs.qr.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 4, scalable: true });
+                     },
+                 }"
+                 x-init="dibujar()">
+                <div wire:ignore class="mx-auto w-64 max-w-full rounded-lg bg-white p-3" data-qr-nutrition-red>
+                    <div x-ref="qr"></div>
+                </div>
+                <p class="text-center text-sm text-gray-500">Léelo con la cámara del móvil para obtener la variable NUTRITION_RED.</p>
+                <p class="text-sm font-medium text-danger-600 dark:text-danger-400">
+                    Atención: este código y la cadena NUTRITION_RED son una credencial completa (APP_KEY y contraseña de la base).
+                    No lo muestres ni lo compartas con nadie que no deba tener acceso.
+                </p>
+            </div>
+        @else
+            <p class="text-sm text-gray-500">Sin valor en este dispositivo, no hay código QR.</p>
+        @endif
+    </x-filament::section>
+
     <x-filament::section heading="Arrancar otro dispositivo">
         <div x-data="{ copiado: false }" class="space-y-2">
             <pre class="overflow-x-auto rounded-lg bg-gray-900 p-3 text-xs text-gray-100">{{ $orden }}</pre>

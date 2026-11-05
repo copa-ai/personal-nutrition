@@ -26,6 +26,26 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * Impide borrar al usuario en sesión y al último usuario que queda; protege también el borrado en bloque.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (User $usuario): bool {
+            return $usuario->puedeBorrarse();
+        });
+    }
+
+    /** Un usuario no puede borrarse a sí mismo ni ser el último que queda. */
+    public function puedeBorrarse(): bool
+    {
+        if ($this->getKey() === auth()->id()) {
+            return false;
+        }
+
+        return static::query()->count() > 1;
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

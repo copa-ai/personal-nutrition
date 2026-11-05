@@ -15,5 +15,25 @@
 	request_body {
 		max_size 20MB
 	}
-	php_server
+	# Pagina de estado del arranque (estado/servidor.py la sirve mientras la web no existe; aqui, las mismas rutas con los mismos ficheros).
+	handle /estado {
+		root * /opt/nutrition/estado
+		rewrite * /index.html
+		header Cache-Control no-store
+		file_server
+	}
+	handle /estado.json {
+		root * /var/lib/nutrition/publico
+		header Cache-Control no-store
+		file_server
+	}
+	handle /app.log {
+		root * /var/lib/nutrition/publico
+		header Content-Type "text/plain; charset=utf-8"
+		header Cache-Control no-store
+		file_server
+	}
+	handle {
+		php_server
+	}
 }

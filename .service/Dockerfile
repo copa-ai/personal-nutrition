@@ -71,7 +71,8 @@ COPY ./docker/agente/runner.py /opt/runner/runner.py
 COPY ./docker/agente/entrypoint.sh /opt/runner/entrypoint.sh
 COPY ./docker/servicio/start.sh /opt/nutrition/start.sh
 COPY ./docker/servicio/Caddyfile /opt/nutrition/Caddyfile
-RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh \
+COPY ./docker/servicio/estado /opt/nutrition/estado
+RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/estado/servidor.py \
     && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh \
     && mkdir -p /var/lib/nutrition
 

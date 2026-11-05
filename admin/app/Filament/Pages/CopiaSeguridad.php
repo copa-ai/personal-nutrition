@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Auditoria;
 use App\Services\CopiaBase;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -30,7 +31,7 @@ class CopiaSeguridad extends Page
 
     public function getViewData(): array
     {
-        return ['disponible' => CopiaBase::disponible()];
+        return ['disponible' => CopiaBase::disponible(), 'postgres' => CopiaBase::esPostgres()];
     }
 
     protected function getHeaderActions(): array
@@ -39,12 +40,31 @@ class CopiaSeguridad extends Page
             Action::make('exportar')->label('Descargar copia')->icon(Heroicon::OutlinedArrowDownTray)
                 ->visible(fn () => CopiaBase::disponible())
                 ->action(function () {
-                    $ruta = app(CopiaBase::class)->exportar();
+                    $copia = app(CopiaBase::class);
+                    $nombre = CopiaBase::nombreDescarga();
 
-                    return response()->download($ruta, 'nutrition-'.now()->format('Y-m-d-His').'.sqlite')->deleteFileAfterSend();
+                    if (CopiaBase::esPostgres()) {
+                        $tablas = 0;
+
+                        return response()->streamDownload(function () use ($copia, &$tablas): void {
+                            $tablas = $copia->volcarGzip(function (string $trozo): void {
+                                echo $trozo;
+                                if (ob_get_level() > 0) {
+                                    ob_flush();
+                                }
+                                flush();
+                            });
+                            Auditoria::registrar('copia.exportada', 'Copia de seguridad exportada', ['formato' => 'sql.gz', 'tablas' => $tablas]);
+                        }, $nombre, ['Content-Type' => 'application/gzip']);
+                    }
+
+                    $ruta = $copia->exportar();
+                    Auditoria::registrar('copia.exportada', 'Copia de seguridad exportada', ['formato' => 'sqlite', 'tablas' => null]);
+
+                    return response()->download($ruta, $nombre)->deleteFileAfterSend();
                 }),
             Action::make('importar')->label('Restaurar copia')->icon(Heroicon::OutlinedArrowUpTray)->color('danger')
-                ->visible(fn () => CopiaBase::disponible())
+                ->visible(fn () => CopiaBase::puedeImportar())
                 ->modalHeading('Restaurar una copia de seguridad')
                 ->modalDescription('Sustituye TODOS los datos actuales (hogares, menús, lo comido, usuarios…) por los de la copia. No se puede deshacer: descarga antes una copia de lo que hay ahora.')
                 ->modalSubmitActionLabel('Sustituir datos')
@@ -56,6 +76,7 @@ class CopiaSeguridad extends Page
                     $disco = Storage::disk('local');
                     try {
                         $resumen = app(CopiaBase::class)->importar($disco->path($data['copia']));
+                        Auditoria::registrar('copia.importada', 'Copia de seguridad restaurada', ['tablas' => count($resumen), 'filas' => array_sum($resumen)]);
                         Notification::make()->title('Copia restaurada')
                             ->body(array_sum($resumen).' filas en '.count($resumen).' tablas. Si cambió tu usuario, vuelve a iniciar sesión.')->success()->send();
                     } catch (Throwable $e) {

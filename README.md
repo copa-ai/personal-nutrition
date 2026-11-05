@@ -104,10 +104,28 @@ Varios dispositivos pueden usar el sistema compartiendo **una sola base PostgreS
 
 | Campo de la red | Valor |
 |---|---|
-| `tags` | `postgres:personal-nutrition` |
-| `prose` | PostgreSQL con el esquema de personal-nutrition |
-| `formal` | `db.engine=postgresql`, `db.schema=personal-nutrition`, `db.cluster=${NUTRITION_DB_CLUSTER}` |
+| `tags` | `postgres` (exacto, sin sufijo) |
+| `prose` | PostgreSQL con el esquema de las migraciones de personal-nutrition; la comparten las instancias con el mismo cluster y el mismo esquema |
+| `formal` | `db.engine=postgresql`, `db.schema=personal-nutrition`, `db.cluster=${NUTRITION_DB_CLUSTER}` (clave de selección: la pone quien instancia) y una clave `db.table.<tabla>` por tabla con todo su esquema (ver abajo) |
 | `protocol_stack` | `postgresql` (el puerto 5432 de la base lo expone en su `api`) |
+
+Cada `db.table.<tabla>` es una cadena de una sola línea (el `formal` se empaqueta como líneas `clave=valor` y se compara byte a byte) con esta gramática:
+
+```
+valor    := columnas { " | " restricción }
+columnas := columna { "; " columna }          # en el orden real de la tabla
+columna  := nombre ":" tipo [" null"] [" auto"] [" default=" expresión]
+restricción (en este orden): pk(cols) | uq(cols)... | idx(cols)... | fk(cols->tabla.cols del=acción upd=acción)...
+```
+
+`tipo` es el de PostgreSQL tal como lo devuelve `Schema::getColumns()` (`bigint`, `character varying(255)`, `timestamp(0) without time zone`, `numeric(10,2)`, `jsonb`…); sin ` null` la columna es NOT NULL; ` auto` marca las auto-incrementales; `default` es la expresión que guarda PostgreSQL. Los índices, uniques y claves foráneas van sin nombre (lo deriva Laravel) y ordenados por sus columnas; las acciones son `no action`, `restrict`, `cascade`, `set null` o `set default`. Se incluyen todas las tablas de las migraciones excepto `migrations` (la de la herramienta). Por ejemplo:
+
+```
+db.table.hogares = id:bigint auto; nombre:character varying(255); created_at:timestamp(0) without time zone null; updated_at:timestamp(0) without time zone null; menu_id:bigint null; cambios:json null | pk(id) | fk(menu_id->menus.id del=set null upd=no action)
+db.table.alimentos = id:bigint auto; nombre:character varying(255); categoria:character varying(20) default='otro'::character varying; unidad:character varying(10) default='g'::character varying; created_at:…null; updated_at:…null | pk(id) | uq(nombre)
+```
+
+**El `formal` incluye el esquema completo y hay que mantenerlo al día.** La fuente única es `admin/database/esquema.json` (lo lee `config/nutrition.php`). Tras cada migración nueva, con la conexión `pgsql` ya migrada: `php artisan nutrition:esquema --escribir` regenera `esquema.json` (`--comprobar` falla si difiere de la base migrada) y `python3 admin/database/sincronizar-esquema.py` lo copia al `formal` de los dos `service.json` (`.service/` y `dependencies/postgres/.service/`), que tienen que ser idénticos entre sí y a `config('nutrition.red.formal')` más `db.cluster` (lo comprueba `EsquemaServicioTest`). La consecuencia: dos dispositivos con esquemas distintos (versiones distintas de las migraciones) pertenecen a **redes distintas** y no se ven: no comparten base de datos.
 
 El nodo indexa una instancia como miembro de la red si la declara **y** expone el protocolo (`docs/NETWORKS.md`, «Network Instance Indexing»). Al arrancar:
 

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Nutrition · arrancando</title>
+<style>
+:root { --bg:#fafaf7; --fg:#1d1d1b; --mut:#6b6b66; --card:#fff; --line:#e3e2dc; --ok:#1f7a3d; --run:#b26a00; --err:#b3261e; --warn:#8a6d00; --log:#111; --logfg:#d8d8d2; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141413; --fg:#ecebe6; --mut:#9a9992; --card:#1d1d1b; --line:#33322f; --ok:#5fd08a; --run:#f0b04a; --err:#ff8a80; --warn:#e6c85a; --log:#0b0b0a; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+main { max-width:860px; margin:0 auto; padding:24px 16px 48px; }
+h1 { font-size:1.4rem; margin:0 0 4px; }
+.sub { color:var(--mut); margin:0 0 20px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:4px 16px; margin-bottom:20px; }
+.fase { display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); align-items:baseline; }
+.fase:last-child { border-bottom:0; }
+.ico { width:1.4em; text-align:center; font-weight:700; }
+.nombre { font-weight:600; }
+.detalle { color:var(--mut); font-size:.9rem; overflow-wrap:anywhere; }
+.pendiente .ico { color:var(--mut); } .ok .ico { color:var(--ok); } .error .ico { color:var(--err); }
+.aviso .ico { color:var(--warn); } .en-curso .ico { color:var(--run); }
+.en-curso .ico { animation: giro 1s linear infinite; display:inline-block; }
+@keyframes giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .en-curso .ico { animation:none; } }
+.banner { padding:12px 16px; border-radius:10px; margin-bottom:20px; border:1px solid var(--line); background:var(--card); }
+.banner.error { border-color:var(--err); color:var(--err); } .banner.ok { border-color:var(--ok); color:var(--ok); }
+.cab { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.cab a { color:inherit; }
+pre { margin:8px 0 0; background:var(--log); color:var(--logfg); padding:12px; border-radius:10px; height:340px; overflow:auto; font:12.5px/1.45 ui-monospace, monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Personal Nutrition</h1>
+  <p class="sub" id="sub">Arrancando el servicio…</p>
+  <div class="banner" id="banner" hidden></div>
+  <div class="card" id="fases" aria-live="polite"></div>
+  <div class="cab"><strong>app.log</strong><span><a href="/app.log" target="_blank" rel="noopener">abrir completo</a></span></div>
+  <pre id="log" tabindex="0">Cargando…</pre>
+</main>
+<script>
+const ICONOS = { pendiente:'○', 'en curso':'◐', ok:'✓', error:'✕', aviso:'!' };
+const $ = id => document.getElementById(id);
+let listoAlCargar = null, fallos = 0;
+
+async function ciclo() {
+  try {
+    const e = await (await fetch('/estado.json', { cache:'no-store' })).json();
+    fallos = 0;
+    if (listoAlCargar === null) listoAlCargar = e.listo;
+    pintar(e);
+    if (e.listo && !listoAlCargar) { setTimeout(() => location.assign('/'), 1200); return; }
+  } catch (_) {
+    fallos++;
+    $('sub').textContent = fallos > 1 ? 'Sin respuesta del servicio; reintentando…' : $('sub').textContent;
+  }
+  try {
+    const r = await fetch('/app.log', { cache:'no-store', headers:{ Range:'bytes=-60000' } });
+    const texto = r.ok || r.status === 206 ? await r.text() : '';
+    const pre = $('log'), abajo = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
+    if (pre.textContent !== (texto || '(vacío)')) { pre.textContent = texto || '(vacío)'; if (abajo) pre.scrollTop = pre.scrollHeight; }
+  } catch (_) {}
+  setTimeout(ciclo, 2000);
+}
+
+function pintar(e) {
+  const t = Math.max(0, Math.round(Date.now() / 1000 - e.inicio));
+  $('sub').textContent = e.listo ? 'Servicio listo.' : `Arrancando el servicio · ${t} s`;
+  const b = $('banner');
+  b.hidden = !(e.fallo || e.listo);
+  b.className = 'banner ' + (e.fallo ? 'error' : 'ok');
+  b.textContent = e.fallo || 'Todo listo: abriendo la aplicación…';
+  $('fases').replaceChildren(...e.fases.map(f => {
+    const d = document.createElement('div');
+    d.className = 'fase ' + f.estado.replace(' ', '-');
+    d.innerHTML = '<span class="ico"></span><div><div class="nombre"></div><div class="detalle"></div></div>';
+    d.querySelector('.ico').textContent = ICONOS[f.estado] || '?';
+    d.querySelector('.nombre').textContent = f.nombre;
+    d.querySelector('.detalle').textContent = f.detalle || f.estado;
+    return d;
+  }));
+}
+ciclo();
+</script>
+</body>
+</html>

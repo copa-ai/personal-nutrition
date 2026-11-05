@@ -36,7 +36,8 @@ class Nodo
 
     /**
      * Direcciones «ip:puerto» del puerto con ese protocolo de los miembros que el nodo resolvio para la red al lanzar este servicio
-     * (`celaut config`; `networks[].members` trae todos los puertos de cada miembro).
+     * (`celaut config`; `networks[].members` trae todos los puertos de cada miembro). El tag se compara exacto («postgres») entre las
+     * redes que este servicio declara; solo declara una con ese tag, y lo que la distingue de otras bases es su `formal`.
      *
      * @return list<string>
      */
@@ -55,7 +56,8 @@ class Nodo
      * abre en el firewall de este servicio las direcciones que devuelve. La peticion tiene que caber en lo que el servicio declaro
      * (mismos tags, claves fijas iguales; `db.cluster` se rellena), si no el nodo la rechaza.
      *
-     * @param  array<string, string>  $formal  clave => valor, ya sin variables ${...}
+     * @param  array<string, string>  $formal  clave => valor, ya sin variables ${...}. Lleva el esquema completo (`db.table.*`): cada
+     *                                         clave sale como un argumento `--formal clave=valor` (el valor puede contener «=»)
      * @return list<string> direcciones «ip:puerto» del puerto con $protocolo
      */
     public function resolverRed(string $tag, array $formal, string $protocolo): array

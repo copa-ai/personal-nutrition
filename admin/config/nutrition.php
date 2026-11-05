@@ -1,19 +1,30 @@
 <?php
 
 /*
+ * El esquema de la base de datos va en el `formal` de la red (claves `db.table.*`); se lee de database/esquema.json, que genera
+ * `php artisan nutrition:esquema --escribir` (gramatica en App\Services\EsquemaBaseDatos).
+ */
+$esquema = json_decode((string) file_get_contents(database_path('esquema.json')), true);
+if (! is_array($esquema) || json_last_error() !== JSON_ERROR_NONE) {
+    throw new RuntimeException('database/esquema.json no es un JSON valido: '.json_last_error_msg());
+}
+
+/*
  * Lo que comparten entre si las instancias de Personal Nutrition que usan la misma base de datos, y como hablan con su nodo Celaut.
  * Ver docker/servicio/start.sh y App\Console\Commands\BaseDatosCompartida.
  */
 return [
     // La red Celaut de la base de datos compartida: nutrition-postgres la declara y cada Laravel declara la misma
-    // (.service/service.json -> network y dependencies/postgres/.service/service.json).
+    // (.service/service.json -> network y dependencies/postgres/.service/service.json). El `formal` describe PostgreSQL con TODO el
+    // esquema de las migraciones: dos dispositivos con esquemas distintos estan en redes distintas.
     'red' => [
-        'tag' => 'postgres:personal-nutrition',
+        'tag' => 'postgres',
         'dependencia' => 'NUTRITION_POSTGRES',   // entrada de .dependencies del servicio empaquetado
         'puerto' => 5432,
         'protocolo' => 'postgresql',            // protocol_stack de la red y del api de la base: de ahi se elige el puerto de un miembro
-        // Claves fijas del `formal` (las de seleccion, `db.cluster`, las pone quien instancia). Iguales a las de service.json.
-        'formal' => ['db.engine' => 'postgresql', 'db.schema' => 'personal-nutrition'],
+        // Claves fijas del `formal` (la de seleccion, `db.cluster`, la pone quien instancia). Iguales, byte a byte, a las de los dos
+        // service.json (database/sincronizar-esquema.py los reescribe desde esquema.json).
+        'formal' => ['db.engine' => 'postgresql', 'db.schema' => 'personal-nutrition', ...$esquema],
     ],
 
     // Con que usuario/base se crea nutrition-postgres.

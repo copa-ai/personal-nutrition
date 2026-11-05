@@ -15,7 +15,7 @@ use Illuminate\Support\Str;
  *  1. Una base que este servicio lanzo en un arranque anterior (pool de `celaut`): se reutiliza. El nodo no la reconoce por la red
  *     (compara el `formal` declarado, con `${NUTRITION_DB_CLUSTER}` sin rellenar, con el pedido ya relleno) y `celaut acquire` no
  *     reutiliza una instancia aun arrendada, asi que sin esto cada reinicio lanzaria otra base.
- *  2. Las instancias de la red «postgres:personal-nutrition» que el nodo resolvio al lanzar este servicio (celaut config).
+ *  2. Las instancias de la red «postgres» (PostgreSQL con el esquema de las migraciones en su `formal`; config nutrition.red) que el nodo resolvio al lanzar este servicio (celaut config).
  *  3. Preguntarle al nodo ahora, con la clave de red ya rellena (celaut resolve = Gateway.ResolveNetwork): mira sus instancias, las
  *     semillas del operador y lo que ofrecen sus peers (service_networks.ASK_PEERS).
  *  4. Ninguna: se lanza nutrition-postgres como hijo de este servicio (celaut acquire) con la misma clave de red.

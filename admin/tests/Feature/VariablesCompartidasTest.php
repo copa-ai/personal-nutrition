@@ -21,7 +21,39 @@ class VariablesCompartidasTest extends TestCase
             ->assertOk()
             ->assertSee('NUTRITION_RED')
             ->assertSee('-e NUTRITION_RED', false)
-            ->assertDontSee('NUTRITION_DB_CLUSTER');
+            ->assertSee('APP_KEY')
+            ->assertSee('NUTRITION_DB_CLUSTER')
+            ->assertSee('NUTRITION_DB_PASSWORD')
+            ->assertSee('data-qr-nutrition-red', false)
+            ->assertSee('vendor/qrcode.min.js', false);
+    }
+
+    public function test_decodificar_es_la_inversa_de_codificar(): void
+    {
+        $red = RedCompartida::codificar('base64:a+/b=', 'abc123', 'p|w|x');
+
+        $this->assertSame(
+            ['app_key' => 'base64:a+/b=', 'cluster' => 'abc123', 'clave_bd' => 'p|w|x'],
+            RedCompartida::decodificar($red),
+        );
+    }
+
+    public function test_decodificar_devuelve_null_si_es_invalida(): void
+    {
+        $this->assertNull(RedCompartida::decodificar(''));
+        $this->assertNull(RedCompartida::decodificar('no es base64 !!'));
+        $this->assertNull(RedCompartida::decodificar(rtrim(base64_encode('solo|dos'), '=')));
+        $this->assertNull(RedCompartida::decodificar(rtrim(base64_encode('a||c'), '=')));
+    }
+
+    public function test_sin_valores_no_hay_qr(): void
+    {
+        config(['nutrition.compartido.cluster' => null, 'nutrition.compartido.clave_bd' => null, 'app.key' => 'k']);
+        $usuario = User::create(['name' => 'Admin', 'email' => 'a@b.c', 'password' => 'password']);
+
+        $this->actingAs($usuario)->get('/variables-compartidas')
+            ->assertOk()
+            ->assertDontSee('data-qr-nutrition-red', false);
     }
 
     public function test_sin_sesion_no_se_ve(): void

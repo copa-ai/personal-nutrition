@@ -1,0 +1,126 @@
+# Mantiene sincronizado el esquema de la base de datos con la spec del servicio.
+#
+# El `formal` de la red «postgres» (admin/database/esquema.json, copiado a .service/service.json y a
+# dependencies/postgres/.service/service.json) tiene que describir exactamente lo que crean las migraciones, con los tipos
+# de PostgreSQL. Aqui se migra una PostgreSQL real, se regenera el esquema y:
+#   - si difiere y se puede escribir en la rama (push o PR del propio repositorio), se hace commit con los ficheros regenerados;
+#   - si difiere y no se puede escribir (PR de un fork), el trabajo falla con el diff;
+#   - al final se comprueba que los tres sitios coinciden con la base migrada.
+name: Esquema
+
+on:
+  push:
+    branches: [main]
+    paths: &rutas
+      - 'admin/database/migrations/**'
+      - 'admin/database/esquema.json'
+      - 'admin/database/sincronizar-esquema.py'
+      - 'admin/app/Services/EsquemaBaseDatos.php'
+      - 'admin/app/Console/Commands/EsquemaBaseDatos.php'
+      - 'admin/config/nutrition.php'
+      - '.service/service.json'
+      - 'dependencies/postgres/.service/service.json'
+      - '.github/workflows/esquema.yml'
+  pull_request:
+    paths: *rutas
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: esquema-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  esquema:
+    runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_DATABASE: personal_nutrition
+      DB_USERNAME: nutrition
+      DB_PASSWORD: ci
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      # Solo se puede hacer push si la rama es de este repositorio (los PR de forks tienen el token en solo lectura).
+      PUEDE_ESCRIBIR: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    services:
+      postgres:
+        image: postgres:18   # la misma version que dependencies/postgres/.service/Dockerfile
+        env:
+          POSTGRES_DB: personal_nutrition
+          POSTGRES_USER: nutrition
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nutrition -d personal_nutrition"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # En un PR se trabaja sobre la rama (no sobre el merge) para poder hacer commit encima.
+          ref: ${{ github.head_ref || github.ref_name }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, zip, gd, bcmath, pdo_pgsql, pgsql
+          coverage: none
+
+      - uses: ramsey/composer-install@v3
+        with:
+          working-directory: admin
+
+      - name: Preparar la aplicacion
+        working-directory: admin
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction
+
+      - name: Migrar PostgreSQL
+        working-directory: admin
+        run: php artisan migrate --force --no-interaction
+
+      - name: Regenerar el esquema
+        run: |
+          (cd admin && php artisan nutrition:esquema --escribir --no-interaction)
+          python3 admin/database/sincronizar-esquema.py
+
+      - name: Detectar cambios
+        id: cambios
+        run: |
+          if git diff --quiet -- admin/database/esquema.json .service/service.json dependencies/postgres/.service/service.json; then
+            echo "hay=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "hay=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat
+          fi
+
+      - name: Hacer commit del esquema regenerado
+        if: steps.cambios.outputs.hay == 'true' && env.PUEDE_ESCRIBIR == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add admin/database/esquema.json .service/service.json dependencies/postgres/.service/service.json
+          git commit -m "Sincronizar el esquema de la base con las migraciones"
+          git push
+
+      - name: Fallar si el esquema esta desfasado y no se puede escribir
+        if: steps.cambios.outputs.hay == 'true' && env.PUEDE_ESCRIBIR != 'true'
+        run: |
+          echo "::error::El esquema de la spec no coincide con las migraciones. Ejecuta, con PostgreSQL migrado: php artisan nutrition:esquema --escribir && python3 admin/database/sincronizar-esquema.py"
+          git --no-pager diff
+          exit 1
+
+      - name: Comprobar que todo coincide con la base migrada
+        run: |
+          (cd admin && php artisan nutrition:esquema --comprobar --no-interaction)
+          python3 admin/database/sincronizar-esquema.py --comprobar

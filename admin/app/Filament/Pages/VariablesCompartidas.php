@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Auditoria;
 use App\Services\RedCompartida;
 use BackedEnum;
 use Filament\Pages\Page;
@@ -36,11 +37,25 @@ class VariablesCompartidas extends Page
         $claveBd = config('nutrition.compartido.clave_bd');
         $appKey = config('app.key');
 
+        $red = filled($cluster) && filled($claveBd) && filled($appKey)
+            ? RedCompartida::codificar((string) $appKey, (string) $cluster, (string) $claveBd) : null;
+        $partes = $red !== null ? RedCompartida::decodificar($red) : null;
+
         return [
-            ['nombre' => 'NUTRITION_RED', 'valor' => filled($cluster) && filled($claveBd) && filled($appKey)
-                ? RedCompartida::codificar((string) $appKey, (string) $cluster, (string) $claveBd) : null, 'secreto' => true,
+            ['nombre' => 'NUTRITION_RED', 'valor' => $red, 'secreto' => true,
                 'ayuda' => 'Lo único que hace falta copiar (cabe en un QR). Lleva APP_KEY, la clave de la red y la contraseña de la base: trátala como una contraseña.'],
+            ['nombre' => 'APP_KEY', 'valor' => $partes['app_key'] ?? null, 'secreto' => true,
+                'ayuda' => 'Clave de la aplicación; tiene que ser la misma en todos los dispositivos.'],
+            ['nombre' => 'NUTRITION_DB_CLUSTER', 'valor' => $partes['cluster'] ?? null, 'secreto' => false,
+                'ayuda' => 'Clave de la red de la base de datos (pública).'],
+            ['nombre' => 'NUTRITION_DB_PASSWORD', 'valor' => $partes['clave_bd'] ?? null, 'secreto' => true,
+                'ayuda' => 'Contraseña de la base de datos compartida.'],
         ];
+    }
+
+    public function mount(): void
+    {
+        Auditoria::registrar('variables.vistas', 'Consulta de las variables compartidas');
     }
 
     /** La orden para arrancar otro dispositivo con este valor (va en claro: es para copiar). */
@@ -53,6 +68,8 @@ class VariablesCompartidas extends Page
 
     public function getViewData(): array
     {
-        return ['variables' => static::variables(), 'orden' => static::orden()];
+        $variables = static::variables();
+
+        return ['variables' => $variables, 'red' => $variables[0]['valor'], 'orden' => static::orden()];
     }
 }
