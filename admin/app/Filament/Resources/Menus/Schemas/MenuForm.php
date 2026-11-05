@@ -23,7 +23,7 @@ class MenuForm
                 TextInput::make('nombre')->label('Nombre')->required()->maxLength(255)
                     ->default(fn (): string => 'Menú del '.$lunes()->locale('es')->isoFormat('D [de] MMMM')),
                 Select::make('hogar_id')->label('Hogar')->relationship('hogar', 'nombre')->required()
-                    ->default(fn (): ?int => Hogar::query()->value('id')),
+                    ->default(fn (): ?string => Hogar::query()->value('id')),
                 DatePicker::make('fecha_inicio')->label('Primer día del menú')->required()->native(false)->displayFormat('d/m/Y')
                     ->default($lunes)->helperText('El menú cubre los 7 días desde esta fecha.'),
             ])

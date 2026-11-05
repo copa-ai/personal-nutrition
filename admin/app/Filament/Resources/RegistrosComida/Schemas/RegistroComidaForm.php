@@ -39,7 +39,7 @@ class RegistroComidaForm
                 // Lo último que se rellenó solo con la receta programada: sirve para no borrar lo que el usuario escribió él.
                 Hidden::make('valor_programado')->default(fn (string $operation): ?string => $operation === 'create' ? self::valoresIniciales()['descripcion'] : null)->dehydrated(false),
                 Select::make('hogar_id')->label('Hogar')->options(fn (): array => Hogar::query()->orderBy('nombre')->pluck('nombre', 'id')->all())
-                    ->default(fn (): ?int => self::hogarUnico())->live()->dehydrated(false)->required()
+                    ->default(fn (): ?string => self::hogarUnico())->live()->dehydrated(false)->required()
                     ->visible(fn (string $operation): bool => $operation === 'create' && self::hogarUnico() === null)
                     ->afterStateUpdated(function (Get $get, Set $set, string $operation): void {
                         $set('perfiles', []);
@@ -82,18 +82,18 @@ class RegistroComidaForm
     }
 
     /** Id del hogar si solo hay uno; null si hay varios o ninguno. */
-    public static function hogarUnico(): ?int
+    public static function hogarUnico(): ?string
     {
         $ids = Hogar::query()->limit(2)->pluck('id');
 
-        return $ids->count() === 1 ? (int) $ids->first() : null;
+        return $ids->count() === 1 ? (string) $ids->first() : null;
     }
 
     /** El hogar elegido, el único que haya o el del primer perfil elegido. */
-    public static function hogarDe(array $estado): ?int
+    public static function hogarDe(array $estado): ?string
     {
         if (! empty($estado['hogar_id'])) {
-            return (int) $estado['hogar_id'];
+            return (string) $estado['hogar_id'];
         }
         if (($unico = self::hogarUnico()) !== null) {
             return $unico;
@@ -103,8 +103,8 @@ class RegistroComidaForm
         return $perfil ? Perfil::query()->whereKey($perfil)->value('hogar_id') : null;
     }
 
-    /** @return array<int, string> */
-    private static function perfilesDelHogar(?int $hogarId): array
+    /** @return array<string, string> */
+    private static function perfilesDelHogar(?string $hogarId): array
     {
         return $hogarId ? Perfil::query()->where('hogar_id', $hogarId)->orderBy('nombre')->pluck('nombre', 'id')->all() : [];
     }

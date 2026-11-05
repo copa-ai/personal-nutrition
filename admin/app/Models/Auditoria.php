@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Services\ContextoAuditoria;
+use App\Services\Instancia;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +18,8 @@ use Throwable;
  */
 class Auditoria extends Model
 {
+    use HasUuids;
+
     public const UPDATED_AT = null;
 
     /** Texto que sustituye a los valores sensibles. */
@@ -63,21 +68,16 @@ class Auditoria extends Model
     }
 
     /**
-     * Como registrar(), pero con un usuario explicito y, si procede, el objeto afectado y los valores antiguos y nuevos.
-     * Nunca lanza.
+     * Como registrar(), pero con un usuario explicito. Nunca lanza. Solo para hechos (acceso, exportaciones, chat...): los cambios
+     * de las tablas de datos los anotan los triggers de la base.
      *
      * @param  array<string, mixed>  $datos
-     * @param  array<string, mixed>|null  $antiguos
-     * @param  array<string, mixed>|null  $nuevos
      */
     public static function escribir(
         string $evento,
         ?string $descripcion = null,
         array $datos = [],
         ?Authenticatable $usuario = null,
-        ?Model $objeto = null,
-        ?array $antiguos = null,
-        ?array $nuevos = null,
     ): void {
         try {
             if (! static::tablaLista()) {
@@ -89,23 +89,12 @@ class Auditoria extends Model
                 'user_nombre' => $usuario?->name ?? null,
                 'user_email' => $usuario?->email ?? null,
                 'evento' => $evento,
-                'auditable_type' => $objeto ? $objeto::class : null,
-                'auditable_id' => $objeto ? (string) $objeto->getKey() : null,
-                'valores_antiguos' => $antiguos === null ? null : static::enmascarar($antiguos),
-                'valores_nuevos' => $nuevos === null ? null : static::enmascarar($nuevos),
                 'descripcion' => $descripcion,
                 'datos' => $datos === [] ? null : static::enmascarar($datos),
+                'instancia' => Instancia::id(),
             ];
 
-            if (app()->runningInConsole() && ! app()->runningUnitTests()) {
-                $fila['metodo'] = 'consola';
-            } else {
-                $peticion = request();
-                $fila['ip'] = $peticion->ip();
-                $fila['url'] = mb_substr($peticion->fullUrl(), 0, 2000);
-                $fila['user_agent'] = mb_substr((string) $peticion->userAgent(), 0, 500);
-                $fila['metodo'] = $peticion->method();
-            }
+            $fila = [...$fila, ...ContextoAuditoria::peticion()];
 
             static::create($fila);
         } catch (Throwable $e) {

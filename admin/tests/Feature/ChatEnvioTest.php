@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\EstadoChat;
 use App\Jobs\ResponderChat;
 use App\Models\Ajuste;
 use App\Models\Auditoria;
@@ -343,18 +344,20 @@ class ChatEnvioTest extends TestCase
         $this->assertSame(1, $recibido[0]->datos['sequence']);
         $this->assertStringNotContainsString('palabra', json_encode($recibido[0]->datos));
 
+        $respuesta->anadirTexto('trozo 0 ');   // el primer trozo pasa la respuesta a «escribiendo»: un cambio de estado, que si cuenta
         $antes = Auditoria::count();
         foreach (range(1, 10) as $i) {
             $respuesta->anadirTexto("trozo $i ");
         }
-        $this->assertSame($antes, Auditoria::count(), 'los deltas no se auditan');
+        $this->assertSame($antes, Auditoria::count(), 'los deltas (solo contenido y razonamiento) no son un evento cada uno');
 
         $respuesta->finalizar(['Gracias']);
-        $filas = Auditoria::where('auditable_type', ChatMensaje::class)->get();
-        $this->assertCount(1, $filas);
-        $this->assertSame('actualizado', $filas[0]->evento);
-        $this->assertStringContainsString('[omitido:', json_encode($filas[0]->valores_nuevos));
-        $this->assertStringNotContainsString('trozo', json_encode([$filas[0]->valores_nuevos, $filas[0]->valores_antiguos]));
+        $filas = Auditoria::where('auditable_type', ChatMensaje::class)->where('evento', 'actualizado')->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(1, $filas->count());
+        $final = $filas->last();
+        $this->assertSame(EstadoChat::Completado->value, $final->valores_nuevos['estado']);
+        $this->assertStringContainsString('[omitido:', json_encode($final->valores_nuevos));
+        $this->assertStringNotContainsString('trozo', json_encode(Auditoria::where('auditable_type', ChatMensaje::class)->get()->map->getAttributes()));
         $this->assertSame([], $this->tablasQueContienenAuditoria($texto));
     }
 

@@ -121,7 +121,7 @@ class Archivos
         try {
             // El resource se enlaza como LOB: con PDO pgsql un string binario no vale para una columna bytea.
             $nuevos = DB::table('chat_archivos')->insertOrIgnore([
-                'hash' => $hash, 'mime' => $mime, 'tamano' => $real, 'nombre' => $nombre, 'contenido' => $flujo,
+                'id' => ChatArchivo::idDeClave($hash), 'hash' => $hash, 'mime' => $mime, 'tamano' => $real, 'nombre' => $nombre, 'contenido' => $flujo,
                 'created_at' => now(), 'updated_at' => now(),
             ]);
         } catch (QueryException $e) {

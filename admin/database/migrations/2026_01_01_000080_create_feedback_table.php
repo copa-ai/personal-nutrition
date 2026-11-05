@@ -10,8 +10,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('feedback', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('perfil_id')->constrained('perfiles')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('perfil_id')->constrained('perfiles')->cascadeOnDelete();
             $table->string('tipo', 10);                          // TipoFeedback: gusta | no_gusta
             $table->string('elemento');                          // lo que gusta o no: un ingrediente, un plato, una categoría…
             $table->text('nota')->nullable();

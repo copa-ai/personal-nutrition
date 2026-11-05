@@ -10,6 +10,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Str;
 use Throwable;
 
 /** Calendario de un perfil: lo que ha comido en los días pasados y lo que le toca en los próximos, por mes o por semana. */
@@ -35,9 +36,9 @@ class CalendarioComidas extends Page
     /** Un día cualquiera del mes o de la semana que se está viendo (Y-m-d). */
     public string $ancla = '';
 
-    public ?int $hogarId = null;
+    public ?string $hogarId = null;
 
-    public ?int $perfilId = null;
+    public ?string $perfilId = null;
 
     /** Día del que se enseña el detalle (Y-m-d). */
     public ?string $diaElegido = null;
@@ -84,9 +85,9 @@ class CalendarioComidas extends Page
     public function getViewData(): array
     {
         $hogares = Hogar::query()->orderBy('nombre')->pluck('nombre', 'id');
-        $hogar = Hogar::query()->find($this->hogarId) ?? Hogar::query()->orderBy('nombre')->first();
+        $hogar = (Str::isUuid((string) $this->hogarId) ? Hogar::query()->find($this->hogarId) : null) ?? Hogar::query()->orderBy('nombre')->first();
         $perfiles = $hogar ? Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->pluck('nombre', 'id') : collect();
-        $perfil = $hogar ? Perfil::query()->where('hogar_id', $hogar->id)->find($this->perfilId) ?? Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->first() : null;
+        $perfil = $hogar ? (Str::isUuid((string) $this->perfilId) ? Perfil::query()->where('hogar_id', $hogar->id)->find($this->perfilId) : null) ?? Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->first() : null;
 
         $datos = ['hogares' => $hogares, 'perfiles' => $perfiles, 'perfil' => $perfil, 'hogar' => $hogar, 'vista' => $this->vista];
         if ($perfil === null) {

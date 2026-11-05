@@ -7,6 +7,7 @@ use App\Enums\OrigenComida;
 use App\Models\Concerns\AceptaClavesDeFormulario;
 use Database\Factories\RegistroComidaFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class RegistroComida extends Model
 {
     /** @use HasFactory<RegistroComidaFactory> */
-    use AceptaClavesDeFormulario, HasFactory;
+    use AceptaClavesDeFormulario, HasFactory, HasUuids;
 
     /** @var list<string> */
     protected array $clavesDeFormulario = ['perfil_id'];

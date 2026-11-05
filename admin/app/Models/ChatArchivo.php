@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UuidDeClaveNatural;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -11,6 +12,13 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ChatArchivo extends Model
 {
+    use UuidDeClaveNatural;
+
+    public static function claveNatural(): string
+    {
+        return 'hash';
+    }
+
     /** Columnas menos el contenido, para listar sin cargar los bytes. */
     public const SIN_CONTENIDO = ['id', 'hash', 'mime', 'tamano', 'nombre', 'created_at', 'updated_at'];
 
@@ -23,7 +31,7 @@ class ChatArchivo extends Model
         return ['tamano' => 'integer'];
     }
 
-    /** Los bytes del archivo, vengan como string (SQLite) o como resource (PostgreSQL). */
+    /** Los bytes del archivo, vengan como resource (leidos de PostgreSQL) o como string (un modelo recien creado). */
     public function bytes(): string
     {
         $valor = $this->attributes['contenido'] ?? '';

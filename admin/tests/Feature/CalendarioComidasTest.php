@@ -13,6 +13,7 @@ use App\Models\RegistroComida;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\CreaHogar;
@@ -34,13 +35,13 @@ class CalendarioComidasTest extends TestCase
         $this->menu->update(['estado' => EstadoMenu::Terminado]);
     }
 
-    private function comido(string $fecha, MomentoComida $momento, string $descripcion, ?int $perfilId = null, OrigenComida $origen = OrigenComida::Casa): RegistroComida
+    private function comido(string $fecha, MomentoComida $momento, string $descripcion, ?string $perfilId = null, OrigenComida $origen = OrigenComida::Casa): RegistroComida
     {
         return RegistroComida::factory()->create(['perfil_id' => $perfilId ?? $this->marta->id, 'fecha' => $fecha, 'momento' => $momento, 'origen' => $origen, 'descripcion' => $descripcion]);
     }
 
     /** @return list<array<string, mixed>> */
-    private function dias(string $desde, string $hasta, ?int $perfilId = null): array
+    private function dias(string $desde, string $hasta, ?string $perfilId = null): array
     {
         $perfil = $perfilId === $this->javier->id ? $this->javier : $this->marta;
 
@@ -153,8 +154,10 @@ class CalendarioComidasTest extends TestCase
         $this->pagina()->call('cambiarVista', 'año')->assertSet('vista', 'mes')
             ->call('elegirDia', 'no-es-una-fecha')->assertSet('diaElegido', null)
             ->set('ancla', 'basura')->assertSuccessful()->assertSee('Noviembre 2026')
-            ->set('hogarId', 999)->assertSuccessful()
-            ->set('perfilId', 999)->assertSuccessful();
+            ->set('hogarId', (string) Str::uuid())->assertSuccessful()
+            ->set('perfilId', (string) Str::uuid())->assertSuccessful()
+            ->set('hogarId', 'basura')->assertSuccessful()
+            ->set('perfilId', 'basura')->assertSuccessful();
     }
 
     public function test_un_perfil_de_otro_hogar_no_se_puede_ver(): void

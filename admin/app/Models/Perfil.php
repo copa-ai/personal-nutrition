@@ -6,6 +6,7 @@ use App\Models\Concerns\AceptaClavesDeFormulario;
 use Database\Factories\PerfilFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Perfil extends Model
 {
     /** @use HasFactory<PerfilFactory> */
-    use AceptaClavesDeFormulario, HasFactory;
+    use AceptaClavesDeFormulario, HasFactory, HasUuids;
 
     /** @var list<string> */
     protected array $clavesDeFormulario = ['hogar_id'];

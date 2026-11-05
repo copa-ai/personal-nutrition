@@ -17,6 +17,7 @@ use App\Services\Menu\EjecutorAgente;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -40,13 +41,13 @@ class AccionesChat
         'anotar_feedback' => ['tipo', 'perfil', 'valoracion', 'elemento', 'nota'],
     ];
 
-    public static function relativa(int $id): string
+    public static function relativa(string $id): string
     {
         return "workspace/chat-acciones-{$id}.json";
     }
 
     /** Lee el archivo que dejo el agente (de la base si el almacen esta activo, si no del disco). Null si no hay. */
-    public static function leerArchivo(int $id): ?string
+    public static function leerArchivo(string $id): ?string
     {
         $ruta = EjecutorAgente::carpeta().'/'.static::relativa($id);
         AlmacenAgente::activo() && AlmacenAgente::bajar(EjecutorAgente::carpeta(), static::relativa($id));
@@ -59,7 +60,7 @@ class AccionesChat
         return (string) file_get_contents($ruta, false, null, 0, (int) config('chat_claude.acciones.max_bytes_archivo') + 1);
     }
 
-    public static function borrarArchivo(int $id): void
+    public static function borrarArchivo(string $id): void
     {
         @unlink(EjecutorAgente::carpeta().'/'.static::relativa($id));
         AlmacenAgente::borrar(static::relativa($id));
@@ -208,10 +209,10 @@ class AccionesChat
     private function validarCorregir(array $a): array|string
     {
         $id = $a['registro_id'] ?? null;
-        if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
-            return 'registro_id tiene que ser el número de un registro de comida.';
+        if (! is_string($id) || ! Str::isUuid($id)) {
+            return 'registro_id tiene que ser el id de un registro de comida.';
         }
-        $registro = RegistroComida::query()->with('perfil')->find((int) $id);
+        $registro = RegistroComida::query()->with('perfil')->find($id);
         if (! $registro || ! $registro->perfil || ! $registro->perfil->activo) {
             return "No existe el registro de comida {$id}.";
         }
@@ -272,8 +273,8 @@ class AccionesChat
 
     private function perfil(mixed $valor): Perfil|Rechazo
     {
-        if (is_int($valor) || (is_string($valor) && ctype_digit($valor))) {
-            $perfil = Perfil::query()->activos()->find((int) $valor);
+        if (is_string($valor) && Str::isUuid($valor)) {
+            $perfil = Perfil::query()->activos()->find($valor);
 
             return $perfil ?? $this->motivo("No existe un perfil activo con id {$valor}.");
         }
@@ -374,7 +375,7 @@ class AccionesChat
         if (! app(Archivos::class)->metadatos($hash)) {
             return false;
         }
-        // CAST a texto vale en SQLite y en PostgreSQL (jsonb); el hash (64 hex, ya validado) es unico, y luego se confirma en PHP.
+        // CAST a texto vale para jsonb; el hash (64 hex, ya validado) es unico, y luego se confirma en PHP.
         $candidatos = ChatMensaje::query()->where('from_service', false)->whereRaw('CAST(contenido AS TEXT) LIKE ?', ['%'.$hash.'%'])->get();
         foreach ($candidatos as $mensaje) {
             foreach ($mensaje->imagenes() as $parte) {

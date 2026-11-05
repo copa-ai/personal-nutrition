@@ -17,7 +17,7 @@ class GenerarMenu implements ShouldQueue
 
     public int $timeout = 0; // el limite lo pone AGENTE_TIMEOUT sobre el proceso
 
-    public function __construct(public int $menuId) {}
+    public function __construct(public string $menuId) {}
 
     public function handle(EjecutorAgente $ejecutor): void
     {

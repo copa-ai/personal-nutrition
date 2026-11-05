@@ -10,8 +10,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('perfiles', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('hogar_id')->constrained('hogares')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('hogar_id')->constrained('hogares')->cascadeOnDelete();
             $table->string('nombre');
             $table->boolean('activo')->default(true);            // un perfil inactivo no entra en los menús nuevos
 

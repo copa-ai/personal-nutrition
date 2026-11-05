@@ -37,7 +37,7 @@ trait ValidaEntrega
         $fechas = $encargo['semana']['fechas'] ?? [];
         $min = (int) ($encargo['opciones_por_comida']['min'] ?? 2);
         $max = (int) ($encargo['opciones_por_comida']['max'] ?? 3);
-        $perfiles = collect($encargo['perfiles'] ?? [])->pluck('id')->map(fn ($id): int => (int) $id)->sort()->values()->all();
+        $perfiles = collect($encargo['perfiles'] ?? [])->pluck('id')->map(fn ($id): string => (string) $id)->sort()->values()->all();
         $tiempos = collect($encargo['hogar']['tiempos'] ?? [])->keyBy('fecha');
         $categorias = array_column(CategoriaComida::cases(), 'value');
         $errores = [];
@@ -83,7 +83,7 @@ trait ValidaEntrega
      * La usan la entrega completa (generar y editar) y cada toma de un intercambio.
      *
      * @param  list<string>  $categorias  categorías válidas
-     * @param  list<int>  $perfiles
+     * @param  list<string>  $perfiles
      * @return list<string>
      */
     private function erroresDeToma(mixed $toma, string $donde, ?int $minutos, array $categorias, int $min, int $max, array $perfiles): array
@@ -120,7 +120,7 @@ trait ValidaEntrega
      *
      * @param  array<string, mixed>  $datos
      * @param  list<string>  $fechas
-     * @param  list<int>  $perfiles
+     * @param  list<string>  $perfiles
      * @param  list<string>  $categorias
      * @return list<string>
      */
@@ -157,7 +157,7 @@ trait ValidaEntrega
      * @param  array<string, mixed>  $o
      * @param  list<string>  $categorias
      * @param  list<string>|null  $catsToma  categorías de la toma; null si ya se informó de que faltan
-     * @param  list<int>  $perfiles  ids de perfil del encargo (para los `ajustes`)
+     * @param  list<string>  $perfiles  ids de perfil del encargo (para los `ajustes`)
      * @return list<string>
      */
     private function erroresDeOpcion(mixed $o, string $donde, ?int $minutos, array $categorias, ?array $catsToma, array $perfiles = []): array
@@ -181,7 +181,7 @@ trait ValidaEntrega
     /**
      * `ajustes` es opcional (null = no hay): lista de `{perfil_id, texto}` con perfiles del encargo, sin repetir y con texto.
      *
-     * @param  list<int>  $perfiles
+     * @param  list<string>  $perfiles
      * @return list<string>
      */
     private function erroresDeAjustes(mixed $ajustes, string $donde, array $perfiles): array
@@ -196,7 +196,7 @@ trait ValidaEntrega
         $vistos = [];
         foreach ($ajustes as $a) {
             $id = is_array($a) ? ($a['perfil_id'] ?? null) : null;
-            if (! is_array($a) || ! is_int($id) || ! in_array($id, $perfiles, true)) {
+            if (! is_array($a) || ! is_string($id) || ! in_array($id, $perfiles, true)) {
                 $errores[] = "{$donde}: cada ajuste necesita un «perfil_id» que sea un perfil del encargo (perfiles ".implode(', ', $perfiles).').';
             } elseif (in_array($id, $vistos, true)) {
                 $errores[] = "{$donde}: el perfil {$id} tiene más de un ajuste.";
@@ -213,7 +213,7 @@ trait ValidaEntrega
 
     /**
      * @param  array<string, mixed>  $tiempo
-     * @param  list<int>  $perfiles
+     * @param  list<string>  $perfiles
      * @return list<string>
      */
     private function erroresDeIndividuales(mixed $individuales, string $fecha, array $tiempo, array $perfiles): array
@@ -275,11 +275,11 @@ trait ValidaEntrega
         return $errores;
     }
 
-    /** Lista ordenada de `perfil_id` (enteros) de las entradas que lo tengan; sirve para comparar con los del encargo. */
+    /** Lista ordenada de `perfil_id` (UUID en texto) de las entradas que lo tengan; sirve para comparar con los del encargo. */
     private function idsDePerfil(mixed $entradas): array
     {
         return collect(is_array($entradas) ? $entradas : [])->map(fn ($e) => is_array($e) ? ($e['perfil_id'] ?? null) : null)
-            ->map(fn ($id): int => is_int($id) || (is_string($id) && preg_match('/\A-?[0-9]+\z/', $id) === 1) ? (int) $id : -1)->sort()->values()->all();
+            ->map(fn ($id): string => is_string($id) ? $id : '')->sort()->values()->all();
     }
 
     /** Texto recortado; vacío si el valor no es una cadena (igual que `_texto` en agente/scripts/menu.py). */

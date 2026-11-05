@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CategoriaComida;
+use App\Models\Concerns\UuidDeClaveNatural;
 use Database\Factories\AlimentoFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,12 @@ use Illuminate\Database\Eloquent\Model;
 class Alimento extends Model
 {
     /** @use HasFactory<AlimentoFactory> */
-    use HasFactory;
+    use HasFactory, UuidDeClaveNatural;
+
+    public static function claveNatural(): string
+    {
+        return 'nombre';
+    }
 
     /** Unidades admitidas en alimentos, y existencias. */
     public const UNIDADES = ['g' => 'g', 'kg' => 'kg', 'ml' => 'ml', 'l' => 'l', 'ud' => 'unidades'];

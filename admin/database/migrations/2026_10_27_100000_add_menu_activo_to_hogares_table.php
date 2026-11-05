@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('hogares', function (Blueprint $table) {
-            $table->foreignId('menu_id')->nullable()->after('nombre')->constrained('menus')->nullOnDelete();
+            $table->foreignUuid('menu_id')->nullable()->after('nombre')->constrained('menus')->nullOnDelete();
             // {"2026-11-02/comida": {"categorias": [...], "opciones": [...]}}: tomas que sustituyen a las del menú activo.
             $table->json('cambios')->nullable()->after('menu_id');
         });

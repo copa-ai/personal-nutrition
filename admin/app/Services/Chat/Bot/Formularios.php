@@ -45,7 +45,7 @@ final class Formularios
      *
      * @param  Collection<int, Perfil>  $perfiles
      */
-    public static function registro(Collection $perfiles, ?int $perfilId, ?string $momento, CarbonImmutable $fecha, string $descripcion, CarbonImmutable $hoy): Teclado
+    public static function registro(Collection $perfiles, ?string $perfilId, ?string $momento, CarbonImmutable $fecha, string $descripcion, CarbonImmutable $hoy): Teclado
     {
         $etiquetas = self::etiquetas($perfiles);
         $elegido = $perfilId !== null && isset($etiquetas[$perfilId]) ? $etiquetas[$perfilId] : ($perfiles->count() === 1 ? reset($etiquetas) : null);

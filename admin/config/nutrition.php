@@ -49,6 +49,26 @@ return [
         'pausa_lanzar_s' => (int) env('NUTRITION_PAUSA_LANZAR_S', 15),
     ],
 
+    // La base en la que escribe este dispositivo: fichero JSON {host, port, cluster} que mantienen `nutrition:base-datos` y
+    // `nutrition:vigilar-base` (App\Services\BaseCompartida\EstadoBase). Vacio: se usa DB_HOST/DB_PORT.
+    'base_estado' => env('NUTRITION_BASE_ESTADO') ?: null,
+
+    // Entre varias bases con el mismo cluster (App\Services\BaseCompartida\Eleccion): en cual se escribe y cuales sobran.
+    'eleccion' => [
+        'margen' => (float) env('NUTRITION_ELECCION_MARGEN', 0.05),   // la base actual se mantiene si la mejor no la supera en mas de esto
+    ],
+    'fusion' => [
+        'activa' => filter_var(env('NUTRITION_FUSION_AUTOMATICA', true), FILTER_VALIDATE_BOOL),   // fusionar las bases que sobran en la elegida
+    ],
+    'baja' => [
+        'activa' => filter_var(env('NUTRITION_BAJA_AUTOMATICA', false), FILTER_VALIDATE_BOOL),   // parar el hijo que sobra (solo si ya esta fusionado)
+        'silencio_min' => (int) env('NUTRITION_BAJA_SILENCIO_MIN', 10),   // minutos sin eventos de auditoria para que una base sobre
+    ],
+    'vigilancia_cada_s' => (int) env('NUTRITION_VIGILANCIA_CADA_S', 300),
+
+    // Identificador de esta instancia en la auditoria (App\Services\Instancia): el dado aqui o, si no, uno generado y guardado en storage/app.
+    'instancia' => env('NUTRITION_INSTANCIA') ?: null,
+
     'celaut' => [
         'binario' => env('CELAUT_BIN', 'celaut'),
         'raiz' => env('NUTRITION_CELAUT', '/opt/nutrition/celaut'),

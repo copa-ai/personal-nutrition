@@ -21,7 +21,7 @@ class PerfilForm
             ->components([
                 Section::make('Persona')->columns(2)->schema([
                     Select::make('hogar_id')->label('Hogar')->relationship('hogar', 'nombre')->required()
-                        ->default(fn (): ?int => Hogar::query()->value('id')),
+                        ->default(fn (): ?string => Hogar::query()->value('id')),
                     TextInput::make('nombre')->label('Nombre')->required()->maxLength(255),
                     Toggle::make('activo')->label('Activo')->default(true)
                         ->helperText('Un perfil inactivo no entra en los menús nuevos.'),

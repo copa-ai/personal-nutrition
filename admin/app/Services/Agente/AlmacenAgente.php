@@ -123,7 +123,7 @@ class AlmacenAgente
 
     // --- Registro (log) de una tanda: se guarda tambien aqui para que se vea desde cualquier dispositivo ---
 
-    public static function rutaRegistro(int $menuId): string
+    public static function rutaRegistro(string $menuId): string
     {
         return "workspace/encargo-{$menuId}.log";
     }

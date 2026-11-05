@@ -35,7 +35,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -55,13 +54,13 @@ def _entero(valor) -> bool:
     return isinstance(valor, int) and not isinstance(valor, bool)
 
 
-def _ids_de_perfil(entradas) -> list[int]:
-    """`perfil_id` (entero) de cada entrada, ordenados; -1 si falta o no es numerico."""
+def _ids_de_perfil(entradas) -> list[str]:
+    """`perfil_id` (UUID en texto) de cada entrada, ordenados; cadena vacia si falta o no es texto."""
     entradas = entradas if isinstance(entradas, list) else []
     ids = []
     for e in entradas:
         valor = e.get("perfil_id") if isinstance(e, dict) else None
-        ids.append(int(valor) if _entero(valor) or (isinstance(valor, str) and re.fullmatch(r"-?[0-9]+", valor) is not None) else -1)
+        ids.append(valor if isinstance(valor, str) else "")
     return sorted(ids)
 
 
@@ -82,7 +81,7 @@ def errores_de_receta(o: dict, donde: str, minutos) -> list[str]:
     return errores
 
 
-def errores_de_ajustes(ajustes, donde: str, perfiles: list[int]) -> list[str]:
+def errores_de_ajustes(ajustes, donde: str, perfiles: list[str]) -> list[str]:
     """`ajustes` es opcional (None = no hay): lista de `{perfil_id, texto}` con perfiles del encargo, sin repetir y con texto."""
     if ajustes is None:
         return []
@@ -91,7 +90,7 @@ def errores_de_ajustes(ajustes, donde: str, perfiles: list[int]) -> list[str]:
     errores, vistos = [], []
     for a in ajustes:
         id_ = a.get("perfil_id") if isinstance(a, dict) else None
-        if not _entero(id_) or id_ not in perfiles:
+        if not isinstance(id_, str) or id_ not in perfiles:
             errores.append(f"{donde}: cada ajuste necesita un «perfil_id» que sea un perfil del encargo (perfiles {', '.join(map(str, sorted(perfiles)))}).")
         elif id_ in vistos:
             errores.append(f"{donde}: el perfil {id_} tiene más de un ajuste.")
@@ -102,7 +101,7 @@ def errores_de_ajustes(ajustes, donde: str, perfiles: list[int]) -> list[str]:
     return errores
 
 
-def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma, perfiles: list[int] | None = None) -> list[str]:
+def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma, perfiles: list[str] | None = None) -> list[str]:
     if not isinstance(o, dict):
         return [f"{donde}: la opción tiene que ser un objeto."]
     errores = errores_de_receta(o, donde, minutos)
@@ -115,7 +114,7 @@ def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma, 
     return errores
 
 
-def errores_de_individuales(individuales, fecha: str, tiempo: dict, perfiles: list[int]) -> list[str]:
+def errores_de_individuales(individuales, fecha: str, tiempo: dict, perfiles: list[str]) -> list[str]:
     if not isinstance(individuales, list):
         return [f"{fecha} · individuales: falta la lista «individuales»."]
     errores = []
@@ -135,7 +134,7 @@ def errores_de_individuales(individuales, fecha: str, tiempo: dict, perfiles: li
     return errores
 
 
-def errores_de_toma(toma, donde: str, minutos, categorias: list[str], minimo: int, maximo: int, perfiles: list[int]) -> list[str]:
+def errores_de_toma(toma, donde: str, minutos, categorias: list[str], minimo: int, maximo: int, perfiles: list[str]) -> list[str]:
     """Una toma de comida o cena: `categorias` y entre `minimo` y `maximo` `opciones` (vacias las dos si el hogar no cocina: minutos = None).
     La usan la entrega completa (generar y editar) y cada toma de un intercambio."""
     opciones = toma.get("opciones") if isinstance(toma, dict) else None
@@ -165,7 +164,7 @@ def errores_de_intercambio(datos, encargo: dict) -> list[str]:
     fechas = encargo.get("semana", {}).get("fechas", [])
     opciones_por_comida = encargo.get("opciones_por_comida", {})
     minimo, maximo = int(opciones_por_comida.get("min", 2)), int(opciones_por_comida.get("max", 3))
-    perfiles = [int(p["id"]) for p in encargo.get("perfiles", [])]
+    perfiles = [str(p["id"]) for p in encargo.get("perfiles", [])]
     categorias = list(encargo.get("categorias_validas", []))
     tiempos = {t["fecha"]: t for t in encargo.get("hogar", {}).get("tiempos", [])}
 
@@ -197,7 +196,7 @@ def validar_entrega(datos, encargo: dict) -> list[str]:
     fechas = encargo.get("semana", {}).get("fechas", [])
     opciones_por_comida = encargo.get("opciones_por_comida", {})
     minimo, maximo = int(opciones_por_comida.get("min", 2)), int(opciones_por_comida.get("max", 3))
-    perfiles = [int(p["id"]) for p in encargo.get("perfiles", [])]
+    perfiles = [str(p["id"]) for p in encargo.get("perfiles", [])]
     categorias = list(encargo.get("categorias_validas", []))
     tiempos = {t["fecha"]: t for t in encargo.get("hogar", {}).get("tiempos", [])}
 

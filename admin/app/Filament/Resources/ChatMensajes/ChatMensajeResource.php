@@ -13,6 +13,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use UnitEnum;
 
 /** Historial del chat de la instancia: solo lectura (listar y ver). */
@@ -54,10 +55,10 @@ class ChatMensajeResource extends Resource
         return false;
     }
 
-    /** Un id que no es numerico (p. ej. /chat/create) es un 404, no un error de la base (PostgreSQL rechaza el tipo). */
+    /** Un id que no es un UUID (p. ej. /chat/create) es un 404, no un error de la base (PostgreSQL rechaza el tipo). */
     public static function resolveRecordRouteBinding(int|string $key, ?\Closure $modifyQuery = null): ?Model
     {
-        return ctype_digit((string) $key) ? parent::resolveRecordRouteBinding($key, $modifyQuery) : null;
+        return Str::isUuid((string) $key) ? parent::resolveRecordRouteBinding($key, $modifyQuery) : null;
     }
 
     public static function infolist(Schema $schema): Schema

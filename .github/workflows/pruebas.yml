@@ -1,4 +1,4 @@
-# Pruebas: PHP (SQLite en memoria y PostgreSQL 18) y el traductor gRPC del chat (Python).
+# Pruebas: PHP (PostgreSQL 18, el motor de produccion) y el traductor gRPC del chat (Python).
 name: Pruebas
 
 on:
@@ -15,32 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  php-sqlite:
-    name: PHP (SQLite)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          extensions: mbstring, intl, zip, gd, bcmath, pdo_pgsql, pgsql
-          coverage: none
-
-      - uses: ramsey/composer-install@v3
-        with:
-          working-directory: admin
-
-      - name: Preparar la aplicacion
-        working-directory: admin
-        run: |
-          cp .env.example .env
-          php artisan key:generate --no-interaction
-
-      - name: Pruebas (SQLite en memoria)
-        working-directory: admin
-        run: php artisan test --compact
-
   php-postgres:
     name: PHP (PostgreSQL 18)
     runs-on: ubuntu-latest

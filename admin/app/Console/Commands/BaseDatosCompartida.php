@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\BaseCompartida\EstadoBase;
 use App\Services\Celaut\Nodo;
 use App\Services\Celaut\NodoException;
 use Illuminate\Console\Attributes\Description;
@@ -196,8 +197,7 @@ class BaseDatosCompartida extends Command
 
     private function escribir(string $salida, string $host, int $puerto, string $cluster): int
     {
-        file_put_contents($salida.'.tmp', json_encode(['host' => $host, 'port' => $puerto, 'cluster' => $cluster]));
-        rename($salida.'.tmp', $salida);
+        EstadoBase::escribir($salida, $host, $puerto, $cluster);
         $this->info("Base de datos en {$host}:{$puerto}");
 
         return self::SUCCESS;

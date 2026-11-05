@@ -23,7 +23,7 @@ class ResponderChat implements ShouldQueue
     /** Cola propia del chat: un worker aparte (docker/servicio/start.sh) para que generar un menu, que puede durar horas, no la bloquee. */
     public const COLA = 'chat';
 
-    public function __construct(public int $preguntaId, public int $respuestaId)
+    public function __construct(public string $preguntaId, public string $respuestaId)
     {
         $this->onQueue(self::COLA);
     }

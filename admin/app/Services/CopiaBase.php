@@ -4,42 +4,16 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
 use PDO;
-use RuntimeException;
 use Throwable;
 
 /**
- * Copia de seguridad de la base de datos: exportarla a un fichero y (solo con SQLite) volver a cargarla.
- *
- * Con PostgreSQL la exportacion es un volcado SQL de datos en PHP puro (sin pg_dump): TRUNCATE + INSERT por tabla dentro de
- * una transaccion, restaurable con psql sobre una base que ya tenga el esquema (migraciones).
- *
- * Importar NO reemplaza el fichero de la base (la web y la cola lo tienen abierto): adjunta la copia y vuelca sus tablas
- * sobre las actuales dentro de una transaccion, de modo que el esquema sigue siendo el del codigo en marcha. Solo se copian
- * las columnas que existen en los dos lados y no se tocan las tablas efimeras (sesiones, cola, cache) ni `migrations`.
+ * Copia de seguridad de la base de datos: un volcado SQL de datos en PHP puro (sin pg_dump), TRUNCATE + INSERT por tabla dentro de
+ * una transaccion, restaurable con psql sobre una base que ya tenga el esquema (migraciones). La aplicacion no restaura copias.
  */
 class CopiaBase
 {
     /** Tablas que no forman parte de la copia: estado de ejecucion, no datos de la persona. */
-    private const OMITIR = ['migrations', 'sessions', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks', 'password_reset_tokens'];
-
-    /** Una copia valida de esta aplicacion tiene al menos estas tablas. */
-    private const REQUERIDAS = ['users', 'hogares'];
-
-    public static function disponible(): bool
-    {
-        return in_array(DB::connection()->getDriverName(), ['sqlite', 'pgsql'], true);
-    }
-
-    /** La restauracion desde la propia aplicacion solo existe con SQLite. */
-    public static function puedeImportar(): bool
-    {
-        return DB::connection()->getDriverName() === 'sqlite';
-    }
-
-    public static function esPostgres(): bool
-    {
-        return DB::connection()->getDriverName() === 'pgsql';
-    }
+    private const OMITIR = ['migrations', 'auditoria_tablas', 'sessions', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks', 'password_reset_tokens'];
 
     /**
      * Convierte un valor de PHP en un literal SQL de PostgreSQL.
@@ -124,10 +98,10 @@ class CopiaBase
         return $orden;
     }
 
-    /** Nombre del fichero de descarga segun el motor. */
+    /** Nombre del fichero de descarga. */
     public static function nombreDescarga(): string
     {
-        return 'nutrition-'.now()->format('Y-m-d-His').(self::esPostgres() ? '.sql.gz' : '.sqlite');
+        return 'nutrition-'.now()->format('Y-m-d-His').'.sql.gz';
     }
 
     /**
@@ -138,9 +112,6 @@ class CopiaBase
      */
     public function volcarSql(callable $salida): int
     {
-        if (! self::esPostgres()) {
-            throw new RuntimeException('El volcado SQL solo esta disponible con PostgreSQL.');
-        }
         $pdo = DB::connection()->getPdo();
         $pdo->exec('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
 
@@ -154,7 +125,9 @@ class CopiaBase
             $salida('-- Version de la aplicacion: '.config('app.version', config('app.name'))."\n");
             $salida('-- Tablas ('.count($tablas).'): '.implode(', ', $tablas)."\n");
             $salida("-- Restaurar con: psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f copia.sql  (sobre una base con el esquema ya migrado)\n\n");
-            $salida("BEGIN;\nSET client_encoding = 'UTF8';\n");
+            // Sin triggers ni claves foraneas durante la carga (hace falta ser superusuario): restaurar no es un movimiento que auditar,
+            // la auditoria viaja en la propia copia.
+            $salida("BEGIN;\nSET client_encoding = 'UTF8';\nSET LOCAL session_replication_role = replica;\n");
             if ($tablas) {
                 $salida('TRUNCATE '.implode(', ', array_map(self::identificador(...), $tablas))." RESTART IDENTITY CASCADE;\n\n");
             }
@@ -168,7 +141,7 @@ class CopiaBase
                     if ($col['serie']) {
                         $t = self::identificador($tabla);
                         $c = self::identificador($col['nombre']);
-                        $salida("SELECT setval(pg_get_serial_sequence(".self::texto($t).', '.self::texto($col['nombre'])."), COALESCE(MAX($c), 1), MAX($c) IS NOT NULL) FROM $t;\n");
+                        $salida('SELECT setval(pg_get_serial_sequence('.self::texto($t).', '.self::texto($col['nombre'])."), COALESCE(MAX($c), 1), MAX($c) IS NOT NULL) FROM $t;\n");
                     }
                 }
             }
@@ -274,109 +247,5 @@ class CopiaBase
         }
 
         return $resultado;
-    }
-
-    /** Escribe una instantanea consistente en un fichero temporal y devuelve su ruta (quien la pida debe borrarla). */
-    public function exportar(): string
-    {
-        $this->exigirSqlite();
-        $ruta = tempnam(sys_get_temp_dir(), 'copia');
-        $pdo = DB::connection()->getPdo();
-        $pdo->exec('VACUUM INTO '.$pdo->quote($ruta));
-
-        return $ruta;
-    }
-
-    /**
-     * Sustituye los datos actuales por los de la copia.
-     *
-     * @return array<string, int> filas importadas por tabla
-     */
-    public function importar(string $ruta): array
-    {
-        $this->exigirSqlite();
-        $this->comprobarCabecera($ruta);
-
-        $db = DB::connection();
-        $pdo = $db->getPdo();
-        $pdo->exec('ATTACH DATABASE '.$pdo->quote($ruta).' AS copia');
-
-        try {
-            $this->comprobarContenido();
-            $tablas = array_values(array_diff($this->tablas('main'), self::OMITIR));
-            $tablas = array_values(array_intersect($tablas, $this->tablas('copia')));
-
-            $db->statement('PRAGMA foreign_keys = OFF');
-            $resumen = [];
-            $db->transaction(function () use ($db, $tablas, &$resumen) {
-                $db->statement('PRAGMA defer_foreign_keys = ON');
-                foreach ($tablas as $tabla) {
-                    $columnas = array_values(array_intersect($this->columnas('main', $tabla), $this->columnas('copia', $tabla)));
-                    $t = $this->id($tabla);
-                    $db->statement("DELETE FROM main.$t");
-                    if ($columnas) {
-                        $lista = implode(', ', array_map($this->id(...), $columnas));
-                        $db->statement("INSERT INTO main.$t ($lista) SELECT $lista FROM copia.$t");
-                    }
-                    $resumen[$tabla] = (int) $db->selectOne("SELECT COUNT(*) AS n FROM main.$t")->n;
-                }
-            });
-
-            return $resumen;
-        } finally {
-            $db->statement('PRAGMA foreign_keys = ON');
-            $pdo->exec('DETACH DATABASE copia');
-        }
-    }
-
-    private function exigirSqlite(): void
-    {
-        if (! self::disponible()) {
-            throw new RuntimeException('Las copias de seguridad solo estan disponibles con SQLite.');
-        }
-    }
-
-    private function comprobarCabecera(string $ruta): void
-    {
-        $f = is_file($ruta) ? fopen($ruta, 'rb') : false;
-        $cabecera = $f ? fread($f, 16) : '';
-        if ($f) {
-            fclose($f);
-        }
-        if ($cabecera !== "SQLite format 3\0") {
-            throw new RuntimeException('El archivo no es una copia de seguridad (no es una base SQLite).');
-        }
-    }
-
-    private function comprobarContenido(): void
-    {
-        $estado = DB::selectOne('PRAGMA copia.integrity_check');
-        if (($estado ? array_values((array) $estado)[0] : null) !== 'ok') {
-            throw new RuntimeException('La copia esta danada (falla la comprobacion de integridad).');
-        }
-        $faltan = array_diff(self::REQUERIDAS, $this->tablas('copia'));
-        if ($faltan) {
-            throw new RuntimeException('El archivo no parece una copia de esta aplicacion (faltan: '.implode(', ', $faltan).').');
-        }
-    }
-
-    /** @return list<string> */
-    private function tablas(string $base): array
-    {
-        return array_map(
-            fn ($f) => $f->name,
-            DB::select("SELECT name FROM $base.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"),
-        );
-    }
-
-    /** @return list<string> */
-    private function columnas(string $base, string $tabla): array
-    {
-        return array_map(fn ($f) => $f->name, DB::select("PRAGMA $base.table_info(".$this->id($tabla).')'));
-    }
-
-    private function id(string $nombre): string
-    {
-        return '"'.str_replace('"', '""', $nombre).'"';
     }
 }

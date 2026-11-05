@@ -27,6 +27,7 @@ class AuditoriaInfolist
                 TextEntry::make('descripcion')->label('Descripción')->placeholder('—'),
                 TextEntry::make('ip')->label('IP')->placeholder('—'),
                 TextEntry::make('metodo')->label('Método')->placeholder('—'),
+                TextEntry::make('instancia')->label('Instancia')->placeholder('—'),
                 TextEntry::make('url')->label('URL')->placeholder('—'),
                 TextEntry::make('user_agent')->label('Navegador')->placeholder('—')->columnSpanFull(),
             ]),

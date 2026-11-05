@@ -14,6 +14,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\Support\CreaHogar;
 use Tests\TestCase;
 
@@ -318,7 +319,7 @@ class EjecutorAgenteTest extends TestCase
         $ejecutor = \Mockery::mock(EjecutorAgente::class);
         $ejecutor->shouldReceive('ejecutar')->never();
 
-        (new GenerarMenu(999999))->handle($ejecutor);
+        (new GenerarMenu((string) Str::uuid()))->handle($ejecutor);
 
         $this->addToAssertionCount(1);
     }

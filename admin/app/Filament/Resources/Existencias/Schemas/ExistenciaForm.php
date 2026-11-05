@@ -18,7 +18,7 @@ class ExistenciaForm
             ->columns(2)
             ->components([
                 Select::make('hogar_id')->label('Hogar')->relationship('hogar', 'nombre')->required()
-                    ->default(fn (): ?int => Hogar::query()->value('id')),
+                    ->default(fn (): ?string => Hogar::query()->value('id')),
                 Select::make('alimento_id')->label('Alimento')->relationship('alimento', 'nombre')->required()
                     ->searchable()->preload()->createOptionForm(AlimentoForm::campos()),
                 TextInput::make('cantidad')->label('Cantidad')->numeric()->minValue(0)->required(),

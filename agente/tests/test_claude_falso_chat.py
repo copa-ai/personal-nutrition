@@ -66,7 +66,7 @@ class ChatFalsoTest(unittest.TestCase):
         self.conversacion("registra lentejas")
         r = self.ejecutar("invalida")
         acciones = json.loads((self.raiz / "workspace" / "chat-acciones-7.json").read_text())["acciones"]
-        self.assertEqual([a["perfil"] for a in acciones], [3, 999999])
+        self.assertEqual([a["perfil"] for a in acciones], [3, "00000000-0000-7000-8000-000000000000"])
 
     def test_modo_limite_y_error(self):
         self.conversacion("hola")

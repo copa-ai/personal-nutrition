@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('alimentos', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('nombre')->unique();
             $table->string('categoria', 20)->default('otro');   // CategoriaComida
             $table->string('unidad', 10)->default('g');         // unidad habitual: g, kg, ml, l, ud

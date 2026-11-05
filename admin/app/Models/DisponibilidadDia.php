@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\DiaSemana;
 use Database\Factories\DisponibilidadDiaFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DisponibilidadDia extends Model
 {
     /** @use HasFactory<DisponibilidadDiaFactory> */
-    use HasFactory;
+    use HasFactory, HasUuids;
 
     protected $table = 'disponibilidad_dias';
 

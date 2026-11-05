@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EstadoChat;
 use App\Services\Chat\Conversacion;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -24,7 +25,7 @@ use Illuminate\Database\Eloquent\Model;
  *    abierto, asi que cada una publica un MENSAJE NUEVO ya COMPLETED (con el mismo reply_to) y lo devuelve.
  *  - cancelada(): lee de la base si la persona cancelo la respuesta.
  *
- * @property int $id
+ * @property string $id
  * @property string $message_id
  * @property int $sequence
  * @property array<int, array<string, mixed>> $contenido
@@ -43,6 +44,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ChatMensaje extends Model
 {
+    use HasUuids;
+
     protected $table = 'chat_mensajes';
 
     protected $guarded = [];

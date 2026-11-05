@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -103,7 +104,7 @@ class AutoLogin
     private function usuarioElegido(): ?User
     {
         $id = Ajuste::obtener(Ajuste::AUTOLOGIN_USUARIO_ID);
-        $usuario = $id === null ? null : User::query()->find($id);
+        $usuario = is_string($id) && Str::isUuid($id) ? User::query()->find($id) : null;
         if ($usuario === null) {
             Ajuste::fijar(Ajuste::AUTOLOGIN_ACTIVO, false);
         }

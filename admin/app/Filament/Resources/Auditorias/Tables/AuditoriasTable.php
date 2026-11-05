@@ -54,6 +54,7 @@ class AuditoriasTable
                     ->color(fn (string $state): string => self::colorEvento($state)),
                 TextColumn::make('auditable_type')->label('Objeto')->placeholder('—')
                     ->formatStateUsing(fn (?string $state, Auditoria $record): string => $state ? class_basename($state).' #'.$record->auditable_id : '—'),
+                TextColumn::make('instancia')->label('Instancia')->placeholder('—')->searchable()->toggleable(),
                 TextColumn::make('ip')->label('IP')->placeholder('—')->searchable(),
                 TextColumn::make('descripcion')->label('Descripción')->placeholder('—')->limit(60)->searchable(),
             ])

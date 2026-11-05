@@ -7,6 +7,7 @@ use App\Models\Ajuste;
 use App\Models\Auditoria;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AutoLoginTest extends TestCase
@@ -25,7 +26,7 @@ class AutoLoginTest extends TestCase
         $this->usuario = User::create(['name' => 'Demo', 'email' => 'admin@demo.com', 'password' => 'password']);
     }
 
-    private function activar(?int $id = null): void
+    private function activar(?string $id = null): void
     {
         Ajuste::fijar(Ajuste::AUTOLOGIN_USUARIO_ID, $id ?? $this->usuario->id);
         Ajuste::fijar(Ajuste::AUTOLOGIN_ACTIVO, true);
@@ -60,7 +61,7 @@ class AutoLoginTest extends TestCase
 
     public function test_usuario_inexistente_desactiva_el_ajuste_y_no_entra(): void
     {
-        $this->activar(9999);
+        $this->activar((string) Str::uuid());
 
         $this->get('/')->assertRedirect('/login');
 

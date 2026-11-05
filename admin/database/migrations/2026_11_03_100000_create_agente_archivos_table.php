@@ -14,7 +14,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('agente_archivos', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('ruta')->unique();          // relativa a agente/: «encargos/encargo-3.json», «workspace/resultado-3.json»...
             $table->longText('contenido');             // base64
             $table->timestamps();

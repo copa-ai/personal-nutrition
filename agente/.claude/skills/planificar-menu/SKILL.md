@@ -35,14 +35,14 @@ Si tras varios intentos no consigues un borrador válido, **no entregues**. Resp
 
 ```json
 {
-  "formato": "encargo-menu", "version": 3, "encargo_id": 7, "salida": "workspace/resultado-7.json",
+  "formato": "encargo-menu", "version": 3, "encargo_id": "0192f3c4-7a10-7b3e-9c1d-5e2f8a4b6d10", "salida": "workspace/resultado-0192f3c4-….json",
   "semana": {"inicio": "2026-11-02", "dias": 7, "fechas": ["2026-11-02", "…"]},
   "categorias_validas": ["carne_roja", "pescado", "…"],
   "opciones_por_comida": {"min": 2, "max": 3},
   "hogar": {"nombre": "Casa", "tiempos": [
     {"fecha": "2026-11-02", "dia_semana": 1, "minutos_comida": 30, "minutos_cena": 45,
      "minutos_desayuno": 10, "minutos_almuerzo": null, "minutos_merienda": 5}]},
-  "perfiles": [{"id": 1, "nombre": "Marta", "objetivo": "…", "kcal_diarias": 1700,
+  "perfiles": [{"id": "0192f3c4-8a11-7c20-b001-1a2b3c4d5e6f", "nombre": "Marta", "objetivo": "…", "kcal_diarias": 1700,
                 "macros_pct": {"proteina": 30, "carbohidratos": 40, "grasa": 30},
                 "restricciones": ["sin lácteos"], "notas": "Voy al gimnasio lunes y miércoles a las 19:00.",
                 "gusta": ["pescado azul"], "no_gusta": ["coliflor"],
@@ -55,6 +55,7 @@ Si tras varios intentos no consigues un borrador válido, **no entregues**. Resp
 - `hogar.tiempos`: minutos que el hogar tiene para cocinar **al momento** cada toma ese día.
   - `minutos_comida` y `minutos_cena` (toma de todo el hogar): `null` = ese momento **no se cocina** (`categorias` y `opciones` van vacías).
   - `minutos_desayuno`, `minutos_almuerzo` y `minutos_merienda` (tomas individuales): `null` = **sin dato**, no hay límite que comprobar. Entonces propón algo sencillo o que se pueda dejar preparado el día antes.
+- `perfiles[].id` es un UUID en texto: cópialo tal cual en cada `perfil_id` (no lo acortes ni lo cambies).
 - `perfiles[].notas` es texto libre del hogar (horarios, gimnasio, trabajo…). **Interprétalo tú**: no hay campos aparte para eso.
 - `perfiles[].historial` es lo que **se comió de verdad** (no lo que se planeó). `origen: fuera` significa que comió fuera de casa.
 - `calendario_previo`: títulos de menús anteriores ya sugeridos (no son necesariamente lo que se comió).
@@ -104,14 +105,14 @@ Lleva `entrega.version` = 3, una entrada en `dias` por cada fecha de `semana.fec
             "duracion_previa_min": 10,
             "duracion_momento_min": 25,
             "pasos": ["Cortar el pollo en dados…", "Sofreír…"],
-            "ajustes": [{"perfil_id": 1, "texto": "Apartar el arroz antes de mezclar y añadir brócoli."}]
+            "ajustes": [{"perfil_id": "0192f3c4-8a11-7c20-b001-1a2b3c4d5e6f", "texto": "Apartar el arroz antes de mezclar y añadir brócoli."}]
           }
         ]
       },
       "cena": {"categorias": [], "opciones": []},
       "individuales": [
         {
-          "perfil_id": 1,
+          "perfil_id": "0192f3c4-8a11-7c20-b001-1a2b3c4d5e6f",
           "desayuno": {
             "titulo": "Tostada integral con tomate",
             "descripcion": "Desayuno rápido sin lácteos.",
@@ -129,13 +130,13 @@ Lleva `entrega.version` = 3, una entrada en `dias` por cada fecha de `semana.fec
             "duracion_previa_min": 0, "duracion_momento_min": 0
           }
         },
-        {"perfil_id": 2, "desayuno": {"…": "…"}, "almuerzo": {"…": "…"}, "merienda": {"…": "…"}}
+        {"perfil_id": "0192f3c4-8a12-7d31-b002-6f5e4d3c2b1a", "desayuno": {"…": "…"}, "almuerzo": {"…": "…"}, "merienda": {"…": "…"}}
       ]
     }
   ],
   "explicaciones": [
-    {"perfil_id": 1, "texto": "Lunes y miércoles, que vas al gimnasio, …"},
-    {"perfil_id": 2, "texto": "…"}
+    {"perfil_id": "0192f3c4-8a11-7c20-b001-1a2b3c4d5e6f", "texto": "Lunes y miércoles, que vas al gimnasio, …"},
+    {"perfil_id": "0192f3c4-8a12-7d31-b002-6f5e4d3c2b1a", "texto": "…"}
   ]
 }
 ```

@@ -15,6 +15,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Str;
 
 /** Interruptores de la instancia: chat habilitado y login automatico, mas el estado del chat. Cada cambio se audita (Ajuste::fijar). */
 class AjustesServicio extends Page
@@ -74,8 +75,8 @@ class AjustesServicio extends Page
                     ->options(fn (): array => User::query()->orderBy('email')->get()->mapWithKeys(fn (User $u): array => [$u->id => $u->name.' <'.$u->email.'>'])->all())
                     ->afterStateUpdated(function ($state): void {
                         // El estado viene del navegador: solo vale el id de un usuario que existe.
-                        if (is_numeric($state) && User::query()->whereKey((int) $state)->exists()) {
-                            Ajuste::fijar(Ajuste::AUTOLOGIN_USUARIO_ID, (int) $state);
+                        if (is_string($state) && Str::isUuid($state) && User::query()->whereKey($state)->exists()) {
+                            Ajuste::fijar(Ajuste::AUTOLOGIN_USUARIO_ID, $state);
                         }
                     }),
             ]),
@@ -83,15 +84,15 @@ class AjustesServicio extends Page
     }
 
     /** El usuario guardado si existe; si no, admin@demo.com o el primero. Null si no hay usuarios. */
-    public static function usuarioElegidoId(): ?int
+    public static function usuarioElegidoId(): ?string
     {
         $guardado = Ajuste::obtener(Ajuste::AUTOLOGIN_USUARIO_ID);
-        if ($guardado !== null && User::query()->whereKey($guardado)->exists()) {
-            return (int) $guardado;
+        if (is_string($guardado) && Str::isUuid($guardado) && User::query()->whereKey($guardado)->exists()) {
+            return (string) $guardado;
         }
         $id = User::query()->where('email', 'admin@demo.com')->value('id') ?? User::query()->orderBy('id')->value('id');
 
-        return $id === null ? null : (int) $id;
+        return $id === null ? null : (string) $id;
     }
 
     /** @return array<string, mixed> */

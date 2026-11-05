@@ -119,10 +119,10 @@ class ChatMensajesResourceTest extends TestCase
         $this->entrar();
         $m = $this->mensaje(4, true, 'Pega tu clave', ['contenido' => [
             ['tipo' => 'texto', 'texto' => 'Pega tu clave'],
-            ['tipo' => 'peticion_secreto', 'request_id' => 'r1', 'nombre' => 'CLAUDE_TOKEN', 'prosa' => 'Necesito la clave'],
+            ['tipo' => 'peticion_secreto', 'request_id' => 'solicitud-secreta-7f3a', 'nombre' => 'CLAUDE_TOKEN', 'prosa' => 'Necesito la clave'],
         ]]);
 
-        $this->get('/chat/'.$m->id)->assertOk()->assertDontSee('r1')->assertDontSee('peticion_secreto');
+        $this->get('/chat/'.$m->id)->assertOk()->assertDontSee('solicitud-secreta-7f3a')->assertDontSee('peticion_secreto');
         $this->assertNull(ChatArchivo::query()->first());
     }
 }

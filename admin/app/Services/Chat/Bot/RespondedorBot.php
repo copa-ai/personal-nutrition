@@ -295,7 +295,7 @@ class RespondedorBot implements Respondedor
     }
 
     /** @param  Collection<int, Perfil>  $perfiles */
-    private function pedirDatos(string $introduccion, Collection $perfiles, ?int $perfilId, ?string $momento, CarbonImmutable $fecha, string $descripcion, ?string $foto, CarbonImmutable $hoy): Respuesta
+    private function pedirDatos(string $introduccion, Collection $perfiles, ?string $perfilId, ?string $momento, CarbonImmutable $fecha, string $descripcion, ?string $foto, CarbonImmutable $hoy): Respuesta
     {
         $texto = Mensaje::nuevo()->texto($introduccion)->teclado(Formularios::registro($perfiles, $perfilId, $momento, $fecha, $descripcion, $hoy))->render();
 

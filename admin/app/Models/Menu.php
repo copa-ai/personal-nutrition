@@ -12,6 +12,7 @@ use App\Models\Menu\PideTarea;
 use App\Models\Menu\ValidaEntrega;
 use Carbon\CarbonImmutable;
 use Database\Factories\MenuFactory;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -22,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Menu extends Model
 {
     /** @use HasFactory<MenuFactory> */
-    use ConstruyeDocumento, ConstruyeEncargo, ElijeOpciones, HasFactory, ImportaEntrega, LeeProgreso, PideTarea, SoftDeletes, ValidaEntrega;
+    use ConstruyeDocumento, ConstruyeEncargo, ElijeOpciones, HasFactory, HasUuids, ImportaEntrega, LeeProgreso, PideTarea, SoftDeletes, ValidaEntrega;
 
     protected $guarded = [];
 

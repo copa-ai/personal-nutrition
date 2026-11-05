@@ -507,7 +507,7 @@ def p_accion_invalida(c: Contexto) -> None:
         comprobar(r["estado"] == "COMPLETED", f"{r['estado']} {r['error']}")
         despues = int(sql("select count(*) from registros_comida"))
         comprobar(despues == antes + 1, f"solo la valida debia aplicarse ({antes} -> {despues})")
-        comprobar(sql("select count(*) from registros_comida where perfil_id=999999") == "0", "la invalida no se aplica")
+        comprobar(sql("select count(*) from registros_comida where perfil_id='00000000-0000-7000-8000-000000000000'") == "0", "la invalida no se aplica")
         comprobar(re.search(r"no se (han )?(pudo|ha podido|aplicad)|rechaz", r["texto"], re.I), f"debe decir que se rechazo algo: {r['texto'][-300:]!r}")
     finally:
         open(modo, "w").write("ok")

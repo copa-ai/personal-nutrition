@@ -222,7 +222,7 @@ class ChatRespuestaTest extends TestCase
         $this->enviarTexto('uno');
         $this->mensajePorSecuencia(2)->cancelar();
 
-        (new ResponderChat(1, 2))->handle(app(Respondedor::class));
+        (new ResponderChat($this->mensajePorSecuencia(1)->id, $this->mensajePorSecuencia(2)->id))->handle(app(Respondedor::class));
         $this->assertSame([], MotorDePrueba::$llamadas, 'una respuesta cancelada antes de empezar no llama al motor');
 
         $this->enviarTexto('dos');
@@ -241,7 +241,7 @@ class ChatRespuestaTest extends TestCase
     {
         $respuesta = $this->respuestaAbierta();
 
-        (new ResponderChat(1, $respuesta->id))->failed(new RuntimeException('mato el worker'));
+        (new ResponderChat($this->mensajePorSecuencia(1)->id, $respuesta->id))->failed(new RuntimeException('mato el worker'));
 
         $this->assertSame(EstadoChat::Fallido, $respuesta->fresh()->estado);
     }
@@ -332,7 +332,10 @@ class ChatRespuestaTest extends TestCase
         $this->assertCount(1, $filas, 'repetir el mismo valor no audita');
         $this->assertEquals(['ajuste' => 'chat_habilitado', 'antes' => true, 'despues' => false], $filas[0]->datos);
         $this->assertSame(2, Auditoria::where('evento', 'ajuste.cambiado')->count());
-        $this->assertSame(0, Auditoria::where('auditable_type', Ajuste::class)->count());
+        // Ademas del hecho con nombre, el trigger anota cada alta y cambio de la fila; el nombre del ajuste (`clave`) no se enmascara.
+        $genericas = Auditoria::where('auditable_type', Ajuste::class)->orderBy('id')->get();
+        $this->assertSame(['creado', 'creado', 'creado'], $genericas->pluck('evento')->all(), 'repetir el mismo valor no cambia la fila');
+        $this->assertSame('chat_habilitado', $genericas[0]->valores_nuevos['clave']);
     }
 
     public function test_el_mixto_no_usa_claude_si_el_interruptor_esta_apagado_aunque_haya_token(): void

@@ -283,7 +283,7 @@ class ChatBotRespuestasTest extends TestCase
         $contenido = $this->menu->contenido;
         $perfiles = $this->hogar->perfiles()->pluck('id');
         foreach ($contenido['dias'] as $i => $dia) {
-            $contenido['dias'][$i]['individuales'] = $perfiles->map(fn (int $id): array => ['perfil_id' => $id, 'desayuno' => ['titulo' => 'Desayuno rico y sano número uno'], 'almuerzo' => ['titulo' => 'Fruta de temporada']])->all();
+            $contenido['dias'][$i]['individuales'] = $perfiles->map(fn (string $id): array => ['perfil_id' => $id, 'desayuno' => ['titulo' => 'Desayuno rico y sano número uno'], 'almuerzo' => ['titulo' => 'Fruta de temporada']])->all();
         }
         $this->menu->forceFill(['contenido' => $contenido])->save();
 

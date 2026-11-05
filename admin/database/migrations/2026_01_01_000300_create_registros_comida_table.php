@@ -10,14 +10,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('registros_comida', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('perfil_id')->constrained('perfiles')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('perfil_id')->constrained('perfiles')->cascadeOnDelete();
             $table->date('fecha');
             $table->string('momento', 10);                       // MomentoComida
             $table->string('origen', 10);                        // OrigenComida: menu | casa | fuera
             $table->text('descripcion');                         // lo que se comió de verdad
             $table->json('categorias')->nullable();              // lista de CategoriaComida
-            $table->foreignId('menu_id')->nullable()->constrained('menus')->nullOnDelete(); // menú del que salió (origen = menu)
+            $table->foreignUuid('menu_id')->nullable()->constrained('menus')->nullOnDelete(); // menú del que salió (origen = menu)
             $table->string('opcion_ref')->nullable();            // qué opción del menú: «2026-11-02/comida/1»
 
             $table->index(['perfil_id', 'fecha']);

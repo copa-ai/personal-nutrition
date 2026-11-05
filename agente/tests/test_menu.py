@@ -10,6 +10,8 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 FECHAS = [f"2026-11-0{d}" for d in range(2, 9)]
+P1 = "0192f3c4-8a11-7c20-b001-1a2b3c4d5e6f"   # los ids de perfil son UUID en texto
+P2 = "0192f3c4-8a12-7d31-b002-6f5e4d3c2b1a"
 
 
 def encargo_base() -> dict:
@@ -21,7 +23,7 @@ def encargo_base() -> dict:
         "hogar": {"nombre": "Casa", "tiempos": [
             {"fecha": f, "dia_semana": i + 1, "minutos_comida": 30, "minutos_cena": 45,
              "minutos_desayuno": 10, "minutos_almuerzo": 10, "minutos_merienda": 5} for i, f in enumerate(FECHAS)]},
-        "perfiles": [{"id": 1, "nombre": "Marta"}, {"id": 2, "nombre": "Javier"}],
+        "perfiles": [{"id": P1, "nombre": "Marta"}, {"id": P2, "nombre": "Javier"}],
     }
 
 
@@ -94,7 +96,7 @@ class ValidarEntrega(unittest.TestCase):
         del ind[1]["desayuno"]
         errores = self.menu.validar_entrega(self.datos, self.encargo)
         self.assertEqual(4, len(errores))
-        self.assertIn("2026-11-02 · perfil 1 · desayuno", errores[0])
+        self.assertIn(f"2026-11-02 · perfil {P1} · desayuno", errores[0])
 
     def test_la_toma_individual_respeta_el_tiempo_solo_si_hay_dato(self):
         self.datos["dias"][0]["individuales"][0]["desayuno"]["duracion_momento_min"] = 11
@@ -127,18 +129,18 @@ class ValidarEntrega(unittest.TestCase):
 
     def test_los_ajustes_son_opcionales_y_validos(self):
         opcion_ = self.datos["dias"][0]["comida"]["opciones"][0]
-        opcion_["ajustes"] = [{"perfil_id": 1, "texto": "Añadir brócoli."}, {"perfil_id": 2, "texto": "Doble ración."}]
+        opcion_["ajustes"] = [{"perfil_id": P1, "texto": "Añadir brócoli."}, {"perfil_id": P2, "texto": "Doble ración."}]
         self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
         opcion_["ajustes"] = []
         self.assertEqual([], self.menu.validar_entrega(self.datos, self.encargo))
 
     def test_los_ajustes_con_perfil_repetido_inexistente_o_sin_texto_fallan(self):
         opcion_ = self.datos["dias"][0]["comida"]["opciones"][0]
-        opcion_["ajustes"] = [{"perfil_id": 1, "texto": "A"}, {"perfil_id": 1, "texto": "B"}]
+        opcion_["ajustes"] = [{"perfil_id": P1, "texto": "A"}, {"perfil_id": P1, "texto": "B"}]
         self.assertIn("más de un ajuste", self.menu.validar_entrega(self.datos, self.encargo)[0])
-        opcion_["ajustes"] = [{"perfil_id": 9, "texto": "A"}]
+        opcion_["ajustes"] = [{"perfil_id": "0192f3c4-ffff-7fff-bfff-ffffffffffff", "texto": "A"}]
         self.assertIn("perfil del encargo", self.menu.validar_entrega(self.datos, self.encargo)[0])
-        opcion_["ajustes"] = [{"perfil_id": 1, "texto": " "}]
+        opcion_["ajustes"] = [{"perfil_id": P1, "texto": " "}]
         self.assertIn("necesita «texto»", self.menu.validar_entrega(self.datos, self.encargo)[0])
         opcion_["ajustes"] = "brócoli"
         self.assertIn("«ajustes» debe ser una lista", self.menu.validar_entrega(self.datos, self.encargo)[0])

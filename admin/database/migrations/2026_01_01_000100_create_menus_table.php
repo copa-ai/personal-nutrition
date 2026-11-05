@@ -13,11 +13,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('menus', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
 
             // ── encargo ──
             $table->string('nombre');
-            $table->foreignId('hogar_id')->constrained('hogares')->cascadeOnDelete();
+            $table->foreignUuid('hogar_id')->constrained('hogares')->cascadeOnDelete();
             $table->date('fecha_inicio');                    // primer día del menú; el menú cubre 7 días desde aquí
             $table->json('encargo')->nullable();             // copia del encargo enviado al agente (con ella se valida la entrega)
 

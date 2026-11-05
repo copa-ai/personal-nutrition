@@ -124,7 +124,7 @@ trait ConstruyeEncargo
      *
      * @return list<array{inicio: string, dias: list<array<string, mixed>>}>
      */
-    private function menusPrevios(int $hogarId, CarbonImmutable $inicio): array
+    private function menusPrevios(string $hogarId, CarbonImmutable $inicio): array
     {
         return Menu::query()
             ->where('hogar_id', $hogarId)->where('estado', 'terminado')->where('id', '!=', $this->id)

@@ -14,8 +14,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('consumos_menu', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('menu_id')->constrained('menus')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('menu_id')->constrained('menus')->cascadeOnDelete();
             $table->string('mensaje_id');
             $table->unsignedInteger('ciclo')->nullable();        // tanda del menú en la que se registro
             $table->string('fase')->nullable();

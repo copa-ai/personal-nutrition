@@ -67,7 +67,7 @@ final class Vistas
         foreach ($perfiles as $perfil) {
             $filas = [];
             foreach ($dia['individuales'] ?? [] as $individual) {
-                if ((int) ($individual['perfil_id'] ?? 0) !== $perfil->id) {
+                if ((string) ($individual['perfil_id'] ?? '') !== (string) $perfil->id) {
                     continue;
                 }
                 foreach (['desayuno', 'almuerzo', 'merienda'] as $momento) {

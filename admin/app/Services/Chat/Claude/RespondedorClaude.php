@@ -30,7 +30,7 @@ class RespondedorClaude implements Respondedor
 
     public function __construct(private readonly InstantaneaDatos $instantanea, private readonly AccionesChat $acciones) {}
 
-    public static function prompt(int $turno): string
+    public static function prompt(string $turno): string
     {
         return self::MARCA." {$turno}. Usa la skill chat-nutricion: la instantánea de solo lectura está en encargos/chat-{$turno}/ (empieza por LEEME.json; "
             .'la pregunta es el último mensaje de la persona en conversacion.json). Responde en esta salida, que es lo que lee la persona en el chat. '
@@ -181,7 +181,7 @@ class RespondedorClaude implements Respondedor
         return Validador::sanear($texto);
     }
 
-    private function cerrar(ChatMensaje $respuesta, EstadoTurno $estado, ResultadoClaude $r, int $turno): void
+    private function cerrar(ChatMensaje $respuesta, EstadoTurno $estado, ResultadoClaude $r, string $turno): void
     {
         $texto = $r->texto();
         if (! $estado->hayTexto && ($renovacion = LimiteUso::renovacion($texto.' '.(string) $estado->final)) !== null) {

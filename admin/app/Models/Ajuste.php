@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UuidDeClaveNatural;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -9,6 +10,13 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Ajuste extends Model
 {
+    use UuidDeClaveNatural;
+
+    public static function claveNatural(): string
+    {
+        return 'clave';
+    }
+
     public const CHAT_HABILITADO = 'chat_habilitado';
 
     /** Si el chat puede responder con Claude (aunque haya token). Apagado, responde siempre el bot basico y no se pide el token. */

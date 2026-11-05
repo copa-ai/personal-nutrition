@@ -179,7 +179,11 @@ DB_ANFITRION=$1; DB_PUERTO=$2; NUTRITION_DB_CLUSTER=$3
 fase base ok "$DB_ANFITRION:$DB_PUERTO"
 agente_vigilar
 
-ENTORNO_APP=("${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" DB_HOST="$DB_ANFITRION" DB_PORT="$DB_PUERTO" NUTRITION_DB_CLUSTER="$NUTRITION_DB_CLUSTER")
+# NUTRITION_BASE_ESTADO: el fichero con la base en la que se escribe; `nutrition:vigilar-base` lo cambia y la app se reconecta sin reiniciar.
+# Los ajustes de la eleccion de base solo se pasan si se dieron (vacios romperian los valores por defecto).
+ENTORNO_APP=("${ENTORNO_BASE[@]}" "${ENTORNO_ESTADO[@]}" "${ENTORNO_DB[@]}" DB_HOST="$DB_ANFITRION" DB_PORT="$DB_PUERTO" NUTRITION_DB_CLUSTER="$NUTRITION_DB_CLUSTER"
+    NUTRITION_BASE_ESTADO="$RUN_DB" ${NUTRITION_ELECCION_MARGEN:+NUTRITION_ELECCION_MARGEN=$NUTRITION_ELECCION_MARGEN}
+    ${NUTRITION_FUSION_AUTOMATICA:+NUTRITION_FUSION_AUTOMATICA=$NUTRITION_FUSION_AUTOMATICA} ${NUTRITION_BAJA_AUTOMATICA:+NUTRITION_BAJA_AUTOMATICA=$NUTRITION_BAJA_AUTOMATICA} ${NUTRITION_BAJA_SILENCIO_MIN:+NUTRITION_BAJA_SILENCIO_MIN=$NUTRITION_BAJA_SILENCIO_MIN})
 app() { ( como app "${ENTORNO_APP[@]}" -- "$@" ); }
 
 app cp -R /opt/agente-kit/. "$A/agente/"
@@ -222,6 +226,9 @@ for i in $(seq 1 60); do
 done
 fase web ok "escucha en :8000"
 fase cola ok
+
+# --- Vigilante de la base compartida: cada NUTRITION_VIGILANCIA_CADA_S (300 s) elige en que base escribir entre las de la red ---
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while sleep "$1"; do php artisan nutrition:vigilar-base "$2" || true; done' vigilante "${NUTRITION_VIGILANCIA_CADA_S:-300}" "$RUN_DB"
 
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"

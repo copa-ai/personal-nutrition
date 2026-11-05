@@ -100,7 +100,7 @@ def chat(turno: int) -> int:
         fotos and accion.update(foto_hash=fotos[0]["foto_hash"])
         acciones.append(accion)
         if modo == "invalida":
-            acciones.append({"tipo": "registrar_comida", "perfil": 999999, "fecha": leeme["hoy"], "momento": "cena", "descripcion": "Esto no se puede aplicar"})
+            acciones.append({"tipo": "registrar_comida", "perfil": "00000000-0000-7000-8000-000000000000", "fecha": leeme["hoy"], "momento": "cena", "descripcion": "Esto no se puede aplicar"})
     if acciones:
         (raiz / f"workspace/chat-acciones-{turno}.json").write_text(json.dumps({"acciones": acciones}, ensure_ascii=False), encoding="utf-8")
         herramienta("Write", {"file_path": f"workspace/chat-acciones-{turno}.json"})

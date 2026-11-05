@@ -83,7 +83,7 @@ Si cambias `APP_KEY`, el token guardado deja de poder descifrarse y hay que volv
 |---|---|---|
 | Memoria | 2 GiB | PHP (web + cola) ~0,5 GiB; cada `claude -p` ronda 0,5 GiB, así que `AGENTE_MAX_SIMULTANEAS` vale 1 por defecto |
 | CPU | 1 núcleo | el modelo es remoto; la CPU solo la usan PHP, el PDF y Claude Code |
-| Disco | 4 GiB | imagen (PHP + Node + Claude Code + `vendor`, ~1,5 GiB) + SQLite + bucket |
+| Disco | 4 GiB | imagen (PHP + Node + Claude Code + `vendor`, ~1,5 GiB) + bucket |
 | Red | `*` (salida abierta) | el agente llama a `api.anthropic.com` por nombre; el guest no resuelve nombres desde `__config__` |
 | API | puerto 8000 (HTTP) | único puerto declarado: el 9000 del agente **no** se pueden tunelar |
 
@@ -118,11 +118,28 @@ columna  := nombre ":" tipo [" null"] [" auto"] [" default=" expresión]
 restricción (en este orden): pk(cols) | uq(cols)... | idx(cols)... | fk(cols->tabla.cols del=acción upd=acción)...
 ```
 
-`tipo` es el de PostgreSQL tal como lo devuelve `Schema::getColumns()` (`bigint`, `character varying(255)`, `timestamp(0) without time zone`, `numeric(10,2)`, `jsonb`…); sin ` null` la columna es NOT NULL; ` auto` marca las auto-incrementales; `default` es la expresión que guarda PostgreSQL. Los índices, uniques y claves foráneas van sin nombre (lo deriva Laravel) y ordenados por sus columnas; las acciones son `no action`, `restrict`, `cascade`, `set null` o `set default`. Se incluyen todas las tablas de las migraciones excepto `migrations` (la de la herramienta). Por ejemplo:
+**Claves primarias UUID.** Todas las tablas que se fusionan usan UUID (UUIDv7 en las que no tienen clave natural), para que dos bifurcaciones de la base no choquen al unirse. `alimentos`, `ajustes`, `agente_archivos` y `chat_archivos` derivan el UUID (UUIDv5, `App\Models\Concerns\UuidDeClaveNatural`) de su clave natural única (`nombre`, `clave`, `ruta`, `hash`): la misma fila creada por separado en dos bifurcaciones tiene el mismo id. Solo `jobs` y `failed_jobs` (de Laravel, no se fusionan) y `chat_conversacion` (una fila fija) conservan un entero. En el contrato con el agente, `perfiles[].id` y `perfil_id` son ese UUID en texto.
+
+**Auditoría.** La hace PostgreSQL con triggers (`admin/database/migrations/*_create_auditoria_triggers.php`, requiere PostgreSQL 18 por `uuidv7()`): cada alta, cambio y baja de las tablas de datos queda en `auditorias` aunque no pase por Eloquent (consultas directas, actualizaciones en bloque, `psql`, la fusión de datos). Cada fila lleva la fecha, el usuario (nombre y correo), la instancia (`NUTRITION_INSTANCIA` o la guardada en `storage/app/instancia`), el modelo (`auditable_type`) y el id (`auditable_id`) siempre, y en un cambio **solo las columnas que cambian** (antes y después, sin `updated_at`); una baja guarda la fila entera. Los campos sensibles (`password`, `token`, `secret`, `clave`, `key`, también dentro de un json) salen como `***`; los textos de más de 500 caracteres, recortados; y el contenido de archivos y mensajes del chat solo deja su tamaño. Para que el usuario, la ip y la url lleguen al trigger, la aplicación los deja en la sesión de PostgreSQL (`nutrition.*`) antes de cada escritura (`App\Services\ContextoAuditoria`); una escritura sin aplicación (psql) queda con `metodo = sql` y el rol de la base en `datos`. Quedan fuera las tablas efímeras (sesiones, cola, caché) y `migrations`; los deltas de una respuesta del chat (solo `contenido` y `razonamiento`) no son un evento cada uno, pero sí su cambio de estado. Los registros son inmutables también en la base (`UPDATE` y `DELETE` sobre `auditorias` fallan) y restaurar una copia no genera movimientos (el volcado desactiva los triggers y trae la auditoría consigo). Una tabla nueva se audita con `SELECT auditar_tabla('tabla', 'App\Models\Modelo')` en su migración; `TablasAuditadasTest` falla si se olvida.
+
+**Qué base usa cada dispositivo.** Con varias bases de la misma red (por ejemplo tras una desconexión), cada dispositivo elige en cuál escribir con una regla que no necesita hablar con los demás (`App\Services\BaseCompartida\Eleccion`): gana la que tiene **más eventos en la auditoría**; a igualdad, la de **menor `system_identifier`** de PostgreSQL (único por base y visible igual desde cualquier nodo). Quien ya escribe en una base la mantiene mientras la mejor no la supere en más de un 5 % (`NUTRITION_ELECCION_MARGEN`). `nutrition:vigilar-base` lo revisa cada 5 minutos (`NUTRITION_VIGILANCIA_CADA_S`; lo lanza `start.sh`), reescribe el fichero de estado (`NUTRITION_BASE_ESTADO`) y la aplicación se reconecta sin reiniciar. Una base que este dispositivo lanzó y que sobra se fusiona en la elegida y, con `NUTRITION_BAJA_AUTOMATICA=true` (apagado por defecto) y cuando ya está fusionada y en silencio, se para (ver «Fusión de bases»).
+
+**Fusión de bases.** Las bases que no son la elegida se fusionan en ella (`nutrition:vigilar-base`, `NUTRITION_FUSION_AUTOMATICA`, activo por defecto) y también a mano: `php artisan nutrition:exportar-datos fichero.ndjson` en una base y `php artisan nutrition:fusionar-datos fichero.ndjson` en otra. La fusión la hace PostgreSQL, con funciones (`fusion_*`, migración `create_fusion_functions`) que llama `App\Services\Fusion\Fusionador`: en una sola transacción (todo o nada), idempotente y sin tocar la base de origen. El fichero es un volcado NDJSON de una instantánea coherente (`Exportador`); no se fusionan bases con distinto esquema. Reglas:
+- **Misma fila en las dos (mismo UUID):** se queda la de `updated_at` mayor (a igualdad, la de mayor `md5` del contenido: sale lo mismo en las dos direcciones). La otra queda en la auditoría como `fusion_descartada`: `valores_antiguos` es lo que se queda, `valores_nuevos` lo que se pierde (solo las columnas que difieren, con lo sensible enmascarado), `datos` dice la tabla, la acción y el origen, y `instancia` quién fusionó. Un administrador puede revisarlas y volver a editar lo que proceda. Cada fusión anota además un evento `fusion` con el resumen.
+- **Borrados:** cada borrado deja una tumba en `borrados` (la pone el propio trigger). Una fila borrada en un lado no reaparece desde el otro; una edición posterior al borrado se conserva. Gana siempre la acción más nueva. Las tumbas y las filas descartadas por ella también quedan en la auditoría.
+- **Misma clave única con otro id** (el mismo correo de usuario, el mismo alimento, el mismo hogar y día de disponibilidad…): es la misma fila; se queda el id de esta base y las referencias del origen se reasignan. Una fila cuya referencia obligatoria ya no existe (su hogar se borró aquí) se descarta como `huerfana`.
+- **Menús:** lo que describe a quien los ejecuta (proceso, tanda, espera, estado de ejecución) no se importa: un menú que corría en el origen entra como `fallido`, y uno que corre aquí conserva su ejecución aunque traiga cambios de contenido.
+- **Chat:** los mensajes se unen por `message_id`; los que llegan con una `sequence` ya usada se renumeran a continuación de la última y `ultima_secuencia` se ajusta. Un cliente que ya los vio en la otra base los verá de nuevo con otro número.
+- **Auditoría:** la del origen se une a la de aquí (por id), así el historial de las dos bifurcaciones queda completo. La fusión no deja un «creado» por cada fila que trae.
+- **Hora:** las comparaciones usan `updated_at` (sin zona horaria, con precisión de segundos): todos los dispositivos deben usar la misma `APP_TIMEZONE` y el reloj en hora.
+
+`nutrition:vigilar-base` recuerda con qué eventos fusionó cada base (`<estado>.fusiones`): no repite la fusión si nadie ha escrito en ella, y la repite si sí. Solo con la base ya fusionada con todo lo que tiene (nadie ha escrito durante ni después de la fusión), sin eventos desde hace `NUTRITION_BAJA_SILENCIO_MIN` y lanzada por este dispositivo, se para con `NUTRITION_BAJA_AUTOMATICA=true` (apagado por defecto).
+
+`tipo` es el de PostgreSQL tal como lo devuelve `Schema::getColumns()` (`uuid`, `bigint`, `character varying(255)`, `timestamp(0) without time zone`, `numeric(10,2)`, `jsonb`…); sin ` null` la columna es NOT NULL; ` auto` marca las auto-incrementales; `default` es la expresión que guarda PostgreSQL. Los índices, uniques y claves foráneas van sin nombre (lo deriva Laravel) y ordenados por sus columnas; las acciones son `no action`, `restrict`, `cascade`, `set null` o `set default`. Se incluyen todas las tablas de las migraciones excepto `migrations` (la de la herramienta). Por ejemplo:
 
 ```
-db.table.hogares = id:bigint auto; nombre:character varying(255); created_at:timestamp(0) without time zone null; updated_at:timestamp(0) without time zone null; menu_id:bigint null; cambios:json null | pk(id) | fk(menu_id->menus.id del=set null upd=no action)
-db.table.alimentos = id:bigint auto; nombre:character varying(255); categoria:character varying(20) default='otro'::character varying; unidad:character varying(10) default='g'::character varying; created_at:…null; updated_at:…null | pk(id) | uq(nombre)
+db.table.hogares = id:uuid; nombre:character varying(255); created_at:timestamp(0) without time zone null; updated_at:timestamp(0) without time zone null; menu_id:uuid null; cambios:json null | pk(id) | fk(menu_id->menus.id del=set null upd=no action)
+db.table.alimentos = id:uuid; nombre:character varying(255); categoria:character varying(20) default='otro'::character varying; unidad:character varying(10) default='g'::character varying; created_at:…null; updated_at:…null | pk(id) | uq(nombre)
 ```
 
 **El `formal` incluye el esquema completo y hay que mantenerlo al día.** La fuente única es `admin/database/esquema.json` (lo lee `config/nutrition.php`). Tras cada migración nueva, con la conexión `pgsql` ya migrada: `php artisan nutrition:esquema --escribir` regenera `esquema.json` (`--comprobar` falla si difiere de la base migrada) y `python3 admin/database/sincronizar-esquema.py` lo copia al `formal` de los dos `service.json` (`.service/` y `dependencies/postgres/.service/`), que tienen que ser idénticos entre sí y a `config('nutrition.red.formal')` más `db.cluster` (lo comprueba `EsquemaServicioTest`). La consecuencia: dos dispositivos con esquemas distintos (versiones distintas de las migraciones) pertenecen a **redes distintas** y no se ven: no comparten base de datos.
@@ -143,7 +160,7 @@ Cada dispositivo conserva su propio runner del agente (Claude Code), pero **el e
 
 Laravel habla con el nodo con `celaut` ([celaut-project/service-library](https://github.com/celaut-project/service-library), binario estático en la imagen) a través de `App\Services\Celaut\Nodo`; no hay código Python de orquestación. Limitación: parar un trabajo desde otro dispositivo solo pone `detener_pedido` (la ejecución en curso la cancela el dispositivo que la lanzó).
 
-**Copias de seguridad:** con SQLite (desarrollo local), **Ajustes → Copia de seguridad** descarga toda la base (`.sqlite`) y permite restaurarla en un servicio nuevo (máx. 12 MB). Restaurar vuelca las tablas de la copia sobre las actuales (no sustituye el fichero), sin tocar sesiones, cola ni `migrations`. No incluye el token de Claude (va cifrado con `APP_KEY`, que cambia en un servicio nuevo): hay que volver a pegarlo.
+**Copias de seguridad:** **Ajustes → Copia de seguridad** descarga un volcado SQL de los datos (`.sql.gz`: TRUNCATE + INSERT por tabla, sin sesiones, cola ni `migrations`). La aplicación no restaura copias: se restauran con `psql` sobre una base que ya tenga el esquema. No incluye el token de Claude (va cifrado con `APP_KEY`, que cambia en un servicio nuevo): hay que volver a pegarlo.
 
 > Nodo es **alfa** y los pagos en Ergo son **definitivos e irreversibles** (`docs/KyA.md`). `nodo execute` descuenta saldo de la instancia: revisa `nodo estimate` antes.
 
@@ -169,20 +186,22 @@ El servicio declara un segundo slot de API (puerto 50051: `http2` → `grpc` →
 - **Dos motores.** Con token de Claude (se pide en el propio chat con una petición de secreto, o en *Conexión con Claude*) responde Claude, que ve una instantánea de **solo lectura** de los datos y propone acciones que Laravel valida antes de aplicarlas. Sin token responde un bot básico sin IA. Ambos usan widgets y formularios del propio chat.
 - **Piezas.** Un traductor gRPC en Python (`docker/chat/`, sin estado ni credenciales de la base) habla por HTTP interno (`127.0.0.1:8001`, Bearer `CHAT_SECRETO`, no tunelable) con Laravel, que guarda mensajes y archivos en la base compartida. Las respuestas salen por una cola y un worker propios (`chat`).
 - **Interruptores** (*Ajustes → Ajustes del servicio*): **Chat habilitado** (por defecto sí), **Chat con Claude** (por defecto sí; apagado, el chat responde siempre con el bot básico y no pide el token, aunque haya uno guardado; la generación de menús no cambia) y **Login automático** (por defecto no; entra con el usuario elegido a quien llegue a la web: la frontera de seguridad es el túnel del nodo).
-- **Auditoría** (*Ajustes → Auditoría*) recoge también los hechos del chat; el valor de un secreto no se guarda en ningún sitio.
+- **Auditoría** (*Ajustes → Auditoría*) recoge también los hechos del chat; el valor de un secreto no se guarda en ningún sitio. Ver «Auditoría» más abajo.
 - Contrato interno: [`docs/chat-api-interna.md`](docs/chat-api-interna.md). Decisiones, beneficios y tradeoffs: [`docs/chat-arquitectura.md`](docs/chat-arquitectura.md).
 
 ## Desarrollo y pruebas sin instalar PHP
 
+Las pruebas de PHP corren **solo contra PostgreSQL** (el motor de producción; no hay SQLite). `phpunit.xml` apunta por defecto a la base desechable de `docker/pruebas/postgres.sh` (`127.0.0.1:55432`, `nutrition`/`ci`); las pruebas la borran y migran de nuevo, así que no la uses para nada más.
+
 ```bash
-docker/pruebas/php.sh artisan test --compact        # PHP 8.4 en contenedor (variable IMAGEN_PHP), SQLite en memoria
-docker/pruebas/postgres.sh up                        # PostgreSQL 18 desechable en 127.0.0.1:55432 (nutrition/ci)
-DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=55432 DB_DATABASE=personal_nutrition DB_USERNAME=nutrition DB_PASSWORD=ci \
-    docker/pruebas/php.sh artisan test --compact     # la misma suite contra PostgreSQL
+docker/pruebas/postgres.sh up                        # PostgreSQL 18 desechable en 127.0.0.1:55432 (nutrition/ci), antes de probar
+docker/pruebas/php.sh artisan test --compact        # PHP 8.4 en contenedor (variable IMAGEN_PHP)
 (cd docker/chat && python3 -m unittest discover -s tests)   # traductor gRPC (grpcio y grpcio-tools)
+(cd agente && python3 -m unittest discover -s tests)        # scripts del agente
+docker/pruebas/postgres.sh down
 ```
 
-`.github/workflows/pruebas.yml` ejecuta las tres en CI.
+`.github/workflows/pruebas.yml` ejecuta PHP (PostgreSQL 18) y el traductor del chat en CI.
 
 ## Estructura
 

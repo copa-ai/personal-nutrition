@@ -58,9 +58,9 @@ Para proponer cambios escribe **`workspace/chat-acciones-N.json`** (con la herra
 
 ```json
 {"acciones": [
-  {"tipo": "registrar_comida", "perfil": 2, "fecha": "2026-11-05", "momento": "comida", "descripcion": "Lentejas con arroz", "foto_hash": "…64 hex…"},
-  {"tipo": "corregir_comida", "registro_id": 41, "descripcion": "Lentejas con chorizo"},
-  {"tipo": "anotar_feedback", "perfil": 2, "valoracion": "no_gusta", "elemento": "coliflor", "nota": "dice que huele fuerte"}
+  {"tipo": "registrar_comida", "perfil": "0192f3c4-8a12-7d31-b002-6f5e4d3c2b1a", "fecha": "2026-11-05", "momento": "comida", "descripcion": "Lentejas con arroz", "foto_hash": "…64 hex…"},
+  {"tipo": "corregir_comida", "registro_id": "0192f3c4-9b01-7e42-a003-0c1d2e3f4a5b", "descripcion": "Lentejas con chorizo"},
+  {"tipo": "anotar_feedback", "perfil": "0192f3c4-8a12-7d31-b002-6f5e4d3c2b1a", "valoracion": "no_gusta", "elemento": "coliflor", "nota": "dice que huele fuerte"}
 ]}
 ```
 

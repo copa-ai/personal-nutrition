@@ -49,18 +49,18 @@ class InstantaneaDatos
     /** @var array<string, string> ruta relativa -> contenido (para subirlo a la base del agente) */
     private array $archivos = [];
 
-    public static function relativa(int $id): string
+    public static function relativa(string $id): string
     {
         return "encargos/chat-{$id}";
     }
 
-    public static function ruta(int $id): string
+    public static function ruta(string $id): string
     {
         return EjecutorAgente::carpeta().'/'.static::relativa($id);
     }
 
     /** Borra la instantanea de un turno (disco y base del agente) y las de turnos abandonados hace mas de 6 horas. */
-    public static function limpiar(int $id): void
+    public static function limpiar(string $id): void
     {
         static::borrarDirectorio(static::ruta($id));
         if (AlmacenAgente::activo()) {
