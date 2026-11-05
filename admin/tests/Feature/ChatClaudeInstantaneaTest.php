@@ -262,4 +262,19 @@ class ChatClaudeInstantaneaTest extends TestCase
         $this->assertDirectoryDoesNotExist($vieja);
         $this->assertDirectoryExists($reciente);
     }
+
+    public function test_con_el_presupuesto_agotado_los_archivos_restantes_se_omiten_y_nunca_se_pasa(): void
+    {
+        $this->datos();
+        config(['chat_claude.instantanea.max_bytes_datos' => 40]);
+
+        [$leeme, $dir] = $this->exportar();
+
+        $suma = 0;
+        foreach ($this->archivos($dir) as $f) {
+            $suma += $f === 'LEEME.json' || $f === 'conversacion.json' || str_starts_with($f, 'fotos/') ? 0 : filesize($dir.'/'.$f);
+        }
+        $this->assertLessThanOrEqual(40, $suma);
+        $this->assertNotEmpty(array_filter($leeme['archivos'], fn (array $a): bool => isset($a['omitido'])));
+    }
 }

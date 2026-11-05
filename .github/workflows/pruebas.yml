@@ -110,4 +110,4 @@ jobs:
 
       - name: Pruebas (unittest)
         working-directory: docker/chat
-        run: python -m unittest discover -s tests -t . -v
+        run: python -m unittest discover -s tests -v

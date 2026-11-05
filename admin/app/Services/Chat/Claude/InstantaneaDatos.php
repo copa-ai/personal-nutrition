@@ -143,6 +143,24 @@ class InstantaneaDatos
         $contar && $this->restante -= strlen($contenido);
     }
 
+    /** Ni siquiera el archivo vacio cabe en lo que queda del presupuesto de datos. */
+    private function noCabe(string $contenido): bool
+    {
+        return strlen($contenido) > max(0, $this->restante);
+    }
+
+    /**
+     * El presupuesto se agoto: el archivo no se escribe (no se pasa del tope) y el indice lo dice.
+     *
+     * @param  array<string, string>  $columnas
+     * @param  array<int, string>  $relaciones
+     */
+    private function omitir(string $archivo, string $descripcion, string $formato, int $filasTotales, array $columnas, array $relaciones): void
+    {
+        $this->indice[] = ['archivo' => $archivo, 'descripcion' => $descripcion, 'formato' => $formato, 'filas' => 0, 'filas_totales' => $filasTotales,
+            'truncada' => true, 'omitido' => 'sin presupuesto de datos', 'columnas' => $columnas, 'relaciones' => $relaciones];
+    }
+
     /**
      * Quita filas del final hasta que el JSON quepa en el tope del archivo y en lo que queda de presupuesto.
      *
@@ -170,6 +188,11 @@ class InstantaneaDatos
     private function lista(string $archivo, string $descripcion, array $filas, array $columnas, array $relaciones = []): void
     {
         [$contenido, $escritas, $truncada] = $this->acotarLista($filas, fn (array $f): string => $this->jsonLineas($f));
+        if ($this->noCabe($contenido)) {
+            $this->omitir($archivo, $descripcion, 'json', count($filas), $columnas, $relaciones);
+
+            return;
+        }
         $this->escribir($archivo, $contenido);
         $this->indice[] = ['archivo' => $archivo, 'descripcion' => $descripcion, 'formato' => 'json', 'filas' => count($escritas), 'filas_totales' => count($filas),
             'truncada' => $truncada, 'columnas' => $columnas, 'relaciones' => $relaciones];
@@ -192,6 +215,11 @@ class InstantaneaDatos
     private function csv(string $archivo, string $descripcion, array $cabecera, array $filas, array $columnas, array $relaciones = []): void
     {
         [$contenido, $escritas, $truncada] = $this->acotarLista($filas, fn (array $f): string => $this->csvTexto($cabecera, $f));
+        if ($this->noCabe($contenido)) {
+            $this->omitir($archivo, $descripcion, 'csv', count($filas), $columnas, $relaciones);
+
+            return;
+        }
         $this->escribir($archivo, $contenido);
         $this->indice[] = ['archivo' => $archivo, 'descripcion' => $descripcion, 'formato' => 'csv', 'filas' => count($escritas), 'filas_totales' => count($filas),
             'truncada' => $truncada, 'columnas' => $columnas, 'relaciones' => $relaciones];
