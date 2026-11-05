@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Services\RedCompartida;
 use BackedEnum;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
@@ -31,23 +32,23 @@ class VariablesCompartidas extends Page
      */
     public static function variables(): array
     {
+        $cluster = config('nutrition.compartido.cluster');
+        $claveBd = config('nutrition.compartido.clave_bd');
+        $appKey = config('app.key');
+
         return [
-            ['nombre' => 'NUTRITION_DB_CLUSTER', 'valor' => config('nutrition.compartido.cluster'), 'secreto' => false,
-                'ayuda' => 'Identifica la base de datos en la red Celaut («postgres:personal-nutrition»). Es pública: se anuncia a otros nodos.'],
-            ['nombre' => 'NUTRITION_DB_PASSWORD', 'valor' => config('nutrition.compartido.clave_bd'), 'secreto' => true,
-                'ayuda' => 'Contraseña de acceso a la base de datos.'],
-            ['nombre' => 'APP_KEY', 'valor' => config('app.key'), 'secreto' => true,
-                'ayuda' => 'Cifra el token de Claude y las sesiones guardadas en la base: debe ser la misma en todos los dispositivos.'],
+            ['nombre' => 'NUTRITION_RED', 'valor' => filled($cluster) && filled($claveBd) && filled($appKey)
+                ? RedCompartida::codificar((string) $appKey, (string) $cluster, (string) $claveBd) : null, 'secreto' => true,
+                'ayuda' => 'Lo único que hace falta copiar (cabe en un QR). Lleva APP_KEY, la clave de la red y la contraseña de la base: trátala como una contraseña.'],
         ];
     }
 
-    /** La orden para arrancar otro dispositivo con estos valores (los secretos van en claro: es para copiar). */
+    /** La orden para arrancar otro dispositivo con este valor (va en claro: es para copiar). */
     public static function orden(): string
     {
-        $partes = collect(static::variables())->filter(fn (array $v) => filled($v['valor']))
-            ->map(fn (array $v) => '-e '.$v['nombre'].' '.escapeshellarg((string) $v['valor']));
+        $valor = static::variables()[0]['valor'];
 
-        return 'nodo execute '.$partes->implode(' ').' personal-nutrition';
+        return 'nodo execute '.(filled($valor) ? '-e NUTRITION_RED '.escapeshellarg($valor).' ' : '').'personal-nutrition';
     }
 
     public function getViewData(): array

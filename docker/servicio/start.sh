@@ -15,8 +15,9 @@
 # de celaut-project/service-library) la busca en la red «postgres:personal-nutrition» o lanza nutrition-postgres como hijo.
 #
 # Variables de service.json -> envs (todas opcionales): APP_URL, APP_TIMEZONE, AGENTE_MODELO, AGENTE_MAX_SIMULTANEAS,
-# APP_KEY (misma en todos los dispositivos que comparten base: cifra el token de Claude y las sesiones),
-# NUTRITION_DB_CLUSTER (clave publica de la red de la base), NUTRITION_DB_PASSWORD (clave de acceso a la base).
+# NUTRITION_RED (opcional): lo que hay que compartir entre dispositivos que usan la misma base, en una sola variable corta
+# (base64url de «APP_KEY|cluster|clave_bd»; la da Ajustes -> Variables compartidas). Trae APP_KEY (cifra el token de Claude y las
+# sesiones), la clave publica de la red de la base y su contraseña. Sin ella, el dispositivo genera las suyas y empieza una red nueva.
 set -eu
 
 DATOS=/var/lib/nutrition
@@ -34,8 +35,21 @@ secreto() {   # secreto <nombre> <generador...>: devuelve el guardado o lo crea
     [ -s "$f" ] || { "$@" > "$f"; chmod 600 "$f"; }
     cat "$f"
 }
+# --- Red compartida: NUTRITION_RED = base64url de «APP_KEY|cluster|clave_bd». Se decodifica aqui, con shell, sin PHP ---
+if [ -n "${NUTRITION_RED:-}" ]; then
+    RED=$(printf '%s' "$NUTRITION_RED" | tr -d ' \n\r=' | tr '_-' '/+')
+    while [ $(( ${#RED} % 4 )) -ne 0 ]; do RED="$RED="; done
+    RED=$(printf '%s' "$RED" | base64 -d 2>/dev/null) || RED=""
+    APP_KEY=$(printf '%s' "$RED" | cut -d'|' -f1)
+    NUTRITION_DB_CLUSTER=$(printf '%s' "$RED" | cut -s -d'|' -f2)
+    NUTRITION_DB_PASSWORD=$(printf '%s' "$RED" | cut -s -d'|' -f3-)
+    if [ -z "$APP_KEY" ] || [ -z "$NUTRITION_DB_CLUSTER" ] || [ -z "$NUTRITION_DB_PASSWORD" ]; then
+        echo "start.sh: NUTRITION_RED no es valida" >&2
+        exit 1
+    fi
+fi
 AGENTE_SECRETO=$(secreto agente-secreto hex 24)
-# APP_KEY se comparte entre dispositivos: lo cifrado en la base (token de Claude) solo lo lee quien tenga la misma clave.
+# Sin NUTRITION_RED se generan (red nueva). APP_KEY debe ser la misma en todos los dispositivos: lo cifrado en la base (token de Claude) solo lo lee quien la tenga.
 APP_KEY=${APP_KEY:-$(secreto app-key sh -c 'printf "base64:%s" "$(head -c 32 /dev/urandom | base64)"')}
 DB_USUARIO=nutrition
 DB_NOMBRE=personal_nutrition
@@ -78,7 +92,7 @@ mkdir -p "$A/storage/framework/cache" "$A/storage/framework/sessions" "$A/storag
 chown -R app:app "$A"; chmod 700 "$A"
 
 # /__config__ (el nodo lo escribe para root) lo lee `celaut`, que corre como app: solo app (no el agente) y sin que lo vea nadie mas.
-# Lleva las variables con las que se lanzo el servicio (APP_KEY, claves de la base).
+# Lleva las variables con las que se lanzo el servicio (NUTRITION_RED).
 [ ! -e /__config__ ] || { chgrp app /__config__ && chmod 640 /__config__; }
 
 ENTORNO_BASE=(

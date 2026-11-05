@@ -25,7 +25,7 @@
             "protocol": ["http1.1", "http"]
         }
     ],
-    "envs": ["APP_URL", "APP_TIMEZONE", "AGENTE_MODELO", "AGENTE_MAX_SIMULTANEAS", "APP_KEY", "NUTRITION_DB_CLUSTER", "NUTRITION_DB_PASSWORD"],
+    "envs": ["APP_URL", "APP_TIMEZONE", "AGENTE_MODELO", "AGENTE_MAX_SIMULTANEAS", "NUTRITION_RED"],
     "network": [
         {
             "tags": ["*"],
