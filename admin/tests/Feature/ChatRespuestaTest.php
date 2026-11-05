@@ -334,4 +334,21 @@ class ChatRespuestaTest extends TestCase
         $this->assertSame(2, Auditoria::where('evento', 'ajuste.cambiado')->count());
         $this->assertSame(0, Auditoria::where('auditable_type', Ajuste::class)->count());
     }
+
+    public function test_el_mixto_no_usa_claude_si_el_interruptor_esta_apagado_aunque_haya_token(): void
+    {
+        config(['chat.respondedor_claude' => MotorClaudeDePrueba::class, 'chat.respondedor_bot' => MotorBotDePrueba::class]);
+        MotorDePrueba::$accion = fn (ChatMensaje $p, ChatMensaje $r) => $r->finalizar();
+        TokenClaude::guardar('token-de-prueba');
+        $respuesta = $this->respuestaAbierta();
+        $pregunta = $this->mensajePorSecuencia(1);
+
+        $this->assertTrue(RespondedorMixto::claudeActivo());
+        Ajuste::fijar(Ajuste::CHAT_CLAUDE_HABILITADO, false);
+
+        $this->assertFalse(RespondedorMixto::claudeActivo());
+        app(RespondedorMixto::class)->responder($pregunta, $respuesta);
+        $this->assertSame([MotorBotDePrueba::class.':hola'], MotorDePrueba::$llamadas);
+        $this->assertTrue(TokenClaude::existe(), 'apagar Claude no borra el token');
+    }
 }

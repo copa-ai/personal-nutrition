@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\Ajuste;
 use App\Models\ChatMensaje;
 use App\Models\User;
+use App\Services\Chat\RespondedorMixto;
 use App\Services\Menu\TokenClaude;
 use BackedEnum;
 use Filament\Forms\Components\Select;
@@ -39,6 +40,7 @@ class AjustesServicio extends Page
     {
         $this->form->fill([
             'chat_habilitado' => Ajuste::chatHabilitado(),
+            'chat_claude_habilitado' => Ajuste::claudeChatHabilitado(),
             'autologin_activo' => (bool) Ajuste::obtener(Ajuste::AUTOLOGIN_ACTIVO),
             'autologin_usuario_id' => self::usuarioElegidoId(),
         ]);
@@ -51,6 +53,9 @@ class AjustesServicio extends Page
                 Toggle::make('chat_habilitado')->label('Chat habilitado')->live()
                     ->helperText('El túnel del nodo es la frontera de seguridad: quien tenga acceso a esta instancia ya está autenticado y puede conversar y, con Claude, consultar los datos de todos los perfiles. Apágalo para que el servicio rechace el chat.')
                     ->afterStateUpdated(fn (bool $state) => Ajuste::fijar(Ajuste::CHAT_HABILITADO, $state)),
+                Toggle::make('chat_claude_habilitado')->label('Chat con Claude')->live()
+                    ->helperText('Con esto apagado el chat responde siempre con el bot básico (sin IA) y no pide el token de Claude, aunque haya uno guardado. No afecta a la generación de menús.')
+                    ->afterStateUpdated(fn (bool $state) => Ajuste::fijar(Ajuste::CHAT_CLAUDE_HABILITADO, $state)),
             ]),
             Section::make('Login automático')->schema([
                 Toggle::make('autologin_activo')->label('Entrar sin contraseña')->live()
@@ -93,12 +98,12 @@ class AjustesServicio extends Page
     public function getViewData(): array
     {
         $claude = TokenClaude::existe();
-        $clase = (string) config('chat.respondedor_claude');
         $bot = (string) config('chat.respondedor_bot');
 
         return [
             'tokenClaude' => $claude,
-            'motor' => $claude && class_exists($clase) ? 'Claude' : (class_exists($bot) ? 'Bot básico (sin IA)' : 'Eco (provisional)'),
+            'motor' => RespondedorMixto::claudeActivo() ? 'Claude' : (class_exists($bot) ? 'Bot básico (sin IA)' : 'Eco (provisional)'),
+            'claudeChatHabilitado' => Ajuste::claudeChatHabilitado(),
             'mensajes' => ChatMensaje::query()->count(),
             'chatHabilitado' => Ajuste::chatHabilitado(),
         ];

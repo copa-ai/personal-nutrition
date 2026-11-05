@@ -3,6 +3,7 @@
 namespace App\Services\Chat\Bot;
 
 use App\Enums\MomentoComida;
+use App\Models\Ajuste;
 use App\Models\ChatArchivo;
 use App\Models\ChatMensaje;
 use App\Models\ChatPeticionSecreto;
@@ -322,6 +323,14 @@ class RespondedorBot implements Respondedor
     private function ia(): Respuesta
     {
         $alternativas = $this->acciones('Mientras tanto puedo enseñarte el menú, apuntar lo que se ha comido o mirar la despensa.');
+
+        // Desactivada a proposito (aunque haya token): no se ofrece ni se pide nada.
+        if (! Ajuste::claudeChatHabilitado()) {
+            return new Respuesta(
+                Mensaje::nuevo()->texto('La inteligencia artificial está desactivada en los ajustes del servicio (Chat con Claude), así que respondo sin ella.')->render()."\n\n".$alternativas,
+                $this->sugerencias(['Menú de hoy', 'Despensa']),
+            );
+        }
 
         if (TokenClaude::existe()) {
             return new Respuesta(

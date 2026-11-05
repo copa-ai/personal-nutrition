@@ -168,7 +168,7 @@ El servicio declara un segundo slot de API (puerto 50051: `http2` → `grpc` →
 
 - **Dos motores.** Con token de Claude (se pide en el propio chat con una petición de secreto, o en *Conexión con Claude*) responde Claude, que ve una instantánea de **solo lectura** de los datos y propone acciones que Laravel valida antes de aplicarlas. Sin token responde un bot básico sin IA. Ambos usan widgets y formularios del propio chat.
 - **Piezas.** Un traductor gRPC en Python (`docker/chat/`, sin estado ni credenciales de la base) habla por HTTP interno (`127.0.0.1:8001`, Bearer `CHAT_SECRETO`, no tunelable) con Laravel, que guarda mensajes y archivos en la base compartida. Las respuestas salen por una cola y un worker propios (`chat`).
-- **Interruptores** (*Ajustes → Ajustes del servicio*): **Chat habilitado** (por defecto sí) y **Login automático** (por defecto no; entra con el usuario elegido a quien llegue a la web: la frontera de seguridad es el túnel del nodo).
+- **Interruptores** (*Ajustes → Ajustes del servicio*): **Chat habilitado** (por defecto sí), **Chat con Claude** (por defecto sí; apagado, el chat responde siempre con el bot básico y no pide el token, aunque haya uno guardado; la generación de menús no cambia) y **Login automático** (por defecto no; entra con el usuario elegido a quien llegue a la web: la frontera de seguridad es el túnel del nodo).
 - **Auditoría** (*Ajustes → Auditoría*) recoge también los hechos del chat; el valor de un secreto no se guarda en ningún sitio.
 - Contrato interno: [`docs/chat-api-interna.md`](docs/chat-api-interna.md). Decisiones, beneficios y tradeoffs: [`docs/chat-arquitectura.md`](docs/chat-arquitectura.md).
 

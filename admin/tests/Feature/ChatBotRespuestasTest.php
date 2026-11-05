@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Ajuste;
 use App\Models\Alimento;
 use App\Models\ChatMensaje;
 use App\Models\ChatPeticionSecreto;
@@ -354,5 +355,28 @@ class ChatBotRespuestasTest extends TestCase
             $texto = $this->comprobarRespuesta($this->preguntar($frase));
             $this->assertTrue(Validador::esValido($texto), $frase);
         }
+    }
+
+    public function test_con_claude_desactivado_no_pide_el_token_ni_ofrece_la_ia(): void
+    {
+        Ajuste::fijar(Ajuste::CHAT_CLAUDE_HABILITADO, false);
+
+        $texto = $this->comprobarRespuesta($this->preguntar('¿qué puedo cocinar con pollo?'));
+
+        $this->assertStringContainsString('desactivada en los ajustes', $texto);
+        $this->assertSame(0, ChatPeticionSecreto::query()->count());
+        $this->assertSame('texto', $this->ultimo()->contenido[0]['tipo']);
+    }
+
+    public function test_con_claude_desactivado_y_token_puesto_tampoco_dice_que_no_esta_disponible(): void
+    {
+        TokenClaude::guardar('sk-ant-oat01-prueba');
+        Ajuste::fijar(Ajuste::CHAT_CLAUDE_HABILITADO, false);
+
+        $texto = $this->comprobarRespuesta($this->preguntar('dame una receta'));
+
+        $this->assertStringContainsString('desactivada en los ajustes', $texto);
+        $this->assertStringNotContainsString('ahora mismo no está disponible', $texto);
+        $this->assertSame([], $this->tablasConTexto('sk-ant-oat01-prueba'));
     }
 }

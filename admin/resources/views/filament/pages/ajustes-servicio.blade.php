@@ -6,8 +6,10 @@
             <li>Chat: <strong>{{ $chatHabilitado ? 'habilitado' : 'deshabilitado' }}</strong></li>
             <li>Conexión con Claude: <strong>{{ $tokenClaude ? 'configurada' : 'sin configurar' }}</strong>
                 (<a class="underline" href="{{ \App\Filament\Pages\ConexionClaude::getUrl() }}">Conexión con Claude</a>)</li>
+            <li>Chat con Claude: <strong>{{ $claudeChatHabilitado ? 'activado' : 'desactivado' }}</strong></li>
             <li>Responde: <strong>{{ $motor }}</strong>
-                @unless ($tokenClaude) (sin la clave de Claude, el asistente la pedirá en el chat) @endunless</li>
+                @if (! $claudeChatHabilitado) (Claude desactivado en los ajustes: el chat no usa la IA ni pide la clave)
+                @elseif (! $tokenClaude) (sin la clave de Claude, el asistente la pedirá en el chat) @endif</li>
             <li>Mensajes en la conversación: <strong>{{ $mensajes }}</strong></li>
         </ul>
     </x-filament::section>

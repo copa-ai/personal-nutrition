@@ -11,6 +11,9 @@ class Ajuste extends Model
 {
     public const CHAT_HABILITADO = 'chat_habilitado';
 
+    /** Si el chat puede responder con Claude (aunque haya token). Apagado, responde siempre el bot basico y no se pide el token. */
+    public const CHAT_CLAUDE_HABILITADO = 'chat_claude_habilitado';
+
     public const AUTOLOGIN_ACTIVO = 'autologin_activo';
 
     public const AUTOLOGIN_USUARIO_ID = 'autologin_usuario_id';
@@ -18,6 +21,7 @@ class Ajuste extends Model
     /** Valor de cada ajuste mientras no se haya fijado. */
     public const DEFECTOS = [
         self::CHAT_HABILITADO => true,
+        self::CHAT_CLAUDE_HABILITADO => true,
         self::AUTOLOGIN_ACTIVO => false,
         self::AUTOLOGIN_USUARIO_ID => null,
     ];
@@ -60,5 +64,10 @@ class Ajuste extends Model
     public static function chatHabilitado(): bool
     {
         return (bool) static::obtener(self::CHAT_HABILITADO);
+    }
+
+    public static function claudeChatHabilitado(): bool
+    {
+        return (bool) static::obtener(self::CHAT_CLAUDE_HABILITADO);
     }
 }

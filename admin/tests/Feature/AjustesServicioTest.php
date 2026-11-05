@@ -95,4 +95,17 @@ class AjustesServicioTest extends TestCase
         TokenClaude::guardar('sk-ant-oat01-token-de-prueba-0123456789');
         $this->get('/ajustes-servicio')->assertOk()->assertSee('configurada');
     }
+
+    public function test_el_chat_con_claude_esta_activado_por_defecto_y_se_puede_apagar_y_se_audita(): void
+    {
+        $this->actingAs($this->admin());
+        $this->assertTrue(Ajuste::claudeChatHabilitado());
+
+        Livewire::test(AjustesServicio::class)->assertSet('data.chat_claude_habilitado', true)->set('data.chat_claude_habilitado', false);
+
+        $this->assertFalse(Ajuste::claudeChatHabilitado());
+        $fila = Auditoria::query()->where('evento', 'chat.interruptor_cambiado')->latest('id')->first();
+        $this->assertSame('chat_claude_habilitado', $fila->datos['ajuste']);
+        $this->assertFalse($fila->datos['despues']);
+    }
 }
