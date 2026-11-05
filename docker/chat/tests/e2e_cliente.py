@@ -592,7 +592,7 @@ def p_idempotencia(c: Contexto) -> None:
 
 @paso("Interruptor chat_habilitado apagado -> UNAVAILABLE (sin chat-reason); encendido -> vuelve")
 def p_interruptor(c: Contexto) -> None:
-    sql("insert into ajustes (clave, valor, created_at, updated_at) values ('chat_habilitado', 'false'::jsonb, now(), now()) on conflict (clave) do update set valor='false'::jsonb")
+    sql("insert into ajustes (id, clave, valor, created_at, updated_at) values (uuidv7(), 'chat_habilitado', 'false'::jsonb, now(), now()) on conflict (clave) do update set valor='false'::jsonb")
     try:
         for nombre, llamada in (
             ("SendMessage", lambda: c.chat.SendMessage(pb.SendMessageRequest(content=[parte_texto("hola")]), timeout=10)),

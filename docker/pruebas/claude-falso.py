@@ -55,7 +55,7 @@ def bash(comando: str) -> str:
     return r.stdout
 
 
-def apuntar_consumo(n: int, fase: str, entrada: int, salida: int) -> None:
+def apuntar_consumo(n: str, fase: str, entrada: int, salida: int) -> None:
     """Lo que en el Claude real hace el hook Stop: una fila por respuesta del modelo."""
     import consumos
     c = consumos.conectar()
@@ -65,7 +65,7 @@ def apuntar_consumo(n: int, fase: str, entrada: int, salida: int) -> None:
     c.close()
 
 
-def chat(turno: int) -> int:
+def chat(turno: str) -> int:
     """Un turno de chat: lee la instantanea (solo lectura) y responde con lo que haria la skill chat-nutricion."""
     raiz = Path(os.environ.get("AGENTE_CARPETA") or os.getcwd())
     modo = (raiz / "modo-falso").read_text().strip() if (raiz / "modo-falso").exists() else "ok"
@@ -116,13 +116,13 @@ def chat(turno: int) -> int:
 
 def main() -> int:
     prompt = sys.argv[sys.argv.index("-p") + 1] if "-p" in sys.argv else ""
-    if (c := re.match(r"Turno de chat (\d+)\.", prompt)):
-        return chat(int(c.group(1)))
-    m = re.search(r"trabajo (\d+)", prompt)
+    if (c := re.match(r"Turno de chat ([0-9a-f-]+)\.", prompt)):   # el id del turno es un UUID
+        return chat(c.group(1))
+    m = re.search(r"trabajo ([0-9a-f-]+)", prompt)
     if not m:
         print("Solo atiendo encargos de planificación.")
         return 0
-    n = int(m.group(1))
+    n = m.group(1)
     modo = (RAIZ / "modo-falso").read_text().strip() if (RAIZ / "modo-falso").exists() else "ok"
 
     emitir({"type": "system", "subtype": "init", "model": MODELO})

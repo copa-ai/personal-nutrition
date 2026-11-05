@@ -8,8 +8,8 @@ Lo llama un hook de .claude/settings.json (Stop y SubagentStop) al terminar cada
 Uso:
   python scripts/consumos.py --hook                       (lo usa el hook; lee stdin)
   python scripts/consumos.py --archivo REGISTRO.jsonl
-  python scripts/consumos.py resumen [--ejecucion N]      (JSON: por_fase + totales)
-  python scripts/consumos.py fase NOMBRE [--ejecucion N]  (fija la fase actual: lo que se lea desde ahora se apunta a ella)
+  python scripts/consumos.py resumen [--ejecucion ID]      (JSON: por_fase + totales)
+  python scripts/consumos.py fase NOMBRE [--ejecucion ID]  (fija la fase actual: lo que se lea desde ahora se apunta a ella)
 
 Reglas de conteo (no cambiarlas: son las que hacen que las cifras cuadren):
   - Una misma respuesta aparece en VARIAS lineas del registro (una por bloque): se agrupa por message.id y se queda
@@ -21,7 +21,7 @@ Reglas de conteo (no cambiarlas: son las que hacen que las cifras cuadren):
   - Insercion idempotente por mensaje_id (ON CONFLICT ... MAX): releer no duplica.
   - En modo --hook NUNCA falla ni escribe en pantalla: un error del contador no puede interrumpir el trabajo.
 
-Donde apunta cada fila: a la ejecucion y fase de base/estado-actual.json ({"ejecucion_id": N, "fase": "..."}).
+Donde apunta cada fila: a la ejecucion y fase de base/estado-actual.json ({"ejecucion_id": ID, "fase": "..."}).
 Laravel (o el propio agente, via `fase`) lo escribe antes de empezar; sin el, la fila queda «sin ejecucion».
 
 Adaptacion (ver SKILL/04-FILAMENT-REGISTRO-Y-COSTES.md): al final del trabajo, el agente copia `resumen` dentro del
@@ -84,7 +84,12 @@ def leer_estado() -> dict:
         return {}
 
 
-def fijar_fase(fase: str, ejecucion: int | None = None) -> dict:
+def _ejecucion(valor: str) -> int | str:
+    """La ejecucion es el id del encargo: un UUID en texto (un entero, si es una anotacion antigua)."""
+    return int(valor) if valor.isdigit() else valor
+
+
+def fijar_fase(fase: str, ejecucion: int | str | None = None) -> dict:
     estado = leer_estado()
     estado["fase"] = fase
     if ejecucion is not None:
@@ -220,7 +225,7 @@ def volcar() -> None:
         pass
 
 
-def filas(ejecucion: int | None) -> list[dict]:
+def filas(ejecucion: int | str | None) -> list[dict]:
     """Una fila por respuesta del modelo (mensaje_id) con el MODELO que respondio. Laravel las guarda con la tarifa y el coste
     del momento en que las registra (consumos_menu); el agente no conoce precios."""
     conn = conectar()
@@ -232,7 +237,7 @@ def filas(ejecucion: int | None) -> list[dict]:
     return salida
 
 
-def resumen(ejecucion: int | None) -> dict:
+def resumen(ejecucion: int | str | None) -> dict:
     conn = conectar()
     donde, args = (" WHERE ejecucion_id=?", (ejecucion,)) if ejecucion is not None else ("", ())
     por_fase = [dict(r) for r in conn.execute(
@@ -251,7 +256,7 @@ def main() -> None:
     p.add_argument("nombre", nargs="?")
     p.add_argument("--hook", action="store_true")
     p.add_argument("--archivo")
-    p.add_argument("--ejecucion", type=int)
+    p.add_argument("--ejecucion", type=_ejecucion)
     a = p.parse_args()
     if a.hook:
         try:

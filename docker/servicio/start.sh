@@ -232,7 +232,7 @@ lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while sleep "$1"; do php artisan n
 
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"
-lanzar como chat CHAT_SECRETO="$CHAT_SECRETO" CHAT_PUERTO=50051 CHAT_URL_INTERNA=http://127.0.0.1:8001/interno/chat -- \
+lanzar como chat CHAT_SECRETO="$CHAT_SECRETO" CHAT_PUERTO=50051 CHAT_URL_INTERNA=http://127.0.0.1:8001 -- \
     /opt/chat-venv/bin/python /opt/chat/servidor.py
 PID_CHAT=${PIDS[${#PIDS[@]}-1]}
 for i in $(seq 1 30); do

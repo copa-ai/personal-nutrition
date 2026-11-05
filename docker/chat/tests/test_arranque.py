@@ -1,6 +1,7 @@
 """servidor.py como proceso: escucha solo tras /capacidades y no filtra secretos en sus logs."""
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import unittest
 
 import grpc
 from falso import Fallo, LaravelFalso
+from laravel import Laravel
 from soporte import GENERADO, RAIZ, C, parte_texto, pb, pb_grpc
 
 SECRETO_VALOR = "valor-ultra-secreto-9f3a"
@@ -115,3 +117,16 @@ class TestArranque(unittest.TestCase):
         proceso = self.lanzar(falso, puerto_libre(), CHAT_SECRETO="")
         proceso.communicate(timeout=15)
         self.assertEqual(proceso.returncode, 2)
+
+
+class TestStartSh(unittest.TestCase):
+    """Lo que start.sh le pasa al traductor tiene que ser lo que el traductor espera."""
+
+    def test_la_url_interna_es_la_base_y_no_lleva_ya_el_prefijo(self):
+        start = os.path.join(os.path.dirname(RAIZ), "servicio", "start.sh")
+        url = re.search(r"CHAT_URL_INTERNA=(\S+)", open(start).read().split("lanzar como chat", 1)[1]).group(1)
+
+        # El traductor anade /interno/chat por su cuenta: con el prefijo ya puesto pedia /interno/chat/interno/chat/capacidades,
+        # recibia un 404 y no abria el puerto 50051 (el chat no funcionaba ni con ni sin Claude).
+        self.assertEqual(Laravel(url, "x").prefijo, "/interno/chat", f"CHAT_URL_INTERNA={url}")
+
