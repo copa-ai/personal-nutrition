@@ -1,7 +1,13 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\AuditoriaServiceProvider;
+use App\Providers\ChatServiceProvider;
+use App\Providers\Filament\AdminPanelProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\AuditoriaServiceProvider::class,
-    App\Providers\Filament\AdminPanelProvider::class,
+    AppServiceProvider::class,
+    AuditoriaServiceProvider::class,
+    ChatServiceProvider::class,
+    AdminPanelProvider::class,
 ];

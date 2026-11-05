@@ -27,23 +27,26 @@ class EjecutorClaude
      * @param  ?Process  $proceso  solo en local: el proceso a usar en vez de construir uno (las pruebas lo sustituyen)
      * @param  bool  $stream  pide `--output-format stream-json`: $salida recibe un registro legible de cada paso (herramientas, textos) y
      *                        ResultadoClaude::$salida sigue siendo el texto final de la respuesta
+     * @param  ?callable(string): void  $crudo  solo con $stream: recibe la salida estandar tal como llega (JSON por lineas, sin traducir), para quien necesite los eventos (el chat)
+     * @param  ?callable(): void  $latido  solo con agente remoto: se llama en cada consulta del avance, haya salida nueva o no (el chat comprueba asi si la persona cancelo mientras el agente lee o piensa en silencio)
      *
      * @throws RuntimeException si no se puede ejecutar o se pasa del tiempo (un codigo de salida distinto de 0 no lanza: va en el resultado)
      */
     public function ejecutar(string $prompt, ?string $herramientas = null, float $timeout = 180, ?callable $salida = null,
-        ?callable $alIniciar = null, ?Process $proceso = null, bool $stream = false, ?callable $alAlta = null): ResultadoClaude
+        ?callable $alIniciar = null, ?Process $proceso = null, bool $stream = false, ?callable $alAlta = null, ?callable $crudo = null, ?callable $latido = null): ResultadoClaude
     {
         $registro = $stream ? new RegistroStream : null;
         $destino = $salida;
         if ($registro) {
-            $salida = function (string $tipo, string $texto) use ($registro, $destino) {
+            $salida = function (string $tipo, string $texto) use ($registro, $destino, $crudo) {
+                $tipo === 'out' && $crudo && $crudo($texto);
                 $texto = $tipo === 'out' ? $registro->alimentar($texto) : $texto;
                 $texto !== '' && $destino && $destino($tipo, $texto);
             };
         }
 
         $r = static::remoto()
-            ? $this->remota($prompt, $herramientas, $timeout, $salida, $stream, $alAlta)
+            ? $this->remota($prompt, $herramientas, $timeout, $salida, $stream, $alAlta, $latido)
             : $this->local($prompt, $herramientas, $timeout, $salida, $alIniciar, $proceso, $stream);
 
         if ($registro) {
@@ -92,7 +95,7 @@ class EjecutorClaude
         return new ResultadoClaude($out, $err, $proceso->getExitCode());
     }
 
-    private function remota(string $prompt, ?string $herramientas, float $timeout, ?callable $salida, bool $stream, ?callable $alAlta): ResultadoClaude
+    private function remota(string $prompt, ?string $herramientas, float $timeout, ?callable $salida, bool $stream, ?callable $alAlta, ?callable $latido = null): ResultadoClaude
     {
         $http = static::http();
 
@@ -121,6 +124,7 @@ class EjecutorClaude
                     $salida && $salida($tipo, $texto);
                 }
                 $desde = (int) $r->json('siguiente', $desde);
+                $latido && $latido();
                 if ($r->json('estado') === 'terminado') {
                     if ($r->json('interrumpida')) {
                         throw new RuntimeException('El agente se reinició mientras ejecutaba la tanda y la ejecución se perdió.');

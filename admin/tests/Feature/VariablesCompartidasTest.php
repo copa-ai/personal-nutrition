@@ -12,9 +12,12 @@ class VariablesCompartidasTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** Una APP_KEY valida (aes-256-cbc: 32 bytes): la peticion cifra cookies con ella. */
+    private const CLAVE = 'base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=';
+
     public function test_la_pagina_muestra_las_variables_y_la_orden_para_otro_dispositivo(): void
     {
-        config(['nutrition.compartido.cluster' => 'abc123', 'nutrition.compartido.clave_bd' => 'secreto-bd', 'app.key' => 'base64:clave']);
+        config(['nutrition.compartido.cluster' => 'abc123', 'nutrition.compartido.clave_bd' => 'secreto-bd', 'app.key' => self::CLAVE]);
         $usuario = User::create(['name' => 'Admin', 'email' => 'a@b.c', 'password' => 'password']);
 
         $this->actingAs($usuario)->get('/variables-compartidas')
@@ -48,7 +51,7 @@ class VariablesCompartidasTest extends TestCase
 
     public function test_sin_valores_no_hay_qr(): void
     {
-        config(['nutrition.compartido.cluster' => null, 'nutrition.compartido.clave_bd' => null, 'app.key' => 'k']);
+        config(['nutrition.compartido.cluster' => null, 'nutrition.compartido.clave_bd' => null, 'app.key' => self::CLAVE]);
         $usuario = User::create(['name' => 'Admin', 'email' => 'a@b.c', 'password' => 'password']);
 
         $this->actingAs($usuario)->get('/variables-compartidas')
@@ -63,7 +66,7 @@ class VariablesCompartidasTest extends TestCase
 
     public function test_la_orden_omite_la_variable_si_falta_algun_valor(): void
     {
-        config(['nutrition.compartido.cluster' => null, 'nutrition.compartido.clave_bd' => null, 'app.key' => 'k']);
+        config(['nutrition.compartido.cluster' => null, 'nutrition.compartido.clave_bd' => null, 'app.key' => self::CLAVE]);
 
         $this->assertSame('nodo execute personal-nutrition', VariablesCompartidas::orden());
     }

@@ -87,6 +87,6 @@ class TokenClaudeTest extends TestCase
 
     public function test_la_pagina_exige_sesion(): void
     {
-        $this->get('/admin/conexion-claude')->assertRedirect('/admin/login');
+        $this->get('/conexion-claude')->assertRedirect('/login');
     }
 }

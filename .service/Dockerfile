@@ -9,6 +9,14 @@ WORKDIR /app
 COPY ./admin /app
 RUN composer install --no-dev --no-scripts --prefer-dist --no-interaction --optimize-autoloader --ignore-platform-reqs
 
+# --- Stubs gRPC del chat: se generan aqui con grpcio-tools; el runtime solo lleva grpcio y protobuf ---
+# Versiones fijadas y compatibles entre si (grpcio-tools 1.76 exige protobuf >= 6.31.1, < 7). Los stubs generados con
+# ellas piden protobuf >= 6.31.1 en tiempo de ejecucion: es la misma version que se instala en la imagen final.
+FROM python:3.11-slim-bookworm AS stubs
+RUN pip install --no-cache-dir grpcio-tools==1.76.0 protobuf==6.31.1
+COPY ./docker/chat /src/chat
+RUN sed -i 's/\r$//' /src/chat/generar.sh && mkdir /stubs && bash /src/chat/generar.sh /stubs
+
 # --- Binarios que se copian tal cual ---
 FROM node:22-bookworm-slim AS node
 
@@ -21,7 +29,7 @@ RUN chmod +x /usr/local/bin/install-php-extensions \
     && install-php-extensions intl zip bcmath gd pcntl opcache pdo_pgsql pgsql
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        bash ca-certificates curl sqlite3 python3 python-is-python3 util-linux \
+        bash ca-certificates curl sqlite3 python3 python3-venv python-is-python3 util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 # Node solo para Claude Code (npm install -g @anthropic-ai/claude-code, como en docker/Dockerfile.agente).
@@ -47,7 +55,17 @@ COPY ./.dependencies /opt/nutrition/celaut/.dependencies
 
 # Un usuario por pieza: lo que el agente (que ejecuta Bash) puede leer no incluye ni la base ni APP_KEY.
 RUN groupadd -g 1000 app     && useradd -m -u 1000 -g 1000 -s /bin/bash app \
-    && groupadd -g 1001 agente && useradd -m -u 1001 -g 1001 -s /bin/bash agente
+    && groupadd -g 1001 agente && useradd -m -u 1001 -g 1001 -s /bin/bash agente \
+    && groupadd -g 1002 chat   && useradd -m -u 1002 -g 1002 -s /bin/bash chat
+
+# Traductor gRPC del chat (docker/chat; usuario chat, entorno vacio, sin datos propios): venv con grpcio y protobuf (mismas versiones
+# que los stubs de la etapa «stubs»; grpcio-tools no hace falta en tiempo de ejecucion) y stubs generados junto al servidor.
+RUN python3 -m venv /opt/chat-venv \
+    && /opt/chat-venv/bin/pip install --no-cache-dir grpcio==1.76.0 protobuf==6.31.1 \
+    && chmod -R a+rX /opt/chat-venv
+COPY ./docker/chat /opt/chat
+COPY --from=stubs /stubs/ /opt/chat/
+RUN sed -i 's/\r$//' /opt/chat/*.py /opt/chat/*.sh 2>/dev/null; chmod -R a+rX /opt/chat
 
 # Administracion (Laravel + Filament): codigo de solo lectura, todo lo que escribe va a /var/lib/nutrition/admin.
 COPY ./admin /opt/nutrition/admin

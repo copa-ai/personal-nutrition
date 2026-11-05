@@ -16,7 +16,10 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema as EsquemaBd;
 
 /**
  * Lo que alguien comió de verdad. Es lo que el agente usa como historial: el menú planificado no cuenta como comido.
@@ -65,6 +68,10 @@ class RegistroComidaForm
                 CheckboxList::make('categorias')->label('Categorías')->options(CategoriaComida::class)->columns(4)->columnSpanFull()
                     ->default(fn (string $operation): array => $operation === 'create' ? self::valoresIniciales()['categorias'] : [])
                     ->visible(fn (Get $get, string $operation): bool => $operation === 'edit' || self::esOtraCosa(self::estado($get))),
+                // Foto enviada por el chat (columna foto_hash, si existe): se sirve por /fotos/{hash}.
+                View::make('filament.registros-comida.foto')->columnSpanFull()
+                    ->visible(fn (string $operation, ?Model $record): bool => $operation === 'edit' && $record !== null
+                        && EsquemaBd::hasColumn('registros_comida', 'foto_hash') && filled($record->foto_hash)),
             ]);
     }
 

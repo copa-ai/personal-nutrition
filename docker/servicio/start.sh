@@ -7,7 +7,14 @@
 #
 #   agente  (usuario agente)  runner de claude -p 0.0.0.0:9000 (el runner no deja elegir interfaz; fuera del VM no se declara)
 #   web     (usuario app)     frankenphp (HTTP)   0.0.0.0:8000  <- unico puerto declarado en service.json -> api
-#   cola    (usuario app)     queue:work
+#   cola    (usuario app)     queue:work --queue=default (menus: pueden durar horas) y otro --queue=chat (respuestas del chat)
+#   chat    (usuario chat)    traductor gRPC de la interfaz «chat» de chatui (docker/chat/servidor.py, venv /opt/chat-venv) 0.0.0.0:50051
+#                             <- segundo slot de service.json -> api (http2 -> grpc -> chat). No guarda datos: habla por HTTP con la web
+#                             en 127.0.0.1:8001/interno/chat (segundo sitio del Caddyfile, solo loopback y no declarado en service.json, asi
+#                             que no se puede tunelar) con Bearer CHAT_SECRETO. Se lanza DESPUES de que la web responda. Entorno vacio:
+#                             solo CHAT_SECRETO, CHAT_PUERTO y CHAT_URL_INTERNA. CHAT_SECRETO (generado una vez, como los demas secretos)
+#                             lo reciben tambien la web y la cola (ENTORNO_APP); el agente NO recibe nada del chat. Si el traductor muere,
+#                             el servicio cae como las demas piezas.
 #
 # Usuario inicial del panel: admin@demo.com / password (php artisan usuario:inicial, solo si no hay ningun usuario).
 #
@@ -37,9 +44,9 @@ touch "$PUBLICO/app.log"; chmod 644 "$PUBLICO/app.log"
 exec >>"$PUBLICO/app.log" 2>&1
 echo "=== arranque $(date -u +%FT%TZ) ==="
 
-FASES=(secretos agente base migraciones usuario web cola)
+FASES=(secretos agente base migraciones usuario web cola chat)
 declare -A F_NOMBRE=([secretos]="Secretos y claves" [agente]="Agente (Claude Code)" [base]="Base de datos PostgreSQL" \
-    [migraciones]="Migraciones" [usuario]="Usuario inicial" [web]="Web (FrankenPHP)" [cola]="Cola de trabajos")
+    [migraciones]="Migraciones" [usuario]="Usuario inicial" [web]="Web (FrankenPHP)" [cola]="Cola de trabajos" [chat]="Chat (gRPC)")
 declare -A F_ESTADO F_DETALLE
 for f in "${FASES[@]}"; do F_ESTADO[$f]=pendiente; F_DETALLE[$f]=""; done
 INICIO=$(date +%s); LISTO=false; FALLO=""
@@ -87,6 +94,7 @@ if [ -n "${NUTRITION_RED:-}" ]; then
     fi
 fi
 AGENTE_SECRETO=$(secreto agente-secreto hex 24)
+CHAT_SECRETO=$(secreto chat-secreto hex 24)
 # Sin NUTRITION_RED se generan (red nueva). APP_KEY debe ser la misma en todos los dispositivos: lo cifrado en la base (token de Claude) solo lo lee quien la tenga.
 APP_KEY=${APP_KEY:-$(secreto app-key sh -c 'printf "base64:%s" "$(head -c 32 /dev/urandom | base64)"')}
 DB_USUARIO=nutrition
@@ -149,6 +157,7 @@ ENTORNO_BASE=(
     APP_CONFIG_CACHE="$A/bootstrap-cache/config.php" APP_ROUTES_CACHE="$A/bootstrap-cache/routes-v7.php" APP_EVENTS_CACHE="$A/bootstrap-cache/events.php"
     SESSION_DRIVER=database QUEUE_CONNECTION=database CACHE_STORE=database LOG_CHANNEL=stderr
     DB_QUEUE_RETRY_AFTER=14400
+    CHAT_SECRETO="$CHAT_SECRETO"
     AGENTE_CARPETA="$A/agente" AGENTE_URL=http://127.0.0.1:9000 AGENTE_SECRETO="$AGENTE_SECRETO" AGENTE_ALMACEN=base
     AGENTE_MODELO="${AGENTE_MODELO:-claude-sonnet-5-5}"
 )
@@ -204,13 +213,28 @@ kill "$PID_ESTADO" 2>/dev/null || true
 wait "$PID_ESTADO" 2>/dev/null || true
 lanzar como app "${ENTORNO_APP[@]}" -- frankenphp run --config /opt/nutrition/Caddyfile --adapter caddyfile
 fase cola "en curso"
-lanzar como app "${ENTORNO_APP[@]}" -- php artisan queue:work --tries=1 --timeout=0 --sleep=3
+lanzar como app "${ENTORNO_APP[@]}" -- php artisan queue:work --queue=default --tries=1 --timeout=0 --sleep=3
+# Worker propio del chat: una generacion de menu (horas) no debe dejar sin respuesta ni al bot basico.
+lanzar como app "${ENTORNO_APP[@]}" -- php artisan queue:work --queue=chat --tries=1 --timeout=0 --sleep=1
 for i in $(seq 1 60); do
     python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/estado.json', timeout=2)" 2>/dev/null && break
     sleep 1
 done
 fase web ok "escucha en :8000"
 fase cola ok
+
+# --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
+fase chat "en curso" "arrancando el traductor en :50051"
+lanzar como chat CHAT_SECRETO="$CHAT_SECRETO" CHAT_PUERTO=50051 CHAT_URL_INTERNA=http://127.0.0.1:8001/interno/chat -- \
+    /opt/chat-venv/bin/python /opt/chat/servidor.py
+PID_CHAT=${PIDS[${#PIDS[@]}-1]}
+for i in $(seq 1 30); do
+    kill -0 "$PID_CHAT" 2>/dev/null || { fallar chat "el traductor termino al arrancar; ver app.log"; echo "start.sh: el traductor del chat murio" >&2; parar; exit 1; }
+    python3 -c "import socket; socket.create_connection(('127.0.0.1', 50051), 2).close()" 2>/dev/null && break
+    sleep 1
+done
+if python3 -c "import socket; socket.create_connection(('127.0.0.1', 50051), 2).close()" 2>/dev/null; then fase chat ok "gRPC en :50051"
+else fase chat aviso "no acepta conexiones en :50051 tras 30 s; ver app.log"; fi
 LISTO=true; escribir_estado
 echo "start.sh: servicio listo"
 

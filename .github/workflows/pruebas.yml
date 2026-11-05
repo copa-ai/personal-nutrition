@@ -1,0 +1,113 @@
+# Pruebas: PHP (SQLite en memoria y PostgreSQL 18) y el traductor gRPC del chat (Python).
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pruebas-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  php-sqlite:
+    name: PHP (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, zip, gd, bcmath, pdo_pgsql, pgsql
+          coverage: none
+
+      - uses: ramsey/composer-install@v3
+        with:
+          working-directory: admin
+
+      - name: Preparar la aplicacion
+        working-directory: admin
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction
+
+      - name: Pruebas (SQLite en memoria)
+        working-directory: admin
+        run: php artisan test --compact
+
+  php-postgres:
+    name: PHP (PostgreSQL 18)
+    runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_DATABASE: personal_nutrition
+      DB_USERNAME: nutrition
+      DB_PASSWORD: ci
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+    services:
+      postgres:
+        image: postgres:18   # la misma version que dependencies/postgres/.service/Dockerfile
+        env:
+          POSTGRES_DB: personal_nutrition
+          POSTGRES_USER: nutrition
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nutrition -d personal_nutrition"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, zip, gd, bcmath, pdo_pgsql, pgsql
+          coverage: none
+
+      - uses: ramsey/composer-install@v3
+        with:
+          working-directory: admin
+
+      - name: Preparar la aplicacion
+        working-directory: admin
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction
+
+      - name: Pruebas (PostgreSQL)
+        working-directory: admin
+        run: php artisan test --compact
+
+  python-chat:
+    name: Python (traductor del chat)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # la de Debian bookworm, la de la imagen del servicio
+
+      - name: Instalar dependencias (las versiones de .service/Dockerfile)
+        run: pip install grpcio==1.76.0 grpcio-tools==1.76.0 protobuf==6.31.1
+
+      - name: Generar los stubs de chat.proto
+        working-directory: docker/chat
+        run: bash generar.sh .
+
+      - name: Pruebas (unittest)
+        working-directory: docker/chat
+        run: python -m unittest discover -s tests -t . -v

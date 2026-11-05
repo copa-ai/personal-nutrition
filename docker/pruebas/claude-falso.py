@@ -10,6 +10,16 @@ El modo se lee de /app/agente/modo-falso (se cambia sin recrear el contenedor):
   limite            imprime el aviso de limite de uso del plan y sale con 1, sin entregar
   sinresultado      termina bien pero sin dejar resultado (dice por que)
   invalido          deja un resultado que incumple el contrato
+
+Modo chat: si el prompt empieza por «Turno de chat N.» (ver App\\Services\\Chat\\Claude\\RespondedorClaude), lee la instantanea de
+encargos/chat-N/ (LEEME.json, perfiles.json, conversacion.json) y responde como la skill chat-nutricion: razonamiento (thinking), una frase
+mientras usa una herramienta, la respuesta con un formulario (bloque keyboard) y, si la pregunta pide registrar algo o trae una foto, un archivo
+de acciones en workspace/chat-acciones-N.json. El modo se lee del mismo modo-falso:
+  ok (por defecto)  respuesta normal
+  limite            aviso de limite de uso del plan y salida 1
+  error             falla (mensaje en stderr y salida 1)
+  invalida          propone una accion invalida (perfil inexistente) ademas de una valida
+  lento             espera 60 s tras el primer evento (para probar cancelacion)
 """
 import json
 import os
@@ -19,7 +29,7 @@ import sys
 import time
 from pathlib import Path
 
-RAIZ = Path(os.environ.get("AGENTE_CARPETA", "/app/agente"))
+RAIZ = Path(os.environ.get("AGENTE_CARPETA") or "/app/agente")
 sys.path.insert(0, str(RAIZ / "scripts"))
 MODELO = "claude-sonnet-5-5"
 T0 = time.time()
@@ -55,8 +65,59 @@ def apuntar_consumo(n: int, fase: str, entrada: int, salida: int) -> None:
     c.close()
 
 
+def chat(turno: int) -> int:
+    """Un turno de chat: lee la instantanea (solo lectura) y responde con lo que haria la skill chat-nutricion."""
+    raiz = Path(os.environ.get("AGENTE_CARPETA") or os.getcwd())
+    modo = (raiz / "modo-falso").read_text().strip() if (raiz / "modo-falso").exists() else "ok"
+    emitir({"type": "system", "subtype": "init", "model": MODELO})
+    if modo == "limite":
+        print("You've hit your session limit · resets 3:20pm (UTC)", flush=True)
+        return 1
+    if modo == "error":
+        print("Error interno del Claude falso", file=sys.stderr, flush=True)
+        return 1
+
+    carpeta = f"encargos/chat-{turno}"
+    emitir({"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "La persona pregunta por la comida. Miro la instantánea."}]}})
+    if modo == "lento":
+        time.sleep(60)
+    leeme = json.loads((raiz / carpeta / "LEEME.json").read_text(encoding="utf-8"))
+    emitir({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Leo la instantánea del hogar."},
+        {"type": "tool_use", "name": "Read", "input": {"file_path": f"{carpeta}/LEEME.json"}}]}})
+    emitir({"type": "user", "message": {"content": [{"type": "tool_result", "content": "x" * 500}]}})
+    perfiles = json.loads((raiz / carpeta / "perfiles.json").read_text(encoding="utf-8"))
+    conversacion = json.loads((raiz / carpeta / "conversacion.json").read_text(encoding="utf-8"))
+    pregunta = next(m for m in conversacion["mensajes"] if m.get("es_la_pregunta"))
+    fotos = [f for f in pregunta["fotos"] if f.get("archivo")]
+    for f in fotos:
+        herramienta("Read", {"file_path": f"{carpeta}/{f['archivo']}"}, "[imagen]")   # el Claude real veria la foto con Read
+    activos = [p for p in perfiles if p["activo"]]
+
+    acciones = []
+    if "registra" in pregunta["texto"].lower() or fotos:
+        accion = {"tipo": "registrar_comida", "perfil": activos[0]["id"], "fecha": leeme["hoy"], "momento": "comida", "descripcion": "Lentejas con arroz (según la conversación)"}
+        fotos and accion.update(foto_hash=fotos[0]["foto_hash"])
+        acciones.append(accion)
+        if modo == "invalida":
+            acciones.append({"tipo": "registrar_comida", "perfil": 999999, "fecha": leeme["hoy"], "momento": "cena", "descripcion": "Esto no se puede aplicar"})
+    if acciones:
+        (raiz / f"workspace/chat-acciones-{turno}.json").write_text(json.dumps({"acciones": acciones}, ensure_ascii=False), encoding="utf-8")
+        herramienta("Write", {"file_path": f"workspace/chat-acciones-{turno}.json"})
+
+    nombres = ", ".join(p["nombre"] for p in activos)
+    texto(f"En casa hay {len(activos)} perfiles ({nombres}). ¿Para quién es la pregunta?\n\n"
+          "```keyboard\n<p>¿Para quién?</p>\n<div>\n"
+          + "\n".join(f'<button data-say="Para {p["nombre"]}" data-send>{p["nombre"]}</button>' for p in activos)
+          + "\n</div>\n```")
+    emitir({"type": "result", "result": "listo", "num_turns": 3, "duration_ms": int((time.time() - T0) * 1000), "total_cost_usd": 0.01})
+    return 0
+
+
 def main() -> int:
     prompt = sys.argv[sys.argv.index("-p") + 1] if "-p" in sys.argv else ""
+    if (c := re.match(r"Turno de chat (\d+)\.", prompt)):
+        return chat(int(c.group(1)))
     m = re.search(r"trabajo (\d+)", prompt)
     if not m:
         print("Solo atiendo encargos de planificación.")

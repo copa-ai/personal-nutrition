@@ -10,6 +10,7 @@
         "admin",
         "agente",
         "docker/agente",
+        "docker/chat",
         "docker/servicio",
         ".service/pack_config.json"
     ],

@@ -104,7 +104,7 @@ class EjecutorAgente
             };
             $r = (new EjecutorClaude)->ejecutar(
                 static::prompt($e, $ciclo), config('agente.herramientas'), (float) config('agente.timeout'),
-                function (string $tipo, string $texto) use ($log, $salida, &$cola) {
+                function (string $tipo, string $texto) use ($log, $salida, &$cola, $guardarRegistro) {
                     $cola = mb_substr($cola.$texto, -4000);       // la cola basta para ver el aviso de limite
                     file_put_contents($log, $texto, FILE_APPEND);
                     $guardarRegistro();

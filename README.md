@@ -161,13 +161,37 @@ cd admin && php artisan test                                   # PHP
 cd agente && python3 -I -B -m unittest discover -s tests       # Python del agente
 ```
 
+
+## Chat (interfaz «chat» de chatui)
+
+El servicio declara un segundo slot de API (puerto 50051: `http2` → `grpc` → `chat`) que sigue [chat.md rev. 6](https://github.com/celaut-project/chatui/blob/master/docs/celaut/chat.md), de modo que la app de chat de Celaut conversa con Personal Nutrition: preguntar por el menú, contar lo que se ha comido y enviar **fotos** de las comidas (se guardan en PostgreSQL y se enlazan al registro de comida).
+
+- **Dos motores.** Con token de Claude (se pide en el propio chat con una petición de secreto, o en *Conexión con Claude*) responde Claude, que ve una instantánea de **solo lectura** de los datos y propone acciones que Laravel valida antes de aplicarlas. Sin token responde un bot básico sin IA. Ambos usan widgets y formularios del propio chat.
+- **Piezas.** Un traductor gRPC en Python (`docker/chat/`, sin estado ni credenciales de la base) habla por HTTP interno (`127.0.0.1:8001`, Bearer `CHAT_SECRETO`, no tunelable) con Laravel, que guarda mensajes y archivos en la base compartida. Las respuestas salen por una cola y un worker propios (`chat`).
+- **Interruptores** (*Ajustes → Ajustes del servicio*): **Chat habilitado** (por defecto sí) y **Login automático** (por defecto no; entra con el usuario elegido a quien llegue a la web: la frontera de seguridad es el túnel del nodo).
+- **Auditoría** (*Ajustes → Auditoría*) recoge también los hechos del chat; el valor de un secreto no se guarda en ningún sitio.
+- Contrato interno: [`docs/chat-api-interna.md`](docs/chat-api-interna.md). Decisiones, beneficios y tradeoffs: [`docs/chat-arquitectura.md`](docs/chat-arquitectura.md).
+
+## Desarrollo y pruebas sin instalar PHP
+
+```bash
+docker/pruebas/php.sh artisan test --compact        # PHP 8.4 en contenedor (variable IMAGEN_PHP), SQLite en memoria
+docker/pruebas/postgres.sh up                        # PostgreSQL 18 desechable en 127.0.0.1:55432 (nutrition/ci)
+DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=55432 DB_DATABASE=personal_nutrition DB_USERNAME=nutrition DB_PASSWORD=ci \
+    docker/pruebas/php.sh artisan test --compact     # la misma suite contra PostgreSQL
+(cd docker/chat && python3 -m unittest discover -s tests)   # traductor gRPC (grpcio y grpcio-tools)
+```
+
+`.github/workflows/pruebas.yml` ejecuta las tres en CI.
+
 ## Estructura
 
 ```
 admin/      Laravel + Filament (panel, modelos, cola, servicios del agente)
 agente/     Kit del agente: CLAUDE.md, skills planificar-menu, editar-menu e intercambiar-menu, scripts (consumos.py, menu.py) y sus tests
 .service/   Empaquetado como servicio Celaut (Dockerfile de construcción, service.json, pack_config.json)
-docker/     agente/ (runner HTTP del agente) y servicio/ (start.sh, arranque del microVM)
+docker/     agente/ (runner HTTP del agente), chat/ (traductor gRPC), servicio/ (start.sh, arranque del microVM) y pruebas/ (scripts de prueba)
+docs/       Contrato interno del chat y documento de arquitectura
 agentic-laravel/   Guía de arquitectura origen (no se versiona)
 ```
 
