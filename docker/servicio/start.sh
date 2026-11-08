@@ -224,8 +224,9 @@ done
 fase web ok "escucha en :8000"
 fase cola ok
 
-# --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red ---
-lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while sleep "$1"; do php artisan nutrition:vigilar-base "$2" || true; done' vigilante 300 "$RUN_DB"
+# --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red y guarda copias de seguridad de ella ---
+# La primera vuelta es nada mas arrancar (no tras 300 s): asi la primera copia de seguridad de la base se toma en cuanto se conecta con ella.
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutrition:vigilar-base "$2" || true; sleep "$1"; done' vigilante 300 "$RUN_DB"
 
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\BaseCompartida\Candidata;
+use App\Services\BaseCompartida\CopiaAutomatica;
 use App\Services\BaseCompartida\CopiaDeRetirada;
 use App\Services\BaseCompartida\Eleccion;
 use App\Services\BaseCompartida\EstadoBase;
@@ -27,13 +28,15 @@ use Throwable;
  * fusionada con todo lo que tiene (nadie ha escrito desde la ultima fusion) se para sola (nutrition.baja.activa), pero antes se guarda una
  * copia entera de ella (App\Services\BaseCompartida\CopiaDeRetirada); si la copia falla, no se para.
  *
+ * Ademas guarda copias de seguridad periodicas de la base elegida (App\Services\BaseCompartida\CopiaAutomatica), la primera nada mas conectar.
+ *
  * Nunca falla por no ver bases: si ninguna responde deja el estado como esta.
  */
 #[Signature('nutrition:vigilar-base {estado : Fichero de estado de la base (el que escribe nutrition:base-datos)}')]
 #[Description('Elige la base compartida en la que escribir y, si esta activado, para las que sobran')]
 class VigilarBase extends Command
 {
-    public function handle(Sonda $sonda, Fusionador $fusionador, CopiaDeRetirada $copia): int
+    public function handle(Sonda $sonda, Fusionador $fusionador, CopiaDeRetirada $copia, CopiaAutomatica $automatica): int
     {
         $fichero = (string) $this->argument('estado');
         $estado = EstadoBase::leer($fichero);
@@ -71,10 +74,24 @@ class VigilarBase extends Command
             $this->info("Se pasa a escribir en {$elegida->direccion}.");
         }
 
+        $this->copiaPeriodica($automatica, $fichero, $elegida);
         $fusionadas = $this->fusionar($sonda, $fusionador, $fichero, $candidatas, $elegida);
         $this->darDeBaja($nodo, $copia, $pool, $baseDe, $candidatas, $elegida, $eleccion, $fusionadas);
 
         return self::SUCCESS;
+    }
+
+    /** Copia de seguridad de la base elegida (nada mas conectar y despues cada pocas horas): un fallo se avisa y no corta la vigilancia. */
+    private function copiaPeriodica(CopiaAutomatica $automatica, string $fichero, Candidata $elegida): void
+    {
+        try {
+            $ruta = $automatica->tomarSiToca($elegida, $fichero);
+            if ($ruta !== null) {
+                $this->info("Copia de seguridad de {$elegida->direccion} guardada en {$ruta}.");
+            }
+        } catch (Throwable $e) {
+            $this->warn("No se pudo guardar la copia de seguridad de {$elegida->direccion}: ".$e->getMessage());
+        }
     }
 
     /**

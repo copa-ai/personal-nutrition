@@ -9,7 +9,7 @@ use Throwable;
 /**
  * La copia que se guarda de una base justo antes de pararla (`nutrition:vigilar-base`): un volcado `.sql.gz` completo (el mismo de la
  * pagina de copia de seguridad, restaurable con psql sobre una base ya migrada) en `nutrition.baja.copias`. Si no se puede guardar entera, la
- * base no se para. Se conservan las ultimas `nutrition.baja.copias_guardadas`.
+ * base no se para. Se conservan las ultimas `nutrition.baja.copias_guardadas`. `CopiaAutomatica` la reutiliza con otro prefijo y otra carpeta.
  */
 class CopiaDeRetirada
 {
@@ -18,14 +18,14 @@ class CopiaDeRetirada
      *
      * @throws RuntimeException si la copia no se pudo guardar entera
      */
-    public function guardar(string $direccion, string $identificador): string
+    public function guardar(string $direccion, string $identificador, string $prefijo = 'retirada', ?string $carpeta = null, ?int $guardadas = null): string
     {
-        $carpeta = (string) config('nutrition.baja.copias');
+        $carpeta ??= (string) config('nutrition.baja.copias');
         if (! is_dir($carpeta) && ! @mkdir($carpeta, 0700, true) && ! is_dir($carpeta)) {
             throw new RuntimeException("No se pudo crear {$carpeta}.");
         }
 
-        $destino = $carpeta.'/retirada-'.now()->format('Y-m-d-His').'-'.preg_replace('/[^0-9A-Za-z]/', '', $identificador).'.sql.gz';
+        $destino = $carpeta.'/'.$prefijo.'-'.now()->format('Y-m-d-His').'-'.preg_replace('/[^0-9A-Za-z]/', '', $identificador).'.sql.gz';
         $temporal = $destino.'.parcial';
         $flujo = @fopen($temporal, 'wb');
         if ($flujo === false) {
@@ -53,7 +53,7 @@ class CopiaDeRetirada
             throw $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), previous: $e);
         }
 
-        $this->podar($carpeta);
+        $this->podar($carpeta, $prefijo, $guardadas ?? (int) config('nutrition.baja.copias_guardadas'));
 
         return $destino;
     }
@@ -80,11 +80,11 @@ class CopiaDeRetirada
         return str_contains($cola, 'COMMIT;');
     }
 
-    private function podar(string $carpeta): void
+    private function podar(string $carpeta, string $prefijo, int $guardadas): void
     {
-        $copias = glob($carpeta.'/retirada-*.sql.gz') ?: [];
+        $copias = glob($carpeta.'/'.$prefijo.'-*.sql.gz') ?: [];
         usort($copias, fn (string $a, string $b): int => [filemtime($b), $b] <=> [filemtime($a), $a]);
-        foreach (array_slice($copias, max(1, (int) config('nutrition.baja.copias_guardadas'))) as $vieja) {
+        foreach (array_slice($copias, max(1, $guardadas)) as $vieja) {
             @unlink($vieja);
         }
     }

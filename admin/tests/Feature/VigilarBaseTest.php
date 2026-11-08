@@ -35,6 +35,9 @@ class VigilarBaseTest extends TestCase
 
     public bool $copiaFalla = false;
 
+    /** @var list<array{0: string, 1: string}> copias periodicas pedidas: [direccion, identificador] */
+    public array $automaticas = [];
+
     /** @var list<bool> por cada copia, si al hacerla la base todavia no se habia parado */
     public array $copiasAntesDeParar = [];
 
@@ -60,14 +63,20 @@ SH);
             'nutrition.baja.activa' => false,
             'nutrition.baja.silencio_min' => 10,
             'nutrition.eleccion.margen' => 0.05,
+            'nutrition.copias_automaticas.activa' => false,
+            'nutrition.copias_automaticas.intervalo_horas' => 6,
         ]);
         config(['nutrition.fusion.activa' => true]);
         $this->app->instance(CopiaDeRetirada::class, new class($this) extends CopiaDeRetirada
         {
             public function __construct(private readonly VigilarBaseTest $prueba) {}
 
-            public function guardar(string $direccion, string $identificador): string
+            public function guardar(string $direccion, string $identificador, string $prefijo = 'retirada', ?string $carpeta = null, ?int $guardadas = null): string
             {
+                if ($prefijo === 'auto') {
+                    return $this->prueba->automaticaPedida($direccion, $identificador);
+                }
+
                 return $this->prueba->copiaPedida($direccion, $identificador);
             }
         });
@@ -125,6 +134,16 @@ SH);
         $this->copiasAntesDeParar[] = ! str_contains($this->ordenesAlNodo(), ' stop ');
 
         return "/copias/retirada-{$identificador}.sql.gz";
+    }
+
+    public function automaticaPedida(string $direccion, string $identificador): string
+    {
+        if ($this->copiaFalla) {
+            throw new \RuntimeException('disco lleno');
+        }
+        $this->automaticas[] = [$direccion, $identificador];
+
+        return "/copias/auto-{$identificador}.sql.gz";
     }
 
     /** Cambia lo que la sonda ve de una base (alguien escribio en ella). */
@@ -550,5 +569,66 @@ SH);
     public function test_la_baja_automatica_esta_activada_por_defecto(): void
     {
         $this->assertTrue((bool) (require base_path('config/nutrition.php'))['baja']['activa']);
+    }
+
+    public function test_la_primera_vuelta_guarda_una_copia_de_la_base_elegida(): void
+    {
+        config(['nutrition.copias_automaticas.activa' => true]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 10, '2026-11-05 11:59:00');
+
+        $this->vigilar()->expectsOutputToContain('Copia de seguridad de 10.0.0.1:5432 guardada')->assertSuccessful();
+
+        $this->assertSame([['10.0.0.1:5432', '111']], $this->automaticas);
+        $this->assertSame([], $this->copias, 'no es una copia de retirada');
+    }
+
+    public function test_la_copia_periodica_es_de_la_base_elegida_no_de_las_demas(): void
+    {
+        config(['nutrition.copias_automaticas.activa' => true]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 10, '2026-11-05 11:59:00');
+        $this->hay('10.0.0.2:5432', '222', 500, '2026-11-05 11:58:00');
+        $this->vecinas('10.0.0.2:5432');
+
+        $this->vigilar()->assertSuccessful();
+
+        $this->assertSame([['10.0.0.2:5432', '222']], $this->automaticas);
+    }
+
+    public function test_no_repite_la_copia_si_nadie_ha_escrito(): void
+    {
+        config(['nutrition.copias_automaticas.activa' => true]);
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 10, '2026-11-05 11:59:00');
+
+        $this->vigilar()->assertSuccessful();
+        CarbonImmutable::setTestNow('2026-11-06 12:00:00');
+        $this->vigilar()->assertSuccessful();
+
+        $this->assertCount(1, $this->automaticas);
+    }
+
+    public function test_si_la_copia_falla_avisa_y_el_comando_sigue(): void
+    {
+        config(['nutrition.copias_automaticas.activa' => true]);
+        $this->copiaFalla = true;
+        $this->escribirEstado('10.0.0.1', 5432);
+        $this->hay('10.0.0.1:5432', '111', 10, '2026-11-05 11:59:00');
+        $this->hay('10.0.0.2:5432', '222', 5, '2026-11-05 11:59:00');
+        $this->vecinas('10.0.0.2:5432');
+
+        $this->vigilar()->expectsOutputToContain('No se pudo guardar la copia de seguridad')->assertSuccessful();
+
+        $this->assertCount(1, $this->fusiones, 'la vigilancia continua: se fusiono la otra base pese al fallo');
+        $this->assertFileDoesNotExist($this->estado.'.copias', 'sin copia no se recuerda nada: se reintenta en la vuelta siguiente');
+    }
+
+    public function test_las_copias_periodicas_estan_activadas_por_defecto(): void
+    {
+        $ajustes = (require base_path('config/nutrition.php'))['copias_automaticas'];
+
+        $this->assertTrue((bool) $ajustes['activa']);
+        $this->assertGreaterThan(0, $ajustes['intervalo_horas']);
     }
 }

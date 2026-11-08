@@ -66,6 +66,14 @@ return [
         'copias_guardadas' => 5,                                    // cuantas se conservan
         'silencio_min' => 10,   // minutos sin eventos de auditoria para que una base sobre
     ],
+    // Copias de seguridad periodicas de la base elegida (App\Services\BaseCompartida\CopiaAutomatica), por si la base muere: una nada mas
+    // conectar con ella y luego una cada `intervalo_horas` si ha habido actividad nueva en la auditoria.
+    'copias_automaticas' => [
+        'activa' => true,
+        'carpeta' => storage_path('app/private/copias-automaticas'),
+        'intervalo_horas' => 6,
+        'guardadas' => 8,   // cuantas se conservan
+    ],
     'vigilancia_cada_s' => 300,
 
     // Identificador de esta instancia en la auditoria (App\Services\Instancia): el dado aqui o, si no (siempre, salvo en las pruebas), uno
