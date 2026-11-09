@@ -82,15 +82,35 @@
             ]
         }
     ],
-    "possible_environment_workload": [
+    "initial_environment_workload": [
         {
-            "workloads": [
+            "any_of": [
                 {
-                    "count": 1,
-                    "resources": {
-                        "mem_limit": 1073741824,
-                        "disk_space": 10737418240
-                    }
+                    "workloads": [
+                        {
+                            "count": 1,
+                            "dependency": {
+                                "service": {
+                                    "container": {
+                                        "resources": {
+                                            "at_init": {
+                                                "mem_limit": 268435456,
+                                                "disk_space": 2147483648,
+                                                "cpu_period": 100000,
+                                                "cpu_quota": 50000
+                                            },
+                                            "at_most": {
+                                                "mem_limit": 1073741824,
+                                                "disk_space": 10737418240,
+                                                "cpu_period": 100000,
+                                                "cpu_quota": 100000
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
                 }
             ]
         }
