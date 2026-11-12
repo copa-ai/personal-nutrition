@@ -216,15 +216,38 @@ kill "$PID_ESTADO" 2>/dev/null || true
 wait "$PID_ESTADO" 2>/dev/null || true
 lanzar como app "${ENTORNO_APP[@]}" -- frankenphp run --config /opt/nutrition/Caddyfile --adapter caddyfile
 fase cola "en curso"
-lanzar como app "${ENTORNO_APP[@]}" -- php artisan queue:work --queue=default --tries=1 --timeout=0 --sleep=3
+# Cada worker va en un bucle que lo relanza: queue:work sale por si solo al pasar --memory (128 MB por defecto) o --max-jobs, y si saliera
+# directamente caeria todo el servicio (mas abajo, `wait -n`). Asi su memoria queda acotada sin tirar el servicio. `--memory` se comprueba
+# entre trabajos: un menu largo no se interrumpe.
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan queue:work --queue=default --tries=1 --timeout=0 --sleep=3 --memory=192 --max-jobs=200 || true; sleep 1; done'
 # Worker propio del chat: una generacion de menu (horas) no debe dejar sin respuesta ni al bot basico.
-lanzar como app "${ENTORNO_APP[@]}" -- php artisan queue:work --queue=chat --tries=1 --timeout=0 --sleep=1
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan queue:work --queue=chat --tries=1 --timeout=0 --sleep=1 --memory=192 --max-jobs=500 || true; sleep 1; done'
 for i in $(seq 1 60); do
     python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/estado.json', timeout=2)" 2>/dev/null && break
     sleep 1
 done
 fase web ok "escucha en :8000"
 fase cola ok
+
+# --- Medidor de memoria: cada 15 s deja en $PUBLICO/memoria.json (servido en /memoria.json) la memoria usada, el pico observado desde el
+#     arranque, el pico y el limite del cgroup si el guest los expone y los procesos que mas pesan. Sin PHP ni herramientas extra: solo /proc.
+#     Sirve para decidir cuanto recortar `mem_limit` de service.json antes de hacerlo (TODO: «Recursos por medir»). Corre como root: no abre nada. ---
+medir_memoria() {
+    local pico=0 total disp usado cur cpico cmax top json
+    while true; do
+        total=$(awk '/^MemTotal:/{print $2}' /proc/meminfo); disp=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+        usado=$(( ${total:-0} - ${disp:-0} )); [ "$usado" -le "$pico" ] || pico=$usado
+        cur=$(cat /sys/fs/cgroup/memory.current 2>/dev/null || echo null); cpico=$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo null)
+        cmax=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo null); [ "$cmax" != max ] || cmax=null
+        top=$(awk '/^Name:/{n=$2} /^VmRSS:/{printf "%s %s\n", $2, n}' /proc/[0-9]*/status 2>/dev/null | sort -rn | head -10 \
+            | awk 'BEGIN{printf "["} {printf "%s{\"nombre\":\"%s\",\"rss_kb\":%s}", (NR>1?",":""), $2, $1} END{printf "]"}')
+        json=$(printf '{"fecha":"%s","total_kb":%s,"usado_kb":%s,"disponible_kb":%s,"pico_usado_kb":%s,"cgroup_actual_bytes":%s,"cgroup_pico_bytes":%s,"cgroup_limite_bytes":%s,"procesos":%s}' \
+            "$(date -u +%FT%TZ)" "${total:-0}" "$usado" "${disp:-0}" "$pico" "$cur" "$cpico" "$cmax" "${top:-[]}")
+        printf '%s\n' "$json" > "$PUBLICO/memoria.json.tmp" && chmod 644 "$PUBLICO/memoria.json.tmp" && mv -f "$PUBLICO/memoria.json.tmp" "$PUBLICO/memoria.json"
+        sleep 15
+    done
+}
+lanzar medir_memoria
 
 # --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red y guarda copias de seguridad de ella ---
 # La primera vuelta es nada mas arrancar (no tras 300 s): asi la primera copia de seguridad de la base se toma en cuanto se conecta con ella.
