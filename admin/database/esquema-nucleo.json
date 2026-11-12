@@ -1,0 +1,13 @@
+{
+    "users": ["id", "name", "email"],
+    "hogares": ["id", "nombre"],
+    "perfiles": ["id", "hogar_id", "nombre", "activo"],
+    "alimentos": ["id", "nombre", "categoria", "unidad"],
+    "existencias": ["id", "hogar_id", "alimento_id", "cantidad", "unidad"],
+    "disponibilidad_dias": ["id", "hogar_id", "dia_semana"],
+    "menus": ["id", "nombre", "hogar_id", "fecha_inicio", "contenido", "estado"],
+    "registros_comida": ["id", "perfil_id", "fecha", "momento", "descripcion"],
+    "feedback": ["id", "perfil_id", "tipo", "elemento"],
+    "ajustes": ["id", "clave", "valor"],
+    "auditorias": ["id", "evento", "auditable_type", "auditable_id", "created_at"]
+}

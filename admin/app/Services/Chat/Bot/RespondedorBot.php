@@ -42,6 +42,11 @@ class RespondedorBot implements Respondedor
             // Antes de escribir: el mensaje sigue abierto y solo cambia esta columna.
             $respuesta->update(['metadata' => $contestacion->metadata]);
         }
+        if ($contestacion->enlace !== null) {
+            $respuesta->enlazarSlot($contestacion->texto, $contestacion->enlace['puerto'], $contestacion->enlace['etiqueta']);
+
+            return;
+        }
         if (! $respuesta->anadirTexto($contestacion->texto)) {
             return;
         }
@@ -70,6 +75,7 @@ class RespondedorBot implements Respondedor
             Intencion::AYUDA => $this->ayuda(),
             Intencion::MENU, Intencion::SEMANA => $this->menu($intencion, $hogar, $perfiles, $hoy),
             Intencion::DESPENSA => $this->despensa($hogar, $hoy),
+            Intencion::COMPRA => $this->compra($hogar),
             Intencion::REGISTRAR_ORDEN, Intencion::REGISTRAR => $this->registrar($intencion, $pregunta, $hogar, $perfiles, $hoy),
             Intencion::IA => $this->ia(),
             default => $this->noEntiendo(),
@@ -101,10 +107,24 @@ class RespondedorBot implements Respondedor
         $texto = "Esto es lo que sé hacer, sin necesidad de inteligencia artificial:\n\n"
             ."- **Menú**: «menú de hoy», «qué ceno mañana», «qué tiene que comer Ana el viernes», «menú de la semana».\n"
             ."- **Registrar lo que se ha comido**: «he cenado pasta con tomate», o toca «Registrar lo que he comido». Puedes mandar una foto del plato.\n"
-            ."- **Despensa**: «qué hay en la despensa», «qué caduca pronto».\n\n"
+            ."- **Despensa**: «qué hay en la despensa», «qué caduca pronto».\n"
+            ."- **Compra**: «lista de la compra», «qué tengo que comprar».\n\n"
             .'Si hay varias personas en casa y no digo de quién hablo, te lo pregunto. Para análisis, recetas o recomendaciones hace falta conectar Claude.';
 
         return new Respuesta(Mensaje::nuevo()->texto($texto)->teclado(Formularios::acciones())->render());
+    }
+
+    /** La lista de la compra es un mazo de cards en otro slot: el mensaje lleva un slot_link (chat.md §5.8) y el cliente abre el mazo al tocar el botón. */
+    private function compra(?Hogar $hogar): Respuesta
+    {
+        if (! $hogar?->menuActivo) {
+            return new Respuesta('Todavía no hay un menú activo, así que no hay lista de la compra. Genera uno desde el panel (Menús) y te la preparo.', $this->sugerencias(['Despensa', 'Ayuda']));
+        }
+        $texto = 'Tienes la lista de la compra del menú «'.$hogar->menuActivo->nombre.'» con lo que falta en la despensa, por pasillos. '
+            .'Desliza a la derecha cuando lo compres (se suma a la despensa) y a la izquierda si no lo encuentras.';
+
+        return new Respuesta(Mensaje::nuevo()->texto($texto)->render(), $this->sugerencias(['Despensa', 'Menú de hoy']), [], null,
+            ['puerto' => (int) config('cards.puerto_slot'), 'etiqueta' => 'Lista de la compra']);
     }
 
     private function noEntiendo(): Respuesta

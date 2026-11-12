@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
  * Un mensaje de la conversacion (de la persona o del servicio). Fuente de verdad: chat.md §5.
  *
  * Partes de `contenido` (formas de docs/chat-api-interna.md): {"tipo":"texto","texto"}, {"tipo":"imagen","hash","mime","tamano",
- * "nombre","alt"}, {"tipo":"audio",...}, {"tipo":"archivo",...}, {"tipo":"peticion_secreto","request_id","nombre","prosa"}.
+ * "nombre","alt"}, {"tipo":"audio",...}, {"tipo":"archivo",...}, {"tipo":"peticion_secreto","request_id","nombre","prosa"}, {"tipo":"slot_link","port","label"}.
  *
  * API de escritura para los motores de respuesta (bot, Claude, eco). Todas operan sobre la fila bloqueada y dejan este modelo
  * al dia; las que escriben en un mensaje abierto devuelven false si ya es final (por ejemplo, cancelado por la persona):
@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
  *    formularios (bloques keyboard) son texto dentro de una parte `texto`.
  *  - anadirRazonamiento(): razonamiento del modelo, aparte del contenido.
  *  - finalizar(): COMPLETED, con hasta 3 sugerencias. fallar(): FAILED con un error legible. cancelar(): CANCELLED.
+ *  - enlazarSlot(): como pedirSecreto, con un texto y un enlace a otro slot (chat.md §5.8).
  *  - pedirSecreto(), anadirImagen(), anadirArchivo(): chat.md §5.2 prohibe cambiar partes que no son de texto en un mensaje
  *    abierto, asi que cada una publica un MENSAJE NUEVO ya COMPLETED (con el mismo reply_to) y lo devuelve.
  *  - cancelada(): lee de la base si la persona cancelo la respuesta.
@@ -45,6 +46,8 @@ use Illuminate\Database\Eloquent\Model;
 class ChatMensaje extends Model
 {
     use HasUuids;
+
+    protected $connection = 'chat';
 
     protected $table = 'chat_mensajes';
 
@@ -151,6 +154,12 @@ class ChatMensaje extends Model
     public function pedirSecreto(string $requestId, string $nombre, string $prosa): self
     {
         return $this->conversacion()->pedirSecreto($this, $requestId, $nombre, $prosa);
+    }
+
+    /** Publica un mensaje con un texto y un enlace al slot de ese puerto (chat.md §5.8) y cierra esta respuesta. Devuelve el mensaje nuevo. */
+    public function enlazarSlot(string $texto, int $puerto, ?string $etiqueta = null): self
+    {
+        return $this->conversacion()->enlazarSlot($this, $texto, $puerto, $etiqueta);
     }
 
     /** Publica una imagen guardada en chat_archivos como mensaje nuevo (ver la nota de la clase). */

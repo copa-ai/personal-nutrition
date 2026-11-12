@@ -46,6 +46,9 @@ final class Interprete
         if (self::pideIa($norm)) {
             return new Intencion(Intencion::IA);
         }
+        if (self::pideCompra($norm)) {
+            return new Intencion(Intencion::COMPRA);
+        }
         if (preg_match('/\b(despensa|existencias?|nevera|frigorifico|stock|caduca\w*|que (hay|tengo|queda|tenemos|nos queda) en (casa|la nevera|la despensa|el frigorifico)|alimentos en casa|ingredientes en casa)\b/', $norm) === 1) {
             return new Intencion(Intencion::DESPENSA);
         }
@@ -66,6 +69,12 @@ final class Interprete
         }
 
         return new Intencion(Intencion::NO_ENTIENDO);
+    }
+
+    /** «lista de la compra», «qué tengo que comprar», «voy al súper»… (ya normalizado). */
+    public static function pideCompra(string $norm): bool
+    {
+        return preg_match('/\b(lista de (la )?compras?|la compra|compra de la semana|que (tengo|tenemos|hay|debo|debemos|hace falta|falta) (que )?comprar|que (me |nos )?falta|voy al (super|supermercado|mercado)|ir al (super|supermercado|mercado)|ir a comprar|hacer la compra)\b/', $norm) === 1;
     }
 
     // ------------------------------------------------------------------ menú

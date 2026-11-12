@@ -2,7 +2,7 @@
 
 /*
  * El esquema de la base de datos va en el `formal` de la red (claves `db.table.*`); se lee de database/esquema.json, que genera
- * `php artisan nutrition:esquema --escribir` (gramatica en App\Services\EsquemaBaseDatos).
+ * `php artisan nutrition:esquema --escribir` a partir de database/esquema-nucleo.json (gramatica en App\Services\EsquemaBaseDatos).
  */
 $esquema = json_decode((string) file_get_contents(database_path('esquema.json')), true);
 if (! is_array($esquema) || json_last_error() !== JSON_ERROR_NONE) {
@@ -15,8 +15,9 @@ if (! is_array($esquema) || json_last_error() !== JSON_ERROR_NONE) {
  */
 return [
     // La red Celaut de la base de datos compartida: nutrition-postgres la declara y cada Laravel declara la misma
-    // (.service/service.json -> network y dependencies/postgres/.service/service.json). El `formal` describe PostgreSQL con TODO el
-    // esquema de las migraciones: dos dispositivos con esquemas distintos estan en redes distintas.
+    // (.service/service.json -> network y dependencies/postgres/.service/service.json). El `formal` describe PostgreSQL con el NUCLEO del
+    // esquema (database/esquema-nucleo.json: las tablas y columnas que no van a cambiar), no con todas las migraciones: dos dispositivos
+    // con distinto nucleo estan en redes distintas; las columnas y tablas de fuera del nucleo pueden cambiar sin cambiar de red.
     'red' => [
         'tag' => 'postgres',
         'dependencia' => 'NUTRITION_POSTGRES',   // entrada de .dependencies del servicio empaquetado

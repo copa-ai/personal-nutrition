@@ -19,6 +19,9 @@ final class Intencion
 
     public const DESPENSA = 'despensa';
 
+    /** Quiere ver la lista de la compra (el mazo de cards). */
+    public const COMPRA = 'compra';
+
     /** Una orden «registrar comida perfil=… momento=… fecha=…: …» (la de la tecla del formulario). */
     public const REGISTRAR_ORDEN = 'registrar_orden';
 

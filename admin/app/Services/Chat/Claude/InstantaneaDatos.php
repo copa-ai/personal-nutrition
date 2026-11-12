@@ -2,7 +2,9 @@
 
 namespace App\Services\Chat\Claude;
 
+use App\Enums\CategoriaComida;
 use App\Enums\EstadoChat;
+use App\Enums\EstadoMenu;
 use App\Models\AgenteArchivo;
 use App\Models\Alimento;
 use App\Models\ChatMensaje;
@@ -110,6 +112,7 @@ class InstantaneaDatos
         $this->feedback();
         $this->alimentos();
         $this->consumos();
+        $this->catalogos();
         $this->conversacion($pregunta, $respuesta);
         $leeme = $this->leeme($respuesta);
         $this->escribir('LEEME.json', (string) json_encode($leeme, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), false);
@@ -313,11 +316,13 @@ class InstantaneaDatos
         $filas = $menus->map(fn (Menu $m): array => [
             'id' => $m->id, 'nombre' => $m->nombre, 'hogar_id' => $m->hogar_id, 'fecha_inicio' => $m->fecha_inicio?->toDateString(), 'estado' => $m->estado->value,
             'tarea' => $m->tarea, 'activo' => in_array($m->id, $activos, true), 'terminado_en' => $m->terminado_en?->toIso8601String(),
+            'error' => $m->error ? mb_substr((string) $m->error, 0, 300) : null, 'en_curso' => $m->estado->enCurso(),
             'archivo' => $m->contenido ? "menus/menu-{$m->id}.json" : null,
         ])->all();
         $this->lista('menus.json', 'El menú activo de cada hogar y los más recientes. El contenido de cada uno está en menus/menu-ID.json y aplanado en tomas.csv.', $filas, [
             'id' => 'identificador', 'nombre' => 'nombre', 'hogar_id' => 'hogar', 'fecha_inicio' => 'primer día', 'estado' => 'borrador, en_cola, en_marcha, en_espera, terminado o fallido',
             'tarea' => 'generar, editar o intercambiar', 'activo' => 'si es el que el hogar sigue ahora', 'terminado_en' => 'cuando terminó', 'archivo' => 'archivo con su contenido, o null si aún no lo tiene',
+            'error' => 'motivo del último fallo (recortado), o null', 'en_curso' => 'si tiene un trabajo en curso (en_cola, en_marcha o en_espera): no se puede editar ni activar',
         ], ['hogar_id -> hogares.json id']);
 
         $tomas = [];
@@ -400,6 +405,27 @@ class InstantaneaDatos
         ], ['menu_id -> menus.json id']);
     }
 
+    /** Valores validos de los campos cerrados y lista de acciones admitidas (lo que el agente necesita para proponer sin equivocarse). */
+    private function catalogos(): void
+    {
+        $datos = [
+            'categorias' => array_map(fn (CategoriaComida $c): array => ['valor' => $c->value, 'etiqueta' => $c->getLabel()], CategoriaComida::cases()),
+            'momentos_de_registro' => ['comida', 'cena', 'otro'],
+            'momentos_de_toma_de_menu' => ['comida', 'cena'],
+            'origenes_de_registro' => ['casa', 'fuera'],
+            'valoraciones' => ['gusta', 'no_gusta'],
+            'unidades' => array_keys(Alimento::UNIDADES),
+            'dia_semana' => '1 = lunes … 7 = domingo',
+            'estados_de_menu' => array_map(fn (EstadoMenu $e): string => $e->value, EstadoMenu::cases()),
+            'acciones_admitidas' => app(AccionesChat::class)->tipos(),
+            'tope_acciones_por_turno' => (int) config('chat_claude.acciones.max_por_turno'),
+            'minutos_para_confirmar' => (int) config('chat_claude.acciones.caduca_min'),
+        ];
+        $this->escribir('catalogos.json', (string) json_encode($datos, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), false);
+        $this->indice[] = ['archivo' => 'catalogos.json', 'descripcion' => 'Valores válidos de los campos cerrados (categorías, unidades, estados…) y lista de acciones admitidas.',
+            'formato' => 'json', 'filas' => 1, 'filas_totales' => 1, 'truncada' => false, 'columnas' => [], 'relaciones' => []];
+    }
+
     // ------------------------------------------------------------------ conversacion y fotos
 
     private function conversacion(ChatMensaje $pregunta, ChatMensaje $respuesta): void
@@ -455,9 +481,8 @@ class InstantaneaDatos
 
     private function textoDelMensaje(ChatMensaje $m): string
     {
-        $texto = $m->texto();   // las partes peticion_secreto no son de texto: no salen
-
-        return $texto;
+        // Las partes peticion_secreto no son de texto: no salen. Los tokens de confirmacion de acciones pendientes tampoco: son de Laravel.
+        return ConfirmacionAcciones::ocultarTokens($m->texto());
     }
 
     // ------------------------------------------------------------------ indice

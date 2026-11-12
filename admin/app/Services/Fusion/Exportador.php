@@ -46,8 +46,7 @@ class Exportador
             $cuenta['borrados'] = $this->volcar($origen, $salida, 'SELECT to_jsonb(b) FROM borrados b ORDER BY b.tabla, b.id', 'borrados', null);
             $tablas = $this->lista((string) $origen->query('SELECT array_to_json(fusion_tablas())')->fetchColumn());
             foreach ($tablas as $tabla) {
-                $orden = $tabla === 'chat_mensajes' ? 't.sequence' : 't.id';
-                $cuenta[$tabla] = $this->volcar($origen, $salida, "SELECT to_jsonb(t) FROM {$this->identificador($tabla)} t ORDER BY {$orden}", 'filas', $tabla);
+                $cuenta[$tabla] = $this->volcar($origen, $salida, "SELECT to_jsonb(t) FROM {$this->identificador($tabla)} t ORDER BY t.id", 'filas', $tabla);
             }
             $cuenta['auditorias'] = $this->volcar($origen, $salida, 'SELECT to_jsonb(a) FROM auditorias a ORDER BY a.id', 'auditorias', null);
         } finally {

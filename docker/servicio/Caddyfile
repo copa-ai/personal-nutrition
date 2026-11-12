@@ -33,9 +33,9 @@
 		header Cache-Control no-store
 		file_server
 	}
-	# La API interna del chat NO se sirve por el puerto publico (ni por /interno/chat, ni por /index.php/interno/chat, ni con otra
+	# La API interna del chat y de la lista de la compra NO se sirve por el puerto publico (ni por /interno/chat ni /interno/cards, ni por /index.php/interno/chat, ni con otra
 	# mayuscula): solo el sitio de 127.0.0.1:8001. Laravel exige ademas el Bearer CHAT_SECRETO y que la ruta empiece por /interno/chat.
-	@interno_chat path_regexp interno_chat (?i)interno/chat
+	@interno_chat path_regexp interno_chat (?i)interno/(chat|cards)
 	handle @interno_chat {
 		respond "no encontrado" 404
 	}
@@ -44,7 +44,7 @@
 	}
 }
 
-# API interna del chat (docs/chat-api-interna.md), solo para el traductor gRPC del mismo VM: unicamente /interno/chat/* y solo en el
+# API interna del chat y de cards (docs/chat-api-interna.md), solo para el traductor gRPC del mismo VM: unicamente /interno/chat/*, /interno/cards/* y solo en el
 # loopback. No esta en service.json -> api, asi que `nodo tunnel` no puede llegar a ella. Mismo limite de cuerpo que el contrato
 # (archivos de 4 MiB en base64 caben en 8 MiB). Laravel exige ademas el Bearer CHAT_SECRETO.
 http://127.0.0.1:8001 {
@@ -54,6 +54,9 @@ http://127.0.0.1:8001 {
 		max_size 8MiB
 	}
 	handle /interno/chat/* {
+		php_server
+	}
+	handle /interno/cards/* {
 		php_server
 	}
 	handle {

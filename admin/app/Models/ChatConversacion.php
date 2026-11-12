@@ -13,6 +13,8 @@ class ChatConversacion extends Model
 {
     public const ID = 1;
 
+    protected $connection = 'chat';
+
     protected $table = 'chat_conversacion';
 
     public $incrementing = false;

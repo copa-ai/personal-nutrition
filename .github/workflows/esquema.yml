@@ -1,8 +1,8 @@
 # Mantiene sincronizado el esquema de la base de datos con la spec del servicio.
 #
 # El `formal` de la red «postgres» (admin/database/esquema.json, copiado a .service/service.json y a
-# dependencies/postgres/.service/service.json) tiene que describir exactamente lo que crean las migraciones, con los tipos
-# de PostgreSQL. Aqui se migra una PostgreSQL real, se regenera el esquema y:
+# dependencies/postgres/.service/service.json) declara solo el NUCLEO de admin/database/esquema-nucleo.json (tablas y columnas
+# estables), con los tipos de PostgreSQL tal como los crean las migraciones. Aqui se migra una PostgreSQL real, se regenera el esquema y:
 #   - si difiere y se puede escribir en la rama (push o PR del propio repositorio), se hace commit con los ficheros regenerados;
 #   - si difiere y no se puede escribir (PR de un fork), el trabajo falla con el diff;
 #   - al final se comprueba que los tres sitios coinciden con la base migrada.
@@ -14,6 +14,7 @@ on:
     paths: &rutas
       - 'admin/database/migrations/**'
       - 'admin/database/esquema.json'
+      - 'admin/database/esquema-nucleo.json'
       - 'admin/database/sincronizar-esquema.py'
       - 'admin/app/Services/EsquemaBaseDatos.php'
       - 'admin/app/Console/Commands/EsquemaBaseDatos.php'

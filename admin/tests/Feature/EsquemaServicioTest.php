@@ -11,7 +11,7 @@ use Tests\TestCase;
 
 /**
  * El `formal` de la red «postgres» (esquema de la base incluido) tiene que ser identico, byte a byte, en los dos service.json y en
- * config/nutrition.php, y coincidir con las tablas que crean las migraciones.
+ * config/nutrition.php, y declarar el nucleo de esquema-nucleo.json (solo las tablas y columnas estables), que tiene que existir en las migraciones.
  */
 class EsquemaServicioTest extends TestCase
 {
@@ -76,22 +76,23 @@ class EsquemaServicioTest extends TestCase
         $this->assertArrayNotHasKey('db.cluster', config('nutrition.red.formal'), 'db.cluster lo pone quien instancia.');
     }
 
-    public function test_toda_tabla_migrada_esta_en_el_esquema_y_con_sus_columnas(): void
+    public function test_el_nucleo_esta_migrado_y_el_esquema_declara_justo_sus_columnas(): void
     {
         $esquema = array_filter(config('nutrition.red.formal'), fn (string $clave) => str_starts_with($clave, EsquemaBaseDatos::PREFIJO), ARRAY_FILTER_USE_KEY);
+        $nucleo = json_decode((string) file_get_contents(database_path('esquema-nucleo.json')), true, flags: JSON_THROW_ON_ERROR);
 
-        $tablas = array_values(array_diff(array_column(Schema::getTables(), 'name'), EsquemaBaseDatos::EXCLUIDAS));
-        $claves = array_map(fn (string $tabla) => EsquemaBaseDatos::PREFIJO.$tabla, $tablas);
+        $claves = array_map(fn (string $tabla) => EsquemaBaseDatos::PREFIJO.$tabla, array_keys($nucleo));
         sort($claves, SORT_STRING);
+        $this->assertSame($claves, array_keys($esquema), 'Las tablas de esquema-nucleo.json y las claves de esquema.json no coinciden: php artisan nutrition:esquema --escribir');
 
-        $this->assertSame($claves, array_keys($esquema), 'Tablas migradas y claves de esquema.json no coinciden: php artisan nutrition:esquema --escribir');
-
-        foreach ($tablas as $tabla) {
+        foreach ($nucleo as $tabla => $columnas) {
+            $this->assertTrue(Schema::hasTable($tabla), "La tabla {$tabla} del nucleo no esta migrada");
             $reales = array_column(Schema::getColumns($tabla), 'name');
+            $this->assertSame([], array_diff($columnas, $reales), "Faltan columnas del nucleo en {$tabla}");
             $escritas = EsquemaBaseDatos::nombresDeColumnas($esquema[EsquemaBaseDatos::PREFIJO.$tabla]);
-            sort($reales);
+            sort($columnas);
             sort($escritas);
-            $this->assertSame($reales, $escritas, "Las columnas de {$tabla} no coinciden con esquema.json");
+            $this->assertSame($columnas, $escritas, "Las columnas de {$tabla} en esquema.json no son las del nucleo");
         }
     }
 

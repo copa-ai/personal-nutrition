@@ -180,6 +180,11 @@ def parte_a_pb(parte: dict) -> pb.ContentPart | None:
         if parte.get("prosa"):
             peticion.prose = parte["prosa"]
         return pb.ContentPart(secret_request=peticion)
+    if tipo == "slot_link":
+        enlace = pb.SlotLink(port=int(parte["port"]))
+        if parte.get("label"):
+            enlace.label = parte["label"]
+        return pb.ContentPart(slot_link=enlace)
     return None  # parte de una revision nueva: se ignora
 
 

@@ -80,7 +80,7 @@
             </div>
         @endif
 
-        <nav class="mn-nav" aria-label="Ir a un día">
+        <nav class="mn-nav" aria-label="Ir a un día" data-nav>
             @foreach ($dias as $d)
                 @php($hechas = collect($d['tomas'])->filter(fn ($t) => $t['hay_eleccion'])->count())
                 <a class="mn-pill" href="#dia-{{ $d['fecha'] }}">{{ $d['corto'] }}@if ($hechas > 0) <small>{{ $hechas }}/{{ collect($d['tomas'])->filter(fn ($t) => $t['opciones'])->count() }}</small>@endif</a>

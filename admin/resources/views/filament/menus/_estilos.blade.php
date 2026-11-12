@@ -98,6 +98,49 @@
     .mn-detalles dt { font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--mn-suave); }
     .mn-detalles dd { margin: 0; font-variant-numeric: tabular-nums; }
 
-    @media (max-width: 640px) { .mn-tomas { grid-template-columns: 1fr; } .mn-total { grid-template-columns: 1fr 1fr; } }
+    .mn-scroll { overflow-x: auto; max-width: 100%; }
+    .mn-scroll:focus-visible { outline: 2px solid var(--primary-500, #f59e0b); }
+    .mn { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+    .mn-chip { white-space: normal; }
+
+    /* botones de la cabecera de la ficha: que envuelvan en vez de desbordar */
+    .fi-page:has(.mn) .fi-header { flex-wrap: wrap; }
+    .fi-page:has(.mn) .fi-header .fi-ac { flex-wrap: wrap; }
+
+    @media (max-width: 640px) {
+        .mn { font-size: .9375rem; }
+        .mn-tomas { grid-template-columns: 1fr; }
+        .mn-total { grid-template-columns: 1fr 1fr; }
+        .mn-total .mn-kpi--grande { grid-column: 1 / -1; }
+        .mn-kpis { grid-template-columns: 1fr 1fr; }
+        .mn-ayuda { flex-direction: column; }
+        .mn-nav { flex-wrap: nowrap; overflow-x: auto; padding: .4rem 0; margin: 0 -.25rem; scrollbar-width: none; background: color-mix(in srgb, Canvas 94%, transparent); }
+        :root.dark .mn-nav, .dark .mn-nav { background: color-mix(in srgb, rgb(var(--gray-950, 3 7 18)) 92%, transparent); }
+        .mn-pill { flex: none; min-height: 2.75rem; align-items: center; padding: .25rem .9rem; }
+        /* navegación pegajosa bajo la barra superior de Filament (4 rem) */
+        .mn-nav { position: sticky; top: 4rem; z-index: 6; }
+        .mn-dia { scroll-margin-top: 11rem; }
+        .mn-dia-cab { position: sticky; top: 7.25rem; z-index: 5; padding-top: .35rem; background: color-mix(in srgb, Canvas 94%, transparent); }
+        :root.dark .mn-dia-cab, .dark .mn-dia-cab { background: color-mix(in srgb, rgb(var(--gray-950, 3 7 18)) 92%, transparent); }
+        .mn-dia-cab h3 { font-size: 1.15rem; }
+        /* objetivos táctiles de 44 px; la marca «Cambiada» y la etiqueta pasan a su propia línea si no caben */
+        .mn-op-fila { min-height: 2.75rem; padding: .75rem .8rem; flex-wrap: wrap; row-gap: .15rem; }
+        .mn-op-titulo { flex-basis: calc(100% - 2.5rem); }
+        .mn-op-meta, .mn-etiqueta-eleccion { margin-left: 1.75rem; white-space: normal; }
+        .mn-radio { width: 1.35rem; height: 1.35rem; }
+        .mn-op-chips { padding-left: 2.75rem; }
+        .mn-detalle { padding-left: .8rem; }
+        .mn-ing { grid-template-columns: 1fr; }
+        .mn-toma-cab { flex-wrap: wrap; }
+        .mn-toma-cab .disp { flex-basis: 100%; margin-left: 0; }
+        .mn-persona-fila { flex-direction: column; gap: .1rem; }
+        .mn-cuota { min-width: 4rem; }
+        .mn-tabla th, .mn-tabla td { padding: .5rem .4rem; }
+        .mn-ident { gap: .75rem 1.5rem; }
+        .fi-page:has(.mn) .fi-header .fi-btn, .fi-page:has(.mn) .fi-header .fi-ac-btn-action { min-height: 2.75rem; }
+    }
+    @media (min-width: 641px) and (max-width: 900px) { .mn-tomas { grid-template-columns: 1fr; } }
+    @media (prefers-reduced-motion: reduce) { .mn-progreso .barra > span { transition: none; } .mn * { scroll-behavior: auto; } }
+    @supports (padding: max(0px)) { .mn-nav { padding-left: max(.25rem, env(safe-area-inset-left)); padding-right: max(.25rem, env(safe-area-inset-right)); } }
 </style>
 @endonce

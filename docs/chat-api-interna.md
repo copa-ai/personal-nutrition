@@ -45,9 +45,10 @@ El traductor decide solo (sin llamar a Laravel) lo que es del cable: `Hash.type`
 {"tipo": "audio", "hash": "…", "mime": "audio/wav", "tamano": 1, "nombre": null, "transcripcion": null, "duracion_ms": null}
 {"tipo": "archivo", "hash": "…", "mime": "…", "tamano": 1, "nombre": null}
 {"tipo": "peticion_secreto", "request_id": "…", "nombre": "CLAUDE_CODE_OAUTH_TOKEN", "prosa": "…"}
+{"tipo": "slot_link", "port": 50052, "label": "Lista de la compra"}
 ```
 
-Un usuario solo envía `texto`, `imagen` y `audio`. El texto de un mensaje es la unión de sus partes `texto`, sin separador.
+`slot_link` (chat.md §5.8: un botón que abre otro slot de la instancia; `label` de 1 a 32 caracteres o `null`) solo lo publica el servicio, en un mensaje `COMPLETED`. Un usuario solo envía `texto`, `imagen` y `audio`. El texto de un mensaje es la unión de sus partes `texto`, sin separador.
 
 **Mensaje**:
 
@@ -109,4 +110,26 @@ Respuesta:
 
 ## Archivos
 
-Se guardan en Postgres (tabla `chat_archivos`: hash SHA3-256 hex único, mime, tamaño, nombre, contenido `bytea`), no en disco: cualquier dispositivo que comparta la base los ve. Tamaño máximo 4 MiB. Tipos aceptados: `image/jpeg`, `image/png`.
+Se guardan en el SQLite del disco de la instancia (tabla `chat_archivos`: hash SHA3-256 hex único, mime, tamaño, nombre, contenido binario): no se comparten con otras instancias. Tamaño máximo 4 MiB. Tipos aceptados: `image/jpeg`, `image/png`.
+
+## Cards (lista de la compra)
+
+Segunda API interna, para el slot `cards` (`http2` → `grpc` → `cards`, puerto 50052; spec: `celaut-project/chatui` → `docs/celaut/cards.md` rev. 1 y `cards.proto`). Mismo transporte, mismo Bearer `CHAT_SECRETO`, mismo interruptor `chat_habilitado` (503 `deshabilitado`, salvo `GET /salud`) y mismos errores (`codigo` = razón; el traductor la pone en el trailer `cards-reason`) que el chat, pero con la base **`http://127.0.0.1:8001/interno/cards`**. El traductor (`docker/chat/cartas.py`, mismo proceso que el del chat) no guarda nada. Los nombres de los campos son los de `cards.proto`; los enums, los nombres del proto (`TONE_POSITIVE`, `ICON_CART`…).
+
+| Método y ruta | Cuerpo / respuesta |
+|---|---|
+| `GET /salud` | `200 {"ok": true}` |
+| `GET /mazo` | `{"version": int, "deck": Deck}`. Es «la persona pide el mazo» (abrir o reconectar la pantalla): genera un mazo nuevo con el menú activo y la despensa de ese momento, salvo que el actual siga en uso (actividad hace menos de `cards.reanudar_s`, 300 s, y quedan tarjetas por resolver), en cuyo caso lo reanuda. `version` es la del último evento (≥ 1). Sin menú activo, `deck.deck_id` es `""` |
+| `GET /eventos?despues=N` | `{"version": int, "reiniciar": bool, "eventos": [{"version", "deck_id", "tipo", "carga"}]}`: los eventos con versión mayor que `N` (hasta 200). `tipo` ∈ `deck`, `cards_added`, `cards_removed`, `card_moved`, `card_changed`; `carga` es `{"deck": Deck}`, `{"cards", "before_item_id"}`, `{"item_ids"}`, `{"item_id", "before_item_id"}` o `{"card": Card}`. `reiniciar: true` si `N` ya no está en el historial (o es mayor que la versión actual): el traductor vuelve a pedir `/mazo` y envía un `deck` |
+| `POST /acciones` | `{"deck_id","item_id","action_id","idempotency_key","undo","acted_at"}` → `200 {}`. Campos con formato no válido: `422 bad_request`. Mazo o tarjeta que ya no están, acción desconocida o clave ya vista: `200 {}` sin cambios (cards.md §6.2) |
+| `GET /archivos/{hex}` | Los bytes de una imagen de tarjeta (`image/png`), o `404 not_found` |
+
+**Deck / Card.** `Deck`: `deck_id` (`compra-` + 20 hex; único por mazo generado; cada vez que la persona pide el mazo y no hay sesión en curso se genera otro), `title`, `actions` (`no_encontrado`: izquierda, `keep`, `ICON_LATER`; `comprado`: derecha, `ICON_CART`, positivo), `cards`, `show_progress`, `end_text`, `done_text`. `Card`: `item_id` (`c` + 20 hex, estable por alimento y familia de unidad), `title` (alimento), `text` («Faltan 1,5 kg»), `detail` (total necesario, despensa, lo que falta y los usos: toma, día, plato y cantidad; texto plano, se acorta si el mazo no cabría en 1 MiB), `buttons` (`ya_lo_tengo`), `group` (categoría del alimento, aproxima el pasillo), `image` (`{"hash","mime","tamano","alt"}`, siempre `image/png`), `decision`.
+
+**Reglas.**
+
+- **Lista.** Ingredientes de las opciones elegidas de comida y cena y de todas las tomas individuales del menú activo (la misma suma que la lista del PDF, `Menu::necesidadesCompra()`), menos las existencias del hogar; g con kg y ml con l se suman. Un alimento sin cantidad numérica sale con «Cantidad sin fijar».
+- **Estado en el SQLite del chat** (`database/migrations/chat/…create_cards_tables.php`): `cards_mazos` (el mazo actual: una foto de la lista tomada al generarlo, que no cambia durante la sesión), `cards_decisiones` (historial que solo crece; deshacer marca la anterior), `cards_eventos` (la versión es su id autoincremental), `cards_ilustraciones` (caché local del PNG de cada alimento y los intentos del encargo al agente) y `cards_lotes`. Un cerrojo de fichero serializa todo.
+- **Decisiones.** `comprado` suma a `existencias` exactamente el `faltante` de la tarjeta (unidad del alimento si es de su familia; crea la fila si no existe; crea el alimento si el ingrediente no lo tenía) y guarda el efecto; deshacer lo resta sin bajar de lo que había antes ni subir de lo que hay ahora, y borra la fila si la creó la compra y queda a 0. `no_encontrado` no cambia datos: la tarjeta pasa al final (`card_changed` + `card_moved`). `ya_lo_tengo` resuelve sin sumar. Una tarjeta resuelta no acepta otra decisión hasta deshacerla. Cada cambio queda en la auditoría (`cards.compra`, `cards.compra_deshecha`, `cards.decision`, además de los triggers de la tabla `existencias`).
+- **Imágenes.** cards.md solo admite PNG/JPEG. Cada tarjeta lleva la ilustración del alimento o, mientras no haya, una fija por categoría (SVG en `Ilustraciones`). Las del agente: por demanda y en lote (`GenerarIlustraciones`, cola `chat`), el agente recibe solo nombres y devuelve SVG de un subconjunto cerrado; `SaneadorSvg` lo lee con lista blanca (sin script, `foreignObject`, `href` ni `DOCTYPE`) y, si vale, el SVG se guarda en `alimentos.ilustracion` (PostgreSQL, compartido por todas las instancias; crea el alimento si falta; la auditoría solo anota su tamaño). Cada instancia lo vuelve a comprobar al leerlo, `Rasterizador` lo dibuja con GD a PNG de 256 px y lo guarda en `chat_archivos` por hash (caché local). Topes en `config/cards.php` (alimentos por lote, lotes al día, intentos por alimento, bytes). No se abre la subida de SVG a los clientes: `chat.tipos_mime` no cambia. Al terminar, un `card_changed` por cada tarjeta cuya imagen cambia.
+- **Enlace desde el chat.** El bot responde a «lista de la compra» con un mensaje `COMPLETED` que lleva un `slot_link` al puerto 50052 (`ChatMensaje::enlazarSlot()`).

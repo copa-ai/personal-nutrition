@@ -18,7 +18,7 @@ class AlimentosTable
             ->columns([
                 TextColumn::make('nombre')->label('Nombre')->searchable()->sortable(),
                 TextColumn::make('categoria')->label('Categoría')->badge()->sortable(),
-                TextColumn::make('unidad')->label('Unidad'),
+                TextColumn::make('unidad')->label('Unidad')->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('nombre')
             ->filters([SelectFilter::make('categoria')->options(CategoriaComida::class)])

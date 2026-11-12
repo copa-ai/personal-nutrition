@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Genera los stubs de Python (chat_pb2.py y chat_pb2_grpc.py) en un directorio.
+# Genera los stubs de Python (chat_pb2*, cards_pb2*) en un directorio.
 # Uso: ./generar.sh [directorio_destino]   (por defecto: ./generado)
 # Los stubs no se versionan.
 set -euo pipefail
@@ -12,4 +12,5 @@ python3 -m grpc_tools.protoc \
     -I "$aqui" \
     --python_out="$destino" \
     --grpc_python_out="$destino" \
-    "$aqui/chat.proto"
+    "$aqui/chat.proto" \
+    "$aqui/cards.proto"

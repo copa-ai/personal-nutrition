@@ -6,8 +6,8 @@ use App\Models\Concerns\UuidDeClaveNatural;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Archivo del chat (foto de una comida...) guardado en la base: hash SHA3-256 hexadecimal unico y contenido binario.
- * Con PostgreSQL el contenido (bytea) llega como un resource: usar bytes(), y no cargarlo si no hace falta
+ * Archivo del chat (foto de una comida...) guardado en el SQLite del disco de la instancia: hash SHA3-256 hexadecimal unico y contenido binario.
+ * Usar bytes() para el contenido (con SQLite llega como string; se acepta tambien un resource) y no cargarlo si no hace falta
  * (ChatArchivo::query()->select(ChatArchivo::SIN_CONTENIDO)).
  */
 class ChatArchivo extends Model
@@ -21,6 +21,8 @@ class ChatArchivo extends Model
 
     /** Columnas menos el contenido, para listar sin cargar los bytes. */
     public const SIN_CONTENIDO = ['id', 'hash', 'mime', 'tamano', 'nombre', 'created_at', 'updated_at'];
+
+    protected $connection = 'chat';
 
     protected $table = 'chat_archivos';
 

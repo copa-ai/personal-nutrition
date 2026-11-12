@@ -8,7 +8,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Archivos del chat en la base de datos (tabla chat_archivos, contenido binario). Identificados por su SHA3-256 en hexadecimal.
+ * Archivos del chat en el SQLite del disco de la instancia (conexion `chat`, tabla chat_archivos, contenido binario). Identificados por su SHA3-256 en hexadecimal.
  */
 class Archivos
 {
@@ -50,10 +50,11 @@ class Archivos
         return $resultado;
     }
 
-    /** True si el fallo de la base es de falta de recursos: clase SQLSTATE 53 de PostgreSQL (disco lleno, memoria, conexiones). */
+    /** True si el fallo de la base es de falta de sitio: SQLITE_FULL (disco lleno, codigo 13) o, por compatibilidad, la clase SQLSTATE 53. */
     public static function faltaSitio(QueryException $e): bool
     {
-        return str_starts_with((string) $e->getCode(), '53') || str_starts_with((string) ($e->errorInfo[0] ?? ''), '53');
+        return (int) ($e->errorInfo[1] ?? 0) === 13 || str_contains(strtolower($e->getMessage()), 'disk is full')
+            || str_starts_with((string) $e->getCode(), '53') || str_starts_with((string) ($e->errorInfo[0] ?? ''), '53');
     }
 
     /** El archivo con sus bytes, o null. */
@@ -115,20 +116,14 @@ class Archivos
         // El nombre es texto libre del cliente: UTF-8 valido y sin caracteres de control (un NUL no cabe en PostgreSQL).
         $nombre = $nombre === null ? null : trim((string) preg_replace('/[\x00-\x1F\x7F]/', '', mb_convert_encoding($nombre, 'UTF-8', 'UTF-8')));
         $nombre = $nombre === null || $nombre === '' ? null : mb_strcut($nombre, 0, 255);
-        $flujo = fopen('php://temp', 'r+');
-        fwrite($flujo, $bytes);
-        rewind($flujo);
         try {
-            // El resource se enlaza como LOB: con PDO pgsql un string binario no vale para una columna bytea.
-            $nuevos = DB::table('chat_archivos')->insertOrIgnore([
-                'id' => ChatArchivo::idDeClave($hash), 'hash' => $hash, 'mime' => $mime, 'tamano' => $real, 'nombre' => $nombre, 'contenido' => $flujo,
+            $nuevos = DB::connection('chat')->table('chat_archivos')->insertOrIgnore([
+                'id' => ChatArchivo::idDeClave($hash), 'hash' => $hash, 'mime' => $mime, 'tamano' => $real, 'nombre' => $nombre, 'contenido' => $bytes,
                 'created_at' => now(), 'updated_at' => now(),
             ]);
         } catch (QueryException $e) {
             // §6.4, paso 4: un almacen que no puede tomar el archivo es storage_full, no un error interno.
             throw self::faltaSitio($e) ? ErrorChat::storageFull('No hay espacio para guardar el archivo.') : $e;
-        } finally {
-            fclose($flujo);
         }
 
         if ($nuevos > 0) {

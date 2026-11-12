@@ -59,7 +59,7 @@ class Secretos
 
         // Paso 5.
         try {
-            $primera = DB::transaction(function () use ($peticion, $valor, $hayValor): bool {
+            $primera = DB::connection('chat')->transaction(function () use ($peticion, $valor, $hayValor): bool {
                 $fila = ChatPeticionSecreto::query()->whereKey($peticion->getKey())->lockForUpdate()->first();
                 if ($fila->estado !== ChatPeticionSecreto::PENDIENTE) {
                     return false;

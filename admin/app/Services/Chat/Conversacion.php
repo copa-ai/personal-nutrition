@@ -69,7 +69,7 @@ class Conversacion
 
         $this->cerrarCaducadas();
 
-        [$usuario, $respuesta, $nuevo] = DB::transaction(function () use ($partes, $clave, $replyTo, $corrector): array {
+        [$usuario, $respuesta, $nuevo] = DB::connection('chat')->transaction(function () use ($partes, $clave, $replyTo, $corrector): array {
             $conversacion = ChatConversacion::bloqueada();
 
             // Paso 6.
@@ -437,7 +437,7 @@ class Conversacion
     /** @throws ErrorChat */
     public function fijar(string $messageId, bool $fijado): ChatMensaje
     {
-        return DB::transaction(function () use ($messageId, $fijado): ChatMensaje {
+        return DB::connection('chat')->transaction(function () use ($messageId, $fijado): ChatMensaje {
             $mensaje = ChatMensaje::query()->where('message_id', $messageId)->lockForUpdate()->first()
                 ?? throw ErrorChat::notFound('El mensaje no existe.');
             if ($mensaje->pinned !== $fijado) {
@@ -581,7 +581,7 @@ class Conversacion
      */
     public function crearRespuesta(ChatMensaje $pregunta, ?string $replyTo = null, bool $enCurso = false): ChatMensaje
     {
-        return DB::transaction(fn (): ChatMensaje => $this->crear(ChatConversacion::bloqueada(), [
+        return DB::connection('chat')->transaction(fn (): ChatMensaje => $this->crear(ChatConversacion::bloqueada(), [
             'contenido' => [], 'from_service' => true, 'reply_to' => $replyTo ?? $pregunta->message_id,
             'estado' => $enCurso ? EstadoChat::EnCurso : EstadoChat::Pendiente,
         ]));
@@ -594,7 +594,7 @@ class Conversacion
      */
     private function modificarAbierto(ChatMensaje $mensaje, Closure $cambio): bool
     {
-        return DB::transaction(function () use ($mensaje, $cambio): bool {
+        return DB::connection('chat')->transaction(function () use ($mensaje, $cambio): bool {
             $fresco = ChatMensaje::query()->whereKey($mensaje->getKey())->lockForUpdate()->first();
             if (! $fresco) {
                 return false;
@@ -733,7 +733,7 @@ class Conversacion
      */
     public function publicarPartes(ChatMensaje $respuesta, array $partes, array $sugerencias = []): ChatMensaje
     {
-        return DB::transaction(function () use ($respuesta, $partes, $sugerencias): ChatMensaje {
+        return DB::connection('chat')->transaction(function () use ($respuesta, $partes, $sugerencias): ChatMensaje {
             $mensaje = $this->crear(ChatConversacion::bloqueada(), [
                 'contenido' => $partes, 'from_service' => true, 'reply_to' => $respuesta->reply_to, 'estado' => EstadoChat::Completado,
                 'sugerencias' => self::limpiarSugerencias($sugerencias),
@@ -758,7 +758,7 @@ class Conversacion
         }
         $prosa = mb_strcut(trim($prosa), 0, 1024, 'UTF-8');
 
-        return DB::transaction(function () use ($respuesta, $requestId, $nombre, $prosa): ChatMensaje {
+        return DB::connection('chat')->transaction(function () use ($respuesta, $requestId, $nombre, $prosa): ChatMensaje {
             $this->modificarAbierto($respuesta, function (ChatMensaje $m): void {
                 if ($m->texto() === '' && (string) $m->razonamiento === '') {
                     $m->metadata = ['motivo' => 'peticion_secreto'];
@@ -776,6 +776,37 @@ class Conversacion
             ]);
 
             return $mensaje;
+        });
+    }
+
+    /**
+     * Publica un mensaje del servicio con un texto y un enlace a otro slot de la instancia (parte `slot_link`, chat.md §5.8: un mazo de
+     * cards, por ejemplo) y cierra $respuesta como en pedirSecreto(): COMPLETED si ya tenia contenido, CANCELLED si estaba vacia. El puerto
+     * es el de un slot de service.json; la etiqueta, de 1 a 32 caracteres.
+     *
+     * @throws InvalidArgumentException si el puerto no es valido
+     */
+    public function enlazarSlot(ChatMensaje $respuesta, string $texto, int $puerto, ?string $etiqueta = null): ChatMensaje
+    {
+        if ($puerto < 1 || $puerto > 65535) {
+            throw new InvalidArgumentException('El puerto del slot no es válido.');
+        }
+        $etiqueta = $etiqueta === null ? null : mb_substr(trim((string) preg_replace('/\s+/', ' ', $etiqueta)), 0, 32);
+
+        return DB::connection('chat')->transaction(function () use ($respuesta, $texto, $puerto, $etiqueta): ChatMensaje {
+            $this->modificarAbierto($respuesta, function (ChatMensaje $m): void {
+                if ($m->texto() === '' && (string) $m->razonamiento === '') {
+                    $m->metadata = ['motivo' => 'slot_link'];
+                    $this->terminar($m, EstadoChat::Cancelado);
+                } else {
+                    $this->terminar($m, EstadoChat::Completado);
+                }
+            });
+
+            return $this->publicarPartes($respuesta, [
+                ['tipo' => 'texto', 'texto' => $texto],
+                ['tipo' => 'slot_link', 'port' => $puerto, 'label' => $etiqueta === '' ? null : $etiqueta],
+            ]);
         });
     }
 

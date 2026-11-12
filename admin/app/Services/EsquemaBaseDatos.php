@@ -84,23 +84,65 @@ class EsquemaBaseDatos
     }
 
     /**
-     * El mapa completo del esquema: ['db.table.<tabla>' => cadena], ordenado por clave y sin las tablas excluidas.
+     * El mapa del esquema: ['db.table.<tabla>' => cadena], ordenado por clave y sin las tablas excluidas.
+     *
+     * Con `$nucleo` (tabla => columnas, database/esquema-nucleo.json) solo entran esas tablas y esas columnas: lo que el servicio
+     * promete de la base y no va a cambiar. De las restricciones solo se declaran las primarias y unicas cuyas columnas estan todas en
+     * el nucleo y las claves foraneas entre tablas del nucleo con todas sus columnas dentro; los indices normales no entran (son
+     * rendimiento, no contrato). Una tabla o columna del nucleo que no existe es un error.
      *
      * @param  array<string, array{columns: list<array>, indexes?: list<array>, foreign_keys?: list<array>}>  $tablas  por nombre de tabla
+     * @param  array<string, list<string>>|null  $nucleo
      * @return array<string, string>
+     *
+     * @throws InvalidArgumentException si el nucleo nombra una tabla o columna que no existe
      */
-    public static function mapa(array $tablas): array
+    public static function mapa(array $tablas, ?array $nucleo = null): array
     {
+        foreach (array_keys($nucleo ?? []) as $nombre) {
+            if (! isset($tablas[$nombre])) {
+                throw new InvalidArgumentException("El nucleo nombra la tabla «{$nombre}» y la base no la tiene.");
+            }
+        }
+
         $mapa = [];
         foreach ($tablas as $nombre => $tabla) {
-            if (in_array($nombre, self::EXCLUIDAS, true)) {
+            if (in_array($nombre, self::EXCLUIDAS, true) || ($nucleo !== null && ! isset($nucleo[$nombre]))) {
                 continue;
             }
-            $mapa[self::PREFIJO.$nombre] = self::tabla($tabla['columns'], $tabla['indexes'] ?? [], $tabla['foreign_keys'] ?? []);
+            $mapa[self::PREFIJO.$nombre] = $nucleo === null
+                ? self::tabla($tabla['columns'], $tabla['indexes'] ?? [], $tabla['foreign_keys'] ?? [])
+                : self::tablaDelNucleo($nombre, $tabla, $nucleo);
         }
         ksort($mapa, SORT_STRING);
 
         return $mapa;
+    }
+
+    /**
+     * @param  array{columns: list<array>, indexes?: list<array>, foreign_keys?: list<array>}  $tabla
+     * @param  array<string, list<string>>  $nucleo
+     */
+    private static function tablaDelNucleo(string $nombre, array $tabla, array $nucleo): string
+    {
+        $pedidas = $nucleo[$nombre];
+        $existentes = array_column($tabla['columns'], 'name');
+        foreach (array_diff($pedidas, $existentes) as $falta) {
+            throw new InvalidArgumentException("El nucleo nombra la columna «{$nombre}.{$falta}» y la base no la tiene.");
+        }
+
+        $columnas = array_values(array_filter($tabla['columns'], fn (array $c): bool => in_array($c['name'], $pedidas, true)));
+        $dentro = fn (array $cols, array $permitidas): bool => array_diff($cols, $permitidas) === [];
+        $indices = array_values(array_filter(
+            $tabla['indexes'] ?? [],
+            fn (array $i): bool => (! empty($i['primary']) || ! empty($i['unique'])) && $dentro($i['columns'], $pedidas),
+        ));
+        $claves = array_values(array_filter(
+            $tabla['foreign_keys'] ?? [],
+            fn (array $k): bool => isset($nucleo[$k['foreign_table']]) && $dentro($k['columns'], $pedidas) && $dentro($k['foreign_columns'], $nucleo[$k['foreign_table']]),
+        ));
+
+        return self::tabla($columnas, $indices, $claves);
     }
 
     /**

@@ -72,6 +72,20 @@ return [
             ]) : [],
         ],
 
+        // El chat vive en un SQLite del disco de esta instancia (no en PostgreSQL): cada instancia tiene su conversacion.
+        // WAL y busy_timeout porque escriben a la vez la web y los dos workers; IMMEDIATE para que las transacciones se serialicen
+        // (SQLite ignora lockForUpdate).
+        'chat' => [
+            'driver' => 'sqlite',
+            'database' => env('CHAT_DB_DATABASE', storage_path('app/chat/chat.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => 10000,
+            'journal_mode' => 'wal',
+            'synchronous' => 'normal',
+            'transaction_mode' => 'IMMEDIATE',
+        ],
+
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),

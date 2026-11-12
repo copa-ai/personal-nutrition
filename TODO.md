@@ -14,7 +14,8 @@ Lo que queda abierto tras el rediseño de la ficha del menú. Ordenado por impor
 
 - [ ] **Modo oscuro sin verificar.** Los colores usan variables de Filament y `color-mix`, así que deberían adaptarse, pero el navegador sin interfaz que usé para las capturas no aplicó el esquema oscuro. Mirarlo a mano.
 - [ ] **Elegir opción en un navegador real.** La interacción (botones de radio de cada toma) está probada con Livewire, pero no con clics reales. Comprobar también el foco con teclado: ahora cada opción es un botón con `Tab`; las flechas no cambian de opción.
-- [ ] **Resto de pantallas sin el mismo repaso:** Hogares, Perfiles, Existencias, Alimentos y Lo comido. La lista de menús se vio antes de poner la interfaz en español.
+- [ ] **Resto de pantallas:** ya tienen columnas secundarias ocultables (Perfiles, Alimentos, Lo comido); no se ha visto ninguna en un navegador. La lista de menús se vio antes de poner la interfaz en español.
+- [ ] **Móvil sin verificar en navegador real.** La ficha del menú (objetivos de 44 px, navegación y cabecera de día pegajosas, tablas con scroll interno) y el calendario (mes con puntos, semana en lista, detalle como hoja a pantalla casi completa con cierre) se escribieron solo con CSS/Blade, sin PHP ni navegador: probar a 360-430 px en claro y oscuro, y que las alturas pegajosas (4 rem de la barra de Filament) cuadran.
 - [ ] **Zona horaria.** Todo corre en `UTC` (constante: la fusión de bases compara `updated_at` sin zona), así que el registro del agente muestra horas UTC. Si se quiere otra, hay que convertirla solo al mostrar.
 - [ ] **Convenciones del equipo (`tall-template`)** no aplicadas: tema (Neobrutalism) y plugins. La skill no era legible desde el sandbox. La interfaz usa estilos propios (`resources/views/filament/menus/_estilos.blade.php`) porque no hay tema compilado.
 

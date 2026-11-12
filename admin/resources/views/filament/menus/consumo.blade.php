@@ -45,6 +45,7 @@
 
         <div class="mn-bloque">
             <span class="mn-etiqueta">Por fase del trabajo</span>
+            <div class="mn-scroll" tabindex="0" role="region" aria-label="Tabla desplazable">
             <table class="mn-tabla">
                 <thead><tr><th>Fase</th><th class="num">Respuestas</th><th class="num">Tokens</th><th class="num">Coste</th><th>Reparto</th></tr></thead>
                 <tbody>
@@ -59,12 +60,13 @@
                         </tr>
                     @endforeach
                 </tbody>
-            </table>
+            </table></div>
         </div>
 
         @if ($r['congelado'])
             <div class="mn-bloque">
                 <span class="mn-etiqueta">Por modelo y tarifa</span>
+                <div class="mn-scroll" tabindex="0" role="region" aria-label="Tabla desplazable">
                 <table class="mn-tabla">
                     <thead><tr><th>Modelo</th><th class="num">Respuestas</th><th class="num">Tokens</th><th>Tarifa aplicada (USD por millón)</th><th class="num">Coste</th></tr></thead>
                     <tbody>
@@ -84,7 +86,7 @@
                             </tr>
                         @endforeach
                     </tbody>
-                </table>
+                </table></div>
             </div>
         @endif
 

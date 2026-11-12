@@ -15,6 +15,8 @@
 #                             solo CHAT_SECRETO, CHAT_PUERTO y CHAT_URL_INTERNA. CHAT_SECRETO (generado una vez, como los demas secretos)
 #                             lo reciben tambien la web y la cola (ENTORNO_APP); el agente NO recibe nada del chat. Si el traductor muere,
 #                             el servicio cae como las demas piezas.
+#                             El mismo proceso atiende un tercer slot, «cards» (http2 -> grpc -> cards) en 0.0.0.0:50052: la lista de la
+#                             compra como mazo de tarjetas, contra 127.0.0.1:8001/interno/cards con el mismo Bearer. Solo se suma CARDS_PUERTO.
 #
 # Usuario inicial del panel: admin@demo.com / password (php artisan usuario:inicial, solo si no hay ningun usuario).
 #
@@ -190,7 +192,7 @@ cd "$KIT_ADMIN"
 # o con las migraciones a medias por otro dispositivo).
 for i in $(seq 1 60); do
     fase migraciones "en curso" "intento $i de 60"
-    app php artisan migrate --force && break
+    app php artisan migrate --force && app php artisan migrate --database=chat --path=database/migrations/chat --force && break
     [ "$i" -lt 60 ] || { fallar migraciones "la base de datos no acepto las migraciones"; echo "start.sh: la base de datos no acepto las migraciones" >&2; parar; exit 1; }
     agente_vigilar
     sleep 3
@@ -230,7 +232,7 @@ lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutriti
 
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"
-lanzar como chat CHAT_SECRETO="$CHAT_SECRETO" CHAT_PUERTO=50051 CHAT_URL_INTERNA=http://127.0.0.1:8001 -- \
+lanzar como chat CHAT_SECRETO="$CHAT_SECRETO" CHAT_PUERTO=50051 CARDS_PUERTO=50052 CHAT_URL_INTERNA=http://127.0.0.1:8001 -- \
     /opt/chat-venv/bin/python /opt/chat/servidor.py
 PID_CHAT=${PIDS[${#PIDS[@]}-1]}
 for i in $(seq 1 30); do
@@ -240,6 +242,8 @@ for i in $(seq 1 30); do
 done
 if python3 -c "import socket; socket.create_connection(('127.0.0.1', 50051), 2).close()" 2>/dev/null; then fase chat ok "gRPC en :50051"
 else fase chat aviso "no acepta conexiones en :50051 tras 30 s; ver app.log"; fi
+python3 -c "import socket; socket.create_connection(('127.0.0.1', 50052), 2).close()" 2>/dev/null \
+    || echo "start.sh: el slot cards no acepta conexiones en :50052 (la lista de la compra no estara disponible); ver app.log" >&2
 LISTO=true; escribir_estado
 echo "start.sh: servicio listo"
 

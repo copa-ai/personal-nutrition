@@ -37,5 +37,6 @@ return [
         'max_bytes_archivo' => 65536,
         'dias_atras' => 60,                 // no se registra ni corrige nada mas antiguo
         'max_descripcion' => 500,
+        'caduca_min' => 30,                 // minutos que una accion destructiva espera la confirmacion de la persona
     ],
 ];

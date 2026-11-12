@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['nombre', 'categoria', 'unidad'])]
+#[Fillable(['nombre', 'categoria', 'unidad', 'ilustracion'])]
 class Alimento extends Model
 {
     /** @use HasFactory<AlimentoFactory> */

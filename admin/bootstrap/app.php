@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             Route::middleware(ChatInterno::class)->prefix('interno/chat')->group(base_path('routes/interno.php'));
+            Route::middleware(ChatInterno::class)->prefix('interno/cards')->group(base_path('routes/interno-cards.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -28,7 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontReport(ErrorChat::class);
         $exceptions->render(function (Throwable $e, Request $request) {
-            if (! $request->is('interno/chat/*')) {
+            if (! $request->is('interno/chat/*', 'interno/cards/*')) {
                 return null;
             }
             if ($e instanceof ErrorChat) {

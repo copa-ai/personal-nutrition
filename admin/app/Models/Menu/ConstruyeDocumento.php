@@ -18,8 +18,26 @@ trait ConstruyeDocumento
      */
     public function listaCompra(): array
     {
+        $ordenados = collect($this->necesidadesCompra())->sortBy(fn (array $i): string => Str::ascii(mb_strtolower($i['nombre'])))->values();
+        $limpio = fn (array $i): array => ['nombre' => $i['nombre'], 'cantidad' => $i['cantidad'], 'unidad' => $i['unidad']];
+
+        return [
+            'comprar' => $ordenados->reject(fn (array $i): bool => $i['en_casa'])->map($limpio)->values()->all(),
+            'en_casa' => $ordenados->filter(fn (array $i): bool => $i['en_casa'])->map($limpio)->values()->all(),
+        ];
+    }
+
+    /**
+     * La base de la lista de la compra (la del PDF y la de la tarjeta de cada alimento): los ingredientes de las opciones elegidas de
+     * comida y cena y de todas las tomas individuales, sumados por nombre y unidad. Cada uno lleva `en_casa` (el encargo lo daba
+     * como existente en todos sus usos) y sus `usos`: dónde se gasta (plato, día, toma, perfil si la toma es individual y cantidad).
+     *
+     * @return list<array{nombre: string, cantidad: ?float, unidad: string, en_casa: bool, usos: list<array{plato: string, fecha: string, toma: string, perfil: ?string, cantidad: ?float}>}>
+     */
+    public function necesidadesCompra(): array
+    {
         $acumulado = [];
-        $suma = function (array $ingredientes) use (&$acumulado): void {
+        $suma = function (array $ingredientes, string $plato, string $fecha, string $toma, ?string $perfil) use (&$acumulado): void {
             foreach ($ingredientes as $ing) {
                 $nombre = trim((string) ($ing['nombre'] ?? ''));
                 if ($nombre === '') {
@@ -28,32 +46,28 @@ trait ConstruyeDocumento
                 $unidad = trim((string) ($ing['unidad'] ?? ''));
                 $clave = mb_strtolower($nombre).'|'.mb_strtolower($unidad);
                 $cantidad = is_numeric($ing['cantidad'] ?? null) ? (float) $ing['cantidad'] : null;
-                $previo = $acumulado[$clave] ?? ['nombre' => $nombre, 'cantidad' => null, 'unidad' => $unidad, 'en_casa' => true];
+                $previo = $acumulado[$clave] ?? ['nombre' => $nombre, 'cantidad' => null, 'unidad' => $unidad, 'en_casa' => true, 'usos' => []];
                 $acumulado[$clave] = [
                     'cantidad' => $cantidad === null ? $previo['cantidad'] : ($previo['cantidad'] ?? 0.0) + $cantidad,
                     'en_casa' => $previo['en_casa'] && ($ing['en_stock'] ?? false) === true,
+                    'usos' => [...$previo['usos'], ['plato' => $plato, 'fecha' => $fecha, 'toma' => $toma, 'perfil' => $perfil, 'cantidad' => $cantidad]],
                 ] + $previo;
             }
         };
 
         foreach ($this->contenidoLeido()['dias'] ?? [] as $dia) {
-            foreach (['comida', 'cena'] as $momento) {
-                $suma($this->opcionElegida($dia['fecha'], $momento)['ingredientes'] ?? []);
+            foreach (['comida' => 'Comida', 'cena' => 'Cena'] as $momento => $etiqueta) {
+                $opcion = $this->opcionElegida($dia['fecha'], $momento);
+                $suma($opcion['ingredientes'] ?? [], (string) ($opcion['titulo'] ?? $etiqueta), $dia['fecha'], $etiqueta, null);
             }
             foreach ($this->individualesDelDia($dia) as $perfil) {
                 foreach ($perfil['tomas'] as $t) {
-                    $suma($t['toma']['ingredientes'] ?? []);
+                    $suma($t['toma']['ingredientes'] ?? [], (string) ($t['toma']['titulo'] ?? $t['etiqueta']), $dia['fecha'], $t['etiqueta'], $perfil['nombre']);
                 }
             }
         }
 
-        $ordenados = collect($acumulado)->sortBy(fn (array $i): string => Str::ascii(mb_strtolower($i['nombre'])))->values();
-        $limpio = fn (array $i): array => ['nombre' => $i['nombre'], 'cantidad' => $i['cantidad'], 'unidad' => $i['unidad']];
-
-        return [
-            'comprar' => $ordenados->reject(fn (array $i): bool => $i['en_casa'])->map($limpio)->values()->all(),
-            'en_casa' => $ordenados->filter(fn (array $i): bool => $i['en_casa'])->map($limpio)->values()->all(),
-        ];
+        return array_values($acumulado);
     }
 
     /**

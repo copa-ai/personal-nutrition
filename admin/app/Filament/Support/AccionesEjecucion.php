@@ -3,9 +3,8 @@
 namespace App\Filament\Support;
 
 use App\Enums\EstadoMenu;
-use App\Jobs\GenerarMenu;
 use App\Models\Menu;
-use App\Services\Claude\EjecutorClaude;
+use App\Services\Acciones\GestionMenus;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -36,14 +35,12 @@ final class AccionesEjecucion
             ->modalDescription('Tarda unos minutos y consume parte del límite de uso del plan. Al terminar, el menú se importa solo.')
             ->action(function (Menu $r): void {
                 try {
-                    $r->construirEncargo();
+                    GestionMenus::generar($r);
                 } catch (InvalidArgumentException $e) {
                     Notification::make()->title('Falta información para generar el menú')->body($e->getMessage())->danger()->persistent()->send();
 
                     return;
                 }
-                $r->update(['estado' => EstadoMenu::EnCola, 'error' => null, 'detener_pedido' => false]);
-                GenerarMenu::dispatch($r->id);
                 Notification::make()->title('En cola')->body('Empezará en breve; el estado se actualiza solo.')->success()->send();
             });
     }
@@ -56,8 +53,7 @@ final class AccionesEjecucion
             ->requiresConfirmation()
             ->modalDescription('Si el límite de uso aún no se ha renovado, la ejecución volverá a esperar.')
             ->action(function (Menu $r): void {
-                $r->update(['estado' => EstadoMenu::EnCola, 'proximo_ciclo_en' => null, 'detener_pedido' => false]);
-                GenerarMenu::dispatch($r->id);
+                GestionMenus::reintentar($r);
                 Notification::make()->title('En cola')->success()->send();
             });
     }
@@ -69,15 +65,8 @@ final class AccionesEjecucion
             ->visible(fn (Menu $r): bool => $r->estado->enCurso() && ! $r->detener_pedido)
             ->requiresConfirmation()
             ->action(function (Menu $r): void {
-                if ($r->estado === EstadoMenu::EnMarcha) {
-                    $r->update(['detener_pedido' => true]);   // EjecutorAgente::esperar() lo respeta al acabar
-                    Notification::make()->title('Se detendrá al acabar la ejecución en marcha')->success()->send();
-
-                    return;
-                }
-                // En cola o en espera: el job pendiente ya no encuentra el menú en cola/espera y no hace nada.
-                $r->update(['estado' => self::estadoTrasParar($r), 'terminado_en' => now(), 'proximo_ciclo_en' => null, 'error' => null]);
-                Notification::make()->title('Detenido')->success()->send();
+                $diferida = GestionMenus::detener($r);
+                Notification::make()->title($diferida ? 'Se detendrá al acabar la ejecución en marcha' : 'Detenido')->success()->send();
             });
     }
 
@@ -89,23 +78,8 @@ final class AccionesEjecucion
             ->requiresConfirmation()
             ->modalDescription('Úsalo solo si la ejecución parece colgada. Se corta ahora mismo y lo que no se haya importado se pierde.')
             ->action(function (Menu $r): void {
-                $pid = (int) $r->proceso_pid;
-                $ejecucion = (string) $r->ejecucion_id;
-                $r->update(['estado' => self::estadoTrasParar($r), 'terminado_en' => now(), 'proximo_ciclo_en' => null,
-                    'proceso_pid' => null, 'ejecucion_id' => null, 'detener_pedido' => false, 'error' => null]);
-                if ($ejecucion !== '') {
-                    EjecutorClaude::cancelar($ejecucion);   // agente remoto: DELETE /ejecuciones/{id}
-                }
-                if ($pid > 0 && function_exists('posix_kill')) {   // claude en el propio proceso (solo desarrollo)
-                    posix_kill($pid, 15);
-                }
+                GestionMenus::forzarParada($r);
                 Notification::make()->title('Detenido')->success()->send();
             });
-    }
-
-    /** Un menú que ya tiene resultado importado vuelve a «terminado»; si no, a «borrador» para poder generarlo de nuevo. */
-    private static function estadoTrasParar(Menu $r): EstadoMenu
-    {
-        return $r->contenido !== null ? EstadoMenu::Terminado : EstadoMenu::Borrador;
     }
 }

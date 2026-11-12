@@ -3,6 +3,7 @@
 
 No guarda datos: habla por HTTP con Laravel (docs/chat-api-interna.md). Variables de entorno:
   CHAT_PUERTO       puerto gRPC (por defecto 50051)
+  CARDS_PUERTO      puerto gRPC del slot «cards» de la lista de la compra (por defecto 50052; cartas.py)
   CHAT_URL_INTERNA  base de Laravel (por defecto http://127.0.0.1:8001)
   CHAT_SECRETO      secreto Bearer compartido con Laravel
   CHAT_STUBS        directorio de los stubs (por defecto ./generado; ver generar.sh)
@@ -24,9 +25,12 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.environ.get("CHAT_STUBS") or os.path.join(AQUI, "generado"))
 sys.path.insert(0, AQUI)
 
+import cards_pb2_grpc as cards_grpc  # noqa: E402
 import chat_pb2_grpc as pb_grpc  # noqa: E402
 import grpc  # noqa: E402
 from laravel import ErrorChat, Laravel  # noqa: E402
+from cartas import CardsService, LaravelCards  # noqa: E402
+from cartas import FileService as FileServiceCards  # noqa: E402
 from servicios import Capacidades, ChatService, FileService, LectorTolerante  # noqa: E402
 
 log = logging.getLogger("chat")
@@ -92,6 +96,27 @@ def crear_servidor(
     return servidor, enlazado
 
 
+def crear_servidor_cards(
+    laravel: LaravelCards, puerto: int, host: str = "[::]", intervalo_sondeo: float = 1.0
+) -> tuple[grpc.Server, int]:
+    """Servidor gRPC del slot «cards» (cards.md): CardsService y FileService.DownloadFile."""
+    servidor = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=32, thread_name_prefix="cards"),
+        options=OPCIONES,
+    )
+    cards_grpc.add_CardsServiceServicer_to_server(CardsService(laravel, intervalo_sondeo), servidor)
+    pb_grpc.add_FileServiceServicer_to_server(FileServiceCards(laravel), servidor)
+    try:
+        enlazado = servidor.add_insecure_port(f"{host}:{puerto}")
+    except RuntimeError:
+        enlazado = 0
+    if enlazado == 0 and host == "[::]":
+        enlazado = servidor.add_insecure_port(f"0.0.0.0:{puerto}")
+    if enlazado == 0:
+        raise RuntimeError(f"No se pudo escuchar en el puerto {puerto}")
+    return servidor, enlazado
+
+
 def main() -> int:
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -115,7 +140,12 @@ def main() -> int:
     servidor, enlazado = crear_servidor(laravel, capacidades, puerto)
     servidor.start()
     log.info("Chat gRPC escuchando en el puerto %d", enlazado)
+    puerto_cards = int(os.environ.get("CARDS_PUERTO") or 50052)
+    servidor_cards, enlazado_cards = crear_servidor_cards(LaravelCards(url, secreto), puerto_cards)
+    servidor_cards.start()
+    log.info("Cards gRPC escuchando en el puerto %d", enlazado_cards)
     parar.wait()
+    servidor_cards.stop(grace=5)
     servidor.stop(grace=5).wait()
     return 0
 

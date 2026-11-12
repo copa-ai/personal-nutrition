@@ -4,6 +4,8 @@ namespace App\Services\Chat;
 
 use App\Models\Ajuste;
 use App\Models\ChatMensaje;
+use App\Services\Chat\Bot\Interprete;
+use App\Services\Chat\Claude\ConfirmacionAcciones;
 use App\Services\Menu\TokenClaude;
 use Throwable;
 
@@ -22,8 +24,14 @@ class RespondedorMixto implements Respondedor
 
     public function responder(ChatMensaje $pregunta, ChatMensaje $respuesta): void
     {
+        // «Confirmar acción X» / «Cancelar acción X» (las teclas de una propuesta destructiva) las atiende Laravel, sin agente ni bot.
+        if (app(ConfirmacionAcciones::class)->manejar($pregunta, $respuesta)) {
+            return;
+        }
+
         $claude = (string) config('chat.respondedor_claude');
-        if (static::claudeActivo()) {
+        // El enlace a la lista de la compra no necesita IA: lo da siempre el bot basico.
+        if (static::claudeActivo() && ! Interprete::pideCompra(Interprete::normalizar($pregunta->texto()))) {
             try {
                 $this->motor($claude)->responder($pregunta, $respuesta);
 

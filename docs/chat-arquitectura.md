@@ -7,8 +7,8 @@ Estado: las decisiones son las acordadas con el responsable del proyecto. El map
 
 ## 1. Resumen
 
-Personal Nutrition (un solo microVM Celaut) declara un **segundo slot de API** que sigue la interfaz «chat» (§3: `tcp` + `http2` + `grpc` + `chat`), además del slot HTTP :8000 del panel.
-La app chatui se conecta a ese slot y conversa con la instancia. La instancia **es** la conversación (§2, «Session»): hay una sola, compartida.
+Personal Nutrition (un solo microVM Celaut) declara un **segundo slot de API** que sigue la interfaz «chat» (§3: `tcp` + `http2` + `grpc` + `chat`), además del slot HTTP :8000 del panel (y un tercero, `cards`, para la lista de la compra: ver §2k).
+La app chatui se conecta a ese slot y conversa con la instancia. La instancia **es** la conversación (§2, «Session»): hay una sola **por instancia**: cada instancia de Laravel tiene la suya, aunque compartan la base PostgreSQL.
 
 ```
  chatui (cliente)
@@ -24,9 +24,9 @@ La app chatui se conecta a ese slot y conversa con la instancia. La instancia **
     │                         │
     │ SQL                     │ encola «responder»
     ▼                         ▼
- PostgreSQL compartida     cola (dos workers: queue:work --queue=default para menús y --queue=chat para el chat)
- (chat_mensajes,                │
-  chat_archivos bytea, …)       ▼
+ SQLite del disco de la     cola (dos workers: queue:work --queue=default para menús y --queue=chat para el chat)
+ instancia (conexión `chat`:   │
+  chat_mensajes, chat_archivos) ▼
                           motor de respuesta
                            ├─ bot básico (sin IA)                      [si no hay token de Claude]
                            └─ modo Claude: runner HTTP 127.0.0.1:9000 → claude -p (usuario agente)
@@ -54,27 +54,25 @@ Piezas y quién habla con quién:
 
 ### (b) Laravel como fuente de verdad; traductor sin estado
 
-**Decisión.** Todo estado (mensajes, secuencia, archivos, secretos, ajustes) vive en Laravel/Postgres. El traductor solo mantiene, por conexión `Connect`, lo que ya envió a ese cliente (última `sequence`, longitudes de los mensajes abiertos). Si muere, el cliente reconecta y se resincroniza con `GetMessages` (§6.3).
+**Decisión.** Todo estado (mensajes, secuencia, archivos, secretos, ajustes) vive en Laravel: el chat en el SQLite del disco de la instancia; los datos del hogar en PostgreSQL. El traductor solo mantiene, por conexión `Connect`, lo que ya envió a ese cliente (última `sequence`, longitudes de los mensajes abiertos). Si muere, el cliente reconecta y se resincroniza con `GetMessages` (§6.3).
 
 **Por qué.** La instancia puede compartir base con otros dispositivos; el estado en un proceso Python local no se vería desde ellos. Y un traductor sin estado se reinicia sin pérdida.
 
 **Coste.** Cada operación es un salto HTTP más. A 127.0.0.1 es despreciable frente al resto, pero hay dos sitios que validan (ver §3).
 
-### (c) Historial y archivos en Postgres (`bytea`)
+### (c) Historial y archivos en un SQLite del disco de la instancia
 
-**Decisión.** Mensajes en tablas de Postgres; fotos en `chat_archivos` (hash SHA3-256 único, mime, tamaño, nombre, `bytea`).
+**Decisión (revisada).** Mensajes, secuencia, fotos (`chat_archivos`, hash SHA3-256 único) y peticiones de secreto viven en un SQLite en `storage/app/chat/chat.sqlite`, conexión Laravel `chat` (WAL, `busy_timeout`, transacciones `IMMEDIATE`). Las migraciones están en `admin/database/migrations/chat/` y `start.sh` las ejecuta con `migrate --database=chat`. PostgreSQL ya no tiene tablas `chat_*` (las quita `2026_11_12_110000_drop_chat_tables`).
 
-**Descartado.**
-- *Disco local.* Es lo más simple, pero cada dispositivo que comparte la base vería mensajes que referencian fotos que no tiene (`file_missing`, §6.4). Además el disco del microVM es de 4 GiB y se pierde con la instancia.
-- *Disco Flysystem compartido (S3 u otro).* Resuelve el tamaño de la base, pero exige un servicio más, credenciales nuevas, y declarar otra red en `service.json`. Para fotos de 4 MiB como máximo y uso doméstico no compensa.
+**Por qué.** La conversación debe ser independiente entre instancias que comparten base: cada una ve solo la suya. Un SQLite conserva transacciones, índices únicos e idempotencia sin reescribir el código del chat.
 
-**Por qué Postgres.** Ya está compartida, ya se hace copia de ella (`CopiaBase`), ya se usa para archivos del agente (`agente_archivos`, `AlmacenAgente`) con la misma lógica de «la base es la verdad, el disco es una caché». Una sola copia de seguridad cubre todo.
+**Coste.** Las fotos del chat no son compartidas: un `registros_comida.foto_hash` creado en otra instancia no resuelve aquí y se ve sin foto (`/fotos/{hash}` da 404). El chat no entra en `CopiaBase` ni en la fusión de bases; su copia es la del disco de la instancia (que persiste a reinicios).
 
 ### (d) Conversación única; el bot pregunta o deduce el perfil
 
 **Decisión.** Una conversación principal por instancia (§2 «Session», §6.8 hace opcionales las ramas y otras conversaciones: no se implementan, `soporta_ramas: false`). Todos los dispositivos que comparten base ven la misma.
 
-**Desviación honesta de la spec.** §2 dice que «cuando la instancia para, la conversación termina». Aquí el historial persiste en Postgres y sobrevive a reinicios y a cambiar de dispositivo. Es una decisión deliberada (la gracia de compartir base), pero hay que vigilar que ningún test de conformidad (§11) asuma una conversación vacía al arrancar.
+**Desviación honesta de la spec.** §2 dice que «cuando la instancia para, la conversación termina». Aquí el historial persiste en el disco de la instancia y sobrevive a reinicios, pero no se comparte con otras instancias. Es una decisión deliberada, pero hay que vigilar que ningún test de conformidad (§11) asuma una conversación vacía al arrancar.
 
 **Perfiles.** La conversación no pertenece a un perfil del hogar. Quien conversa puede preguntar por varios («qué tiene que comer mi hijo», «qué tengo que comer yo»). El bot básico pregunta con un teclado (§5.5) cuando no puede deducir el perfil; Claude lo deduce del texto y de la instantánea, o pregunta. Nunca se asume un perfil por defecto al registrar una comida.
 
@@ -96,7 +94,11 @@ Piezas y quién habla con quién:
 
 **Modelo de amenazas.** El agente ejecuta herramientas, incluida Bash, y procesa texto que no controlamos: lo que escribe quien conversa, el texto de una foto, nombres de alimentos. Una inyección de prompt debe poder, como mucho, **proponer** una acción; nunca ejecutarla. Por eso el agente no tiene credenciales ni acceso SQL (la misma regla de `start.sh`: «el agente nunca ve APP_KEY ni la base»), y toda acción pasa por validación de Laravel: perfil existente, fecha y momento válidos, tamaños, y solo el conjunto cerrado de acciones permitidas.
 
-**Coste.** La instantánea puede estar desfasada respecto a la base si otro dispositivo escribe durante el turno, y cuesta tokens y tiempo en cada turno (ver §3).
+**Catálogo.** Desde el chat se puede hacer lo mismo que en el panel salvo seguridad: comidas y gustos (`registrar_comida`, `corregir_comida`, `anotar_feedback`, `editar_feedback`…), hogares, perfiles y tiempos de cocinado (`crear_perfil`, `editar_perfil`, `fijar_tiempos`…), alimentos y despensa (`crear_alimento`, `anadir_existencia`, `editar_existencia`, `restar_existencias`…) y menús (`crear_menu`, `generar_menu`, `activar_menu`, `elegir_opcion`, `editar_menu_con_comentario`, `intercambiar_menu`, `editar_opcion_menu`, `cambiar_categorias_toma`, `borrar_menu`…). La lista completa y los campos de cada una están en `App\Services\Chat\Claude\Acciones\Grupo*` y en la skill `chat-nutricion`; la lógica compartida con el panel vive en `App\Services\Acciones` (`GestionMenus`, `EditaMenu`, `Despensa`). Quedan fuera usuarios y contraseñas, ajustes de seguridad (login automático, secretos, interruptores del chat, token), copia de seguridad y auditoría. Cada acción se valida con reglas estrictas (ids uuid que existan, enums, fechas, tamaños, tope de 10 por turno) y todo lo ejecutado o rechazado queda en la auditoría.
+
+**Confirmación de lo destructivo.** Las acciones destructivas (borrar cualquier cosa, descartar cambios del menú, activar un menú que sustituye a otro, editar con comentario —rehace el menú entero—, restar existencias, cancelar una generación) **no se ejecutan al llegar la propuesta**. Laravel las guarda como pendientes en `metadata` del mensaje del chat (SQLite, sin tabla nueva) con un token aleatorio de 12 hex que el agente no ve, enseña un resumen legible y un teclado Confirmar / Cancelar, y solo ejecuta cuando llega la confirmación: la tecla envía «Confirmar acción TOKEN» como un mensaje normal de la persona y `RespondedorMixto` lo atiende antes de llamar a Claude o al bot (así funciona aunque Claude esté apagado). Es idempotente (el paso de pendiente a confirmada/cancelada/caducada es un cambio atómico, y confirmar dos veces no ejecuta dos veces), caduca a los 30 minutos (`chat_claude.acciones.caduca_min`) y revalida cada acción con los datos del momento de confirmar. El agente nunca puede confirmar: no escribe mensajes de la persona.
+
+**Coste.** La instantánea puede estar desfasada respecto a la base si otro dispositivo escribe durante el turno, y cuesta tokens y tiempo en cada turno (ver §3). La instantánea incluye también `catalogos.json` (valores válidos de los campos cerrados) y los ids de menús, tomas, existencias, feedback y registros, dentro de los topes de `chat_claude.instantanea`; nunca incluye secretos ni usuarios.
 
 ### (g) Bot básico sin IA; widgets y formularios como texto
 
@@ -132,6 +134,16 @@ Piezas y quién habla con quién:
 - **Fotos de 4 MiB** como máximo, hasta 4 por mensaje, `image/jpeg` y `image/png` (§7; el audio no se acepta). Texto hasta 16 384 bytes.
 - Carga de petición: Caddy limita el cuerpo a 20 MB; el runner, a 64 MB y 8 MB por archivo.
 
+### (k) Lista de la compra con la interfaz «cards» en otro slot
+
+**Decisión.** La lista de la compra del menú activo es un **mazo de tarjetas** (`cards.md` rev. 1) en un slot propio (`http2` / `grpc` / `cards`, puerto 50052), atendido por el mismo traductor Python (otro servidor gRPC en el mismo proceso, mismo usuario y entorno vacío) contra `/interno/cards` de Laravel, con el mismo Bearer e interruptor. Laravel es la fuente de verdad: calcula la lista (la misma suma que el PDF, menos la despensa), guarda en el SQLite del chat el mazo, las decisiones y los eventos con versión, y suma o resta existencias al decidir. El chat enlaza el mazo con un `slot_link` (chat.md §5.8).
+
+**Por qué.** Un deslizar no es un mensaje: no debe empezar un turno del modelo, y el mazo es un estado vivo que se sustituye, mientras que el historial del chat solo crece (`cards.md` §2). Un slot propio mantiene el contrato del chat intacto y un cliente que no conoce `cards` no ve nada. El mazo se **genera cuando la persona lo pide** (abrir o reconectar la pantalla), con el menú y la despensa de ese momento, así que puede usarse muchas veces: lo ya comprado está en la despensa y no vuelve a salir. Durante una sesión es una foto (una tarjeta comprada sigue ahí con su decisión y «comprado» suma exactamente lo que ponía); si la pantalla se reconecta mientras la sesión sigue (menos de 5 minutos de inactividad y tarjetas sin resolver) se reanuda el mismo mazo. Las decisiones llevan clave de idempotencia y, con efecto en `existencias`, un registro de lo sumado para que deshacer sea exacto.
+
+**Imágenes.** `cards.md` solo admite `image/png` e `image/jpeg`, así que el SVG que dibuja el agente nunca viaja: Laravel lo lee con una lista blanca de etiquetas y atributos y lo guarda en `alimentos.ilustracion` (catálogo compartido: se genera una vez para todas las instancias; columna fuera del núcleo del esquema declarado, así que no cambia la red), y cada instancia lo dibuja con GD a PNG y lo guarda por hash en `chat_archivos` como caché local. Como otra instancia puede haber escrito el SVG, se vuelve a comprobar al leerlo. Hasta entonces, o sin token de Claude, cada alimento usa una ilustración fija de su categoría. El agente solo recibe nombres de alimentos y no toca la base (§2f).
+
+**Coste.** Es un tercer puerto y otro estado que mantener (tablas `cards_*` en SQLite, sin migrar a mano). Dentro de una sesión la foto se queda desfasada si cambian las existencias (se corrige al pedir el mazo otra vez). «Ya lo tengo» no toca la despensa, así que esa tarjeta vuelve a salir en el mazo siguiente hasta que la despensa lo refleje. Generar ilustraciones usa el único agente, compartido con los menús y el chat (§2j), por eso van en lotes pequeños y con tope diario. No hay tests de esta pieza por ahora.
+
 ## 3. Beneficios y costes
 
 ### Beneficios
@@ -141,7 +153,7 @@ Piezas y quién habla con quién:
 | Cumple el protocolo real (gRPC h2c) | chatui funciona sin adaptadores; un `Connect` y subidas de fotos comparten una sola conexión por túnel (§4) |
 | Laravel como única fuente de verdad | Reglas de negocio, validación y auditoría en un solo sitio; el traductor se puede reiniciar sin pérdida |
 | El agente no tiene credenciales ni SQL | Una inyección de prompt solo puede *proponer* acciones del conjunto cerrado; no lee ni cambia la base por su cuenta |
-| Todo en Postgres compartida | Varios dispositivos ven el mismo historial y las mismas fotos; una sola copia de seguridad (`CopiaBase`) |
+| Chat en SQLite local | Conversación independiente por instancia, sin cambiar el esquema de PostgreSQL; no se comparte ni entra en `CopiaBase` |
 | Bot básico sin IA | El chat funciona sin token de Claude y no depende de la cuota del plan |
 | Widgets y teclados como texto | Sin cambios de protocolo; degradan a código en clientes sin soporte |
 | La API interna no es tunelable | No hay ruta desde fuera a la API de Laravel del chat, ni con el token del nodo |
@@ -155,7 +167,7 @@ Piezas y quién habla con quién:
 | Latencia de la instantánea por turno | Exportar y subir los archivos de la base antes de cada turno de Claude suma segundos; crece con el historial de comidas. Mitigación posible: instantánea incremental o por demanda (no decidida) |
 | Coste en tokens | Claude lee la instantánea (o parte) en cada turno; más perfiles y más historial, más tokens y más cerca del límite de uso del plan (`LimiteUso`) |
 | Concurrencia con la generación de menús | Un agente y un worker de cola compartidos: el chat espera si hay un menú en marcha; ver §2(j) |
-| Tamaño de la base por las fotos | Cada foto (hasta 4 MiB) engorda Postgres y su copia de seguridad; no hay purga ni miniaturas decididas |
+| Tamaño de la base por las fotos | Cada foto (hasta 4 MiB) engorda el disco de la instancia; no hay purga ni miniaturas decididas |
 | El formal de la red cambia con cada tabla nueva | `service.json` lleva el esquema versionado en `formal` (`db.table.*`); cada migración de chat obliga a regenerarlo y a que los dispositivos de la red tengan versión compatible (hay un commit reciente de sincronización esquema↔migraciones) |
 | Pieza extra a mantener | Un proceso Python más (arranque, vigilancia, usuario, secreto, memoria) y su imagen |
 | Doble validación | El traductor valida lo del cable (hash sin tipo, 32 bytes, partes sin `kind`) y Laravel el resto; si divergen, el mismo error se ve distinto según quién lo detecte. El contrato fija el reparto |
@@ -192,7 +204,7 @@ Piezas y quién habla con quién:
 
 **Reanudación tras reinicio.**
 - *Traductor muerto:* el cliente pierde `Connect`, reintenta (`UNAVAILABLE` sin razón); al volver, `GetMessages` con `after_sequence` y las longitudes de los abiertos se resincronizan contra Laravel (§6.3, §6.5).
-- *MicroVM reiniciado:* el historial está en Postgres. Un trabajo que estaba a medias muere con la cola: los mensajes que quedaron `PENDING` o `IN_PROGRESS` se marcan `FAILED` («se interrumpió») al arrancar y el usuario puede reenviar (la clave de idempotencia evita duplicados). El runner ya trata sus ejecuciones interrumpidas así (`interrumpida: true`).
+- *MicroVM reiniciado:* el historial está en el SQLite del disco. Un trabajo que estaba a medias muere con la cola: los mensajes que quedaron `PENDING` o `IN_PROGRESS` se marcan `FAILED` («se interrumpió») al arrancar y el usuario puede reenviar (la clave de idempotencia evita duplicados). El runner ya trata sus ejecuciones interrumpidas así (`interrumpida: true`).
 - *Petición de secreto abierta:* sigue en el historial y se puede responder después.
 
 ## 5. Riesgos abiertos y qué cambiar si crece
@@ -243,8 +255,12 @@ Del chat (a medida que se implementen):
 | Controladores de la API interna | `admin/app/Http/Controllers/Interno/` |
 | Puerto 8001 solo en 127.0.0.1 | `docker/servicio/Caddyfile` (ya existe el bloque `http://127.0.0.1:8001`) |
 | Rutas internas (`/interno/chat`) | `admin/routes/interno.php` (registrada en `admin/bootstrap/app.php`; fotos autenticadas en `admin/routes/web.php`) |
-| Tablas del chat (mensajes, `chat_archivos`, ajustes) | `admin/database/migrations/` |
+| Tablas del chat (mensajes, `chat_archivos`, secretos) | `admin/database/migrations/chat/` (SQLite, conexión `chat`) |
 | Motores: bot básico y modo Claude, instantánea y acciones | `admin/app/Services/Chat/` |
 | Trabajo de cola «responder» | `admin/app/Jobs/ResponderChat.php` (cola propia `chat`) |
 | Interruptores `chat_habilitado` y auto-login | tabla `ajustes` y página «Ajustes del servicio» (`admin/app/Filament/Pages/AjustesServicio.php`); auto-login en `admin/app/Http/Middleware/AutoLogin.php` |
 | Slot gRPC :50051 y `CHAT_SECRETO` | `.service/service.json` y `docker/servicio/start.sh` |
+| Lista de la compra: slot `cards` :50052 | `.service/service.json` (api), `docker/servicio/start.sh` (`CARDS_PUERTO`), traductor `docker/chat/cartas.py` y `cards.proto` |
+| Lista de la compra: rutas, mazo y decisiones | `admin/routes/interno-cards.php`, `admin/app/Http/Controllers/Interno/CardsController.php`, `admin/app/Services/Compra/` (`ListaCompra`, `Mazo`, `Despensa`, `Ilustraciones`, `SaneadorSvg`, `Rasterizador`, `GeneradorIlustraciones`), `admin/app/Jobs/GenerarIlustraciones.php`, `admin/config/cards.php` |
+| Estado del mazo (`cards_*`) | `admin/database/migrations/chat/…create_cards_tables.php`, modelos `admin/app/Models/Cards*.php` |
+| Página «Lista de la compra» (solo lectura) y skill del agente | `admin/app/Filament/Pages/ListaCompraPagina.php`, `agente/.claude/skills/ilustrar-alimentos/` |

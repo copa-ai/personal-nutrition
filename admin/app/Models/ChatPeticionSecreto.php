@@ -16,6 +16,8 @@ class ChatPeticionSecreto extends Model
 
     public const OMITIDA = 'omitida';
 
+    protected $connection = 'chat';
+
     protected $table = 'chat_peticiones_secreto';
 
     protected $guarded = [];

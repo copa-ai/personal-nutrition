@@ -12,7 +12,9 @@ use InvalidArgumentException;
 
 /**
  * Construye el esquema de la base de datos migrada como claves `db.table.*` del `formal` de la red Celaut (gramatica en
- * App\Services\EsquemaBaseDatos) y lo escribe en database/esquema.json o lo compara con el que hay.
+ * App\Services\EsquemaBaseDatos) y lo escribe en database/esquema.json o lo compara con el que hay. Solo declara el NUCLEO que lista
+ * database/esquema-nucleo.json (tablas y columnas que no van a cambiar), no toda la base: anadir columnas o tablas fuera del nucleo no
+ * cambia el `formal` ni, por tanto, la red.
  *
  * Los tipos son los de PostgreSQL: hay que correrlo con la conexion pgsql ya migrada. Tras cada migracion nueva:
  *   php artisan migrate && php artisan nutrition:esquema --escribir && python3 database/sincronizar-esquema.py
@@ -81,7 +83,13 @@ class EsquemaBaseDatos extends Command
             ];
         }
 
-        return Esquema::mapa($tablas);
+        $ruta = database_path('esquema-nucleo.json');
+        $nucleo = is_file($ruta) ? json_decode((string) file_get_contents($ruta), true) : null;
+        if (! is_array($nucleo) || $nucleo === []) {
+            throw new InvalidArgumentException("{$ruta} no existe, esta vacio o no es un JSON valido (tabla => lista de columnas).");
+        }
+
+        return Esquema::mapa($tablas, $nucleo);
     }
 
     /** @param  array<string, string>  $esquema */
@@ -111,11 +119,11 @@ class EsquemaBaseDatos extends Command
         }
 
         if ($difiere) {
-            $this->error('esquema.json no coincide con la base migrada: php artisan nutrition:esquema --escribir');
+            $this->error('esquema.json no coincide con el nucleo de la base migrada: php artisan nutrition:esquema --escribir');
 
             return self::FAILURE;
         }
-        $this->info('esquema.json coincide con la base migrada ('.count($esquema).' tablas).');
+        $this->info('esquema.json coincide con el nucleo de la base migrada ('.count($esquema).' tablas).');
 
         return self::SUCCESS;
     }

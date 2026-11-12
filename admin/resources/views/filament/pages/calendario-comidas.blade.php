@@ -40,6 +40,53 @@
         .cal--semana .cal-txt { -webkit-line-clamp: 4; }
         .cal-extra { font-size: .75rem; color: var(--cal-suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+        /* móvil: selectores a ancho completo, mes con puntos, semana en lista y detalle como hoja casi a pantalla completa */
+        .cal-nombre, .cal-punto, .cal-cerrar, .cal-fondo { display: none; }
+        .cal-panel { display: block; }
+        @media (max-width: 40rem) {
+            .cal { font-size: .9375rem; }
+            .cal-barra, .cal-barra .cal-grupo { flex-direction: column; align-items: stretch; }
+            .cal-barra .cal-grupo:first-child { flex-direction: row; flex-wrap: wrap; align-items: center; }
+            .cal-titulo { margin-left: 0; flex-basis: 100%; }
+            .cal-barra .cal-grupo > *, .cal-barra .fi-input-wrp, .cal-barra .fi-btn-group { width: 100%; }
+            .cal-barra .cal-grupo:first-child > * { width: auto; }
+            .cal-barra .fi-btn-group .fi-btn { flex: 1; min-height: 2.75rem; }
+            .cal-barra .fi-icon-btn { min-width: 2.75rem; min-height: 2.75rem; }
+            .cal-barra select { min-height: 2.75rem; }
+            .cal-scroll { overflow-x: visible; }
+            .cal-rejilla { min-width: 0; }
+            /* mes: celdas cuadradas con puntos de colores en vez del texto */
+            .cal--mes .cal-dia { min-height: 3.5rem; align-items: center; padding: .3rem .1rem; gap: .2rem; }
+            .cal--mes .cal-cab { padding: .3rem 0; text-align: center; font-size: .625rem; letter-spacing: 0; }
+            .cal--mes .cal-num { align-self: center; }
+            .cal--mes .cal-toma { display: none; }
+            .cal--mes .cal-punto { display: inline-block; width: .5rem; height: .5rem; border-radius: 999px; background: var(--tono, var(--cal-suave)); }
+            .cal--mes .cal-puntos { display: flex; gap: .25rem; min-height: .5rem; }
+            .cal--mes .cal-extra { display: none; }
+            /* semana: una lista vertical */
+            .cal--semana .cal-rejilla { display: flex; flex-direction: column; border-left: 0; }
+            .cal--semana .cal-cab { display: none; }
+            .cal--semana .cal-dia { min-height: 3.5rem; padding: .6rem .5rem; border-right: 0; }
+            .cal--semana .cal-nombre { display: inline; font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--cal-suave); margin-right: .35rem; }
+            .cal--semana .cal-num { align-self: flex-start; }
+            .cal--semana .cal-puntos { display: none; }
+            .cal--semana .cal-txt { -webkit-line-clamp: 3; }
+            .cal--semana .cal-extra { white-space: normal; }
+            .cal-dia:focus-visible { outline: 2px solid var(--cal-programado); outline-offset: -2px; }
+            /* detalle: hoja a pantalla casi completa con cierre grande */
+            .cal-panel { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; justify-content: flex-end; }
+            .cal-fondo { display: block; position: absolute; inset: 0; border: 0; padding: 0; background: color-mix(in srgb, #000 55%, transparent); }
+            .cal-hoja { position: relative; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain; border-radius: 1rem 1rem 0 0;
+                        padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom)); background: var(--cal-fondo-hoja, Canvas); color: CanvasText; animation: cal-sube .2s ease-out; }
+            :root.dark .cal-hoja, .dark .cal-hoja { --cal-fondo-hoja: rgb(var(--gray-900, 17 24 39)); color: rgb(var(--gray-100, 243 244 246)); }
+            .cal-cerrar { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 3rem; margin-top: 1rem; border-radius: .75rem; font: inherit; font-weight: 600; cursor: pointer;
+                          color: inherit; background: color-mix(in srgb, currentColor 8%, transparent); border: 1px solid var(--cal-linea); }
+            .cal-detalle li { padding: .35rem 0; }
+        }
+        @keyframes cal-sube { from { transform: translateY(2rem); opacity: 0; } to { transform: none; opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .cal-hoja { animation: none !important; } }
+        @media (min-width: 40.0625rem) { .cal-puntos { display: none; } }
+
         .cal-detalle { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
         .cal-detalle h3 { font-weight: 700; margin-bottom: .35rem; }
         .cal-detalle li { padding: .15rem 0; }
@@ -98,8 +145,14 @@
                     @foreach ($semanas as $semana)
                         @foreach ($semana as $d)
                             <button type="button" wire:key="dia-{{ $d['fecha'] }}" wire:click="elegirDia('{{ $d['fecha'] }}')"
+                                aria-label="{{ \Carbon\CarbonImmutable::parse($d['fecha'])->locale('es')->isoFormat('dddd D [de] MMMM') }}"
                                 class="cal-dia @if ($vista === 'mes' && $d['mes'] !== $mesActual) cal-dia--otro-mes @endif @if ($d['hoy']) cal-dia--hoy @endif @if ($diaElegido === $d['fecha']) cal-dia--elegido @endif">
-                                <span class="cal-num">{{ $d['dia'] }}</span>
+                                <span><span class="cal-nombre">{{ \Carbon\CarbonImmutable::parse($d['fecha'])->locale('es')->isoFormat('ddd') }}</span><span class="cal-num">{{ $d['dia'] }}</span></span>
+                                <span class="cal-puntos" aria-hidden="true">
+                                    @foreach (['comida', 'cena'] as $momentoPunto)
+                                        @if ($d['tomas'][$momentoPunto])<span class="cal-punto cal-toma--{{ $d['tomas'][$momentoPunto]['tipo'] }}"></span>@endif
+                                    @endforeach
+                                </span>
                                 @foreach (['comida' => 'Comida', 'cena' => 'Cena'] as $momento => $etiqueta)
                                     @php($toma = $d['tomas'][$momento])
                                     @if ($toma)
@@ -124,6 +177,9 @@
             </div>
 
             @if ($detalle)
+                <div class="cal-panel" role="dialog" aria-label="{{ $detalle['titulo'] }}">
+                <button type="button" class="cal-fondo" wire:click="elegirDia('')" tabindex="-1" aria-label="Cerrar el detalle"></button>
+                <div class="cal-hoja">
                 <x-filament::section :heading="$detalle['titulo']" :description="'Perfil: '.$perfil->nombre">
                     <div class="cal-detalle">
                         @foreach (['comida' => 'Comida', 'cena' => 'Cena'] as $momento => $etiqueta)
@@ -166,7 +222,10 @@
                             </div>
                         @endif
                     </div>
+                    <button type="button" class="cal-cerrar" wire:click="elegirDia('')">Cerrar</button>
                 </x-filament::section>
+                </div>
+                </div>
             @else
                 <p class="cal-suave">Pulsa un día para ver su detalle.</p>
             @endif

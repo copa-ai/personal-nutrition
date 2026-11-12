@@ -13,7 +13,8 @@ use RuntimeException;
 /**
  * Modo Claude del chat. Por cada pregunta: instantanea de solo lectura (InstantaneaDatos) -> UN turno de `claude -p` con streaming
  * (EjecutorClaude) -> lo que va diciendo se vuelca en la respuesta en tiempo real -> acciones propuestas, validadas y aplicadas por
- * Laravel (AccionesChat) -> resumen de lo aplicado o rechazado al final del mensaje -> COMPLETED.
+ * Laravel (AccionesChat; las destructivas esperan la confirmacion de la persona, ConfirmacionAcciones) -> resumen de lo aplicado,
+ * pendiente o rechazado al final del mensaje -> COMPLETED.
  *
  * El texto del turno va a la respuesta (saneado con el Validador de Marcado); el razonamiento (bloques `thinking` y el
  * texto que Claude dice mientras usa herramientas) va a `reasoning`. El agente nunca escribe en la base: solo lee archivos y propone acciones.
@@ -28,13 +29,19 @@ class RespondedorClaude implements Respondedor
     /** Marca fija con la que empieza el prompt del turno; agente/CLAUDE.md la usa para distinguir el chat de un encargo. */
     public const MARCA = 'Turno de chat';
 
-    public function __construct(private readonly InstantaneaDatos $instantanea, private readonly AccionesChat $acciones) {}
+    private readonly ConfirmacionAcciones $confirmacion;
+
+    public function __construct(private readonly InstantaneaDatos $instantanea, private readonly AccionesChat $acciones, ?ConfirmacionAcciones $confirmacion = null)
+    {
+        $this->confirmacion = $confirmacion ?? new ConfirmacionAcciones($acciones);
+    }
 
     public static function prompt(string $turno): string
     {
         return self::MARCA." {$turno}. Usa la skill chat-nutricion: la instantánea de solo lectura está en encargos/chat-{$turno}/ (empieza por LEEME.json; "
             .'la pregunta es el último mensaje de la persona en conversacion.json). Responde en esta salida, que es lo que lee la persona en el chat. '
-            ."Si hay cambios que proponer, escribe workspace/chat-acciones-{$turno}.json; no hagas preguntas bloqueantes.";
+            ."Si hay cambios que proponer (comidas, perfiles, despensa, menús…), escribe workspace/chat-acciones-{$turno}.json con acciones del catálogo; "
+            .'las destructivas no se ejecutan hasta que la persona las confirme. No hagas preguntas bloqueantes.';
     }
 
     public function responder(ChatMensaje $pregunta, ChatMensaje $respuesta): void
@@ -203,7 +210,12 @@ class RespondedorClaude implements Respondedor
 
         $resumen = '';
         if (($json = AccionesChat::leerArchivo($turno)) !== null) {
-            $resumen = AccionesChat::resumen($this->acciones->procesar($json));
+            $resultados = $this->acciones->procesar($json);
+            $resumen = AccionesChat::resumen($resultados);
+            $pendientes = array_filter($resultados, fn (array $r): bool => $r['estado'] === 'pendiente');
+            if ($pendientes !== [] && ($teclado = $this->confirmacion->proponer($respuesta, $pendientes)) !== '') {
+                $resumen .= "\n".$teclado."\n";   // las destructivas no se han ejecutado: la persona las confirma con este teclado
+            }
         }
         if (! $estado->hayTexto && $resumen === '') {
             $respuesta->fallar('El asistente no ha dado ninguna respuesta. Inténtalo de nuevo.');

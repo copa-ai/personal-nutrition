@@ -22,8 +22,8 @@ class RegistrosComidaTable
             ->columns([
                 TextColumn::make('fecha')->label('Fecha')->date('d/m/Y')->sortable(),
                 TextColumn::make('perfil.nombre')->label('Perfil')->searchable()->sortable(),
-                TextColumn::make('momento')->label('Momento')->badge(),
-                TextColumn::make('origen')->label('Origen')->badge()->color('gray'),
+                TextColumn::make('momento')->label('Momento')->badge()->toggleable(),
+                TextColumn::make('origen')->label('Origen')->badge()->color('gray')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('descripcion')->label('Qué se comió')->limit(70)->searchable(),
                 ...(Schema::hasColumn('registros_comida', 'foto_hash') ? [
                     ImageColumn::make('foto_hash')->label('Foto')->square()->height(40)
