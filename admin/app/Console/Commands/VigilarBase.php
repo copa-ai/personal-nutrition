@@ -7,6 +7,7 @@ use App\Services\BaseCompartida\CopiaAutomatica;
 use App\Services\BaseCompartida\CopiaDeRetirada;
 use App\Services\BaseCompartida\Eleccion;
 use App\Services\BaseCompartida\EstadoBase;
+use App\Services\BaseCompartida\Recarga;
 use App\Services\BaseCompartida\Sonda;
 use App\Services\Celaut\Nodo;
 use App\Services\Celaut\NodoException;
@@ -48,6 +49,7 @@ class VigilarBase extends Command
 
         $nodo = Nodo::desdeConfig();
         $pool = $this->pool($nodo);
+        $this->recargar($nodo, $pool);   // antes que nada: aunque la base no responda hay que mantenerla con saldo
         $direcciones = array_values(array_unique([
             "{$estado['host']}:{$estado['port']}",
             ...$this->miembros($nodo, $estado['cluster']),
@@ -79,6 +81,30 @@ class VigilarBase extends Command
         $this->darDeBaja($nodo, $copia, $pool, $baseDe, $candidatas, $elegida, $eleccion, $fusionadas);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Deja a la base que lanzo este servicio con saldo para las proximas horas (App\Services\BaseCompartida\Recarga). Un fallo se avisa y
+     * no corta la vigilancia.
+     *
+     * @param  list<array<string, mixed>>  $pool
+     */
+    private function recargar(Nodo $nodo, array $pool): void
+    {
+        try {
+            foreach (Recarga::desdeConfig()->revisar($nodo, $pool) as $r) {
+                $texto = "Saldo de la base {$r['lease']}: {$r['balance_mu']} MU (unas {$r['horas_restantes']} h); estado {$r['estado']}";
+                if ($r['anadido_mu'] > 0) {
+                    $this->info("{$texto}; se anaden {$r['anadido_mu']} MU (objetivo {$r['objetivo_mu']}).");
+                } elseif ($r['estado'] === 'ok') {
+                    $this->line($texto.'.');
+                } else {
+                    $this->warn($texto.'; no se pudo anadir saldo (¿falta saldo en este servicio? nodo increase_deposit).');
+                }
+            }
+        } catch (Throwable $e) {
+            $this->warn('No se pudo revisar el saldo de la base: '.$e->getMessage());
+        }
     }
 
     /** Copia de seguridad de la base elegida (nada mas conectar y despues cada pocas horas): un fallo se avisa y no corta la vigilancia. */

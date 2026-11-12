@@ -75,6 +75,15 @@ return [
         'intervalo_horas' => 6,
         'guardadas' => 8,   // cuantas se conservan
     ],
+    // Saldo de la base que lanzo este servicio (App\Services\BaseCompartida\Recarga): una instancia solo gasta el saldo que tiene y el nodo la
+    // para cuando se le acaba, asi que en cada vuelta del vigilante se le deja saldo para `horas` mas de mantenimiento (tick = `periodo_s`
+    // segundos, con `margen` por si sube el precio), o lo que se pueda si el saldo de este servicio no llega.
+    'recarga' => [
+        'activa' => true,
+        'horas' => 24,
+        'margen' => 1.25,
+        'periodo_s' => 10,
+    ],
     'vigilancia_cada_s' => 300,
 
     // Identificador de esta instancia en la auditoria (App\Services\Instancia): el dado aqui o, si no (siempre, salvo en las pruebas), uno

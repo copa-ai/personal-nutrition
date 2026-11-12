@@ -119,6 +119,55 @@ class Nodo
         return $this->ejecutar(['list'])['instances'] ?? [];
     }
 
+    /**
+     * El saldo de una instancia del pool y si esta suspendida (`celaut metrics`). Las cantidades (MU) llegan como cadena.
+     *
+     * @return array{balance_mu: string, suspended: bool}
+     */
+    public function metricas(int $lease): array
+    {
+        return $this->ejecutar(['metrics', (string) $lease]);
+    }
+
+    /**
+     * Lo que cuesta mantener una dependencia empaquetada: `init_maintenance_cost_mu` es UN tick de mantenimiento (10 s) con los recursos
+     * del arranque, a precio de ahora (`celaut cost`).
+     *
+     * @return array{service: string, cost_mu: string, init_maintenance_cost_mu: string, max_maintenance_cost_mu: string}
+     */
+    public function coste(string $dependencia): array
+    {
+        return $this->ejecutar(['cost', '--name', $dependencia, '--root', $this->raiz], 120);
+    }
+
+    /**
+     * Mueve MU de este servicio a una instancia del pool (`celaut deposit`; negativo = de vuelta). Con saldo insuficiente el nodo
+     * contesta `success: false`.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function depositar(int $lease, string $mu): array
+    {
+        return $this->ejecutar(['deposit', (string) $lease, $mu]);
+    }
+
+    /** El id (hash) del servicio de una dependencia empaquetada, de `.dependencies` en la raiz de celaut, o null si no consta. */
+    public function idDeDependencia(string $nombre): ?string
+    {
+        $ruta = rtrim($this->raiz, '/').'/.dependencies';
+        if (! is_file($ruta)) {
+            return null;
+        }
+        foreach (file($ruta, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $linea) {
+            [$clave, $valor] = array_pad(explode('=', trim($linea), 2), 2, '');
+            if ($clave === $nombre && $valor !== '') {
+                return $valor;
+            }
+        }
+
+        return null;
+    }
+
     /** Para una instancia del pool y la saca de el (el saldo no gastado vuelve a este servicio). */
     public function parar(int $lease): array
     {
