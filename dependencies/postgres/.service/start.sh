@@ -45,4 +45,5 @@ SQL
 $RUN "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w stop
 
 exec $RUN "$PG_BIN/postgres" -D "$PGDATA" \
-    -c listen_addresses='*' -c port=5432 -c unix_socket_directories=/tmp
+    -c listen_addresses='*' -c port=5432 -c unix_socket_directories=/tmp -c max_connections=10 \
+    -c shared_buffers=32MB -c work_mem=4MB -c maintenance_work_mem=32MB

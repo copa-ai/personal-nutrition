@@ -81,7 +81,7 @@ Si cambias `APP_KEY`, el token guardado deja de poder descifrarse y hay que volv
 
 | Recurso | `at_init` = `at_most` | Por qué |
 |---|---|---|
-| Memoria | 2 GiB | PHP (web + cola) ~0,5 GiB; cada `claude -p` ronda 0,5 GiB, así que el agente corre de uno en uno (constante en `start.sh`) |
+| Memoria | 1,5 GiB | PHP (web + cola) ~0,5 GiB; cada `claude -p` ronda 0,5 GiB, así que el agente corre de uno en uno (constante en `start.sh`) |
 
 La memoria real se mide con `/memoria.json` (lo escribe `start.sh` cada 15 s; incluye el pico observado) antes de recortar el límite. Los dos workers de la cola van en un bucle que los relanza al pasar `--memory`/`--max-jobs`, porque `queue:work` sale por sí solo y, si saliera directo, caería todo el servicio; FrankenPHP arranca con un solo hilo de PHP y escala bajo carga.
 | CPU | 1 núcleo | el modelo es remoto; la CPU solo la usan PHP, el PDF y Claude Code |

@@ -42,8 +42,8 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 # `celaut`: la service-library de Celaut (celaut-project/service-library) como binario estatico. Laravel habla con el nodo con el
 # (App\Services\Celaut\Nodo): lee las redes resueltas, lanza nutrition-postgres si no hay base y lo para al terminar.
-ARG CELAUT_VERSION=v0.6.2
-ARG CELAUT_SHA256=a717e2a417b4c1d6a24d79d475e3fc541ae872be48113b2a4f921fb754e2c651
+ARG CELAUT_VERSION=v0.6.3
+ARG CELAUT_SHA256=4ba4affc7abf4c4ec3d73cb466ea8a68e7ecb26606350e21f40c0a6383ef7368
 ADD https://github.com/celaut-project/service-library/releases/download/${CELAUT_VERSION}/celaut-linux-arm64 /usr/local/bin/celaut
 RUN echo "${CELAUT_SHA256}  /usr/local/bin/celaut" | sha256sum -c - && chmod 755 /usr/local/bin/celaut
 
