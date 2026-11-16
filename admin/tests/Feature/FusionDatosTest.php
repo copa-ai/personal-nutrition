@@ -318,31 +318,6 @@ class FusionDatosTest extends TestCase
         $this->assertSame(['Menu renombrado', 'en_marcha', 99, 'ej-a', 1], array_values($menu), 'cambia el contenido, no la ejecucion');
     }
 
-    public function test_los_mensajes_del_chat_se_unen_y_los_nuevos_se_renumeran_a_continuacion(): void
-    {
-        $this->sql('a', "INSERT INTO chat_conversacion (id, creada_ms, ultima_secuencia, created_at, updated_at) VALUES (1, 1000, 2, '2026-11-01', '2026-11-02 10:00:00')");
-        $this->sql('b', "INSERT INTO chat_conversacion (id, creada_ms, ultima_secuencia, created_at, updated_at) VALUES (1, 1000, 3, '2026-11-01', '2026-11-02 10:00:00')");
-        $mensaje = fn (string $mid, int $seq, string $texto) => ['INSERT INTO chat_mensajes (id, message_id, sequence, contenido, estado, created_ms, updated_ms, created_at, updated_at) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)',
-            [self::uuidMensaje($mid), $mid, $seq, json_encode([['tipo' => 'texto', 'texto' => $texto]]), 'COMPLETED', $seq * 10, $seq * 10, '2026-11-02 10:00:00', '2026-11-02 10:00:00']];
-        foreach ([['a', 'm-comun', 1, 'hola'], ['a', 'm-solo-a', 2, 'en A'], ['b', 'm-comun', 1, 'hola'], ['b', 'm-solo-b', 2, 'en B'], ['b', 'm-solo-b-2', 3, 'en B otra vez']] as [$clave, $mid, $seq, $texto]) {
-            $this->sql($clave, ...$mensaje($mid, $seq, $texto));
-        }
-
-        $resumen = $this->fusionar();
-
-        $this->assertSame(2, $resumen['mensajes_renumerados']);
-        $this->assertSame(
-            ['m-comun' => 1, 'm-solo-a' => 2, 'm-solo-b' => 3, 'm-solo-b-2' => 4],
-            array_column($this->filas('a', 'SELECT message_id, sequence FROM chat_mensajes ORDER BY sequence'), 'sequence', 'message_id'),
-        );
-        $this->assertSame(4, (int) $this->valor('a', 'SELECT ultima_secuencia FROM chat_conversacion'));
-    }
-
-    private static function uuidMensaje(string $mid): string
-    {
-        return '09000000-0000-7000-8000-'.substr(md5($mid), 0, 12);
-    }
-
     public function test_si_el_esquema_no_coincide_no_se_fusiona_nada(): void
     {
         $this->hogar('b', self::H1, 'Casa', '2026-11-02 10:00:00');

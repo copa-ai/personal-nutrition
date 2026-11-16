@@ -137,12 +137,5 @@ class ChatArchivosTest extends TestCase
         $fila = Auditoria::where('evento', 'chat.archivo_subido')->firstOrFail();
         $this->assertSame(hash('sha3-256', $png), $fila->datos['hash']);
         $this->assertStringNotContainsString(base64_encode($png), json_encode($fila->getAttributes()));
-
-        // El alta de la fila tambien queda (la anota el trigger), pero de los bytes solo su tamano.
-        $generica = Auditoria::where('auditable_type', ChatArchivo::class)->firstOrFail();
-        $this->assertSame('creado', $generica->evento);
-        $this->assertSame(ChatArchivo::idDeClave(hash('sha3-256', $png)), $generica->auditable_id);
-        $this->assertSame('[omitido: '.strlen($png).' bytes]', $generica->valores_nuevos['contenido']);
-        $this->assertStringNotContainsString(base64_encode($png), json_encode($generica->getAttributes()));
     }
 }

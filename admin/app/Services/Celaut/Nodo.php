@@ -130,6 +130,17 @@ class Nodo
     }
 
     /**
+     * El saldo de la cuenta de ESTE servicio (`celaut account`, sin --from-seq: solo la cabecera y el saldo, la lectura mas barata).
+     * Cada lectura cuesta MU en el nodo y nunca pasa de `$presupuestoMu`.
+     *
+     * @return array{balance_mu: string|int}
+     */
+    public function cuenta(int $presupuestoMu = 10000): array
+    {
+        return $this->ejecutar(['account', '--budget', (string) $presupuestoMu]);
+    }
+
+    /**
      * Lo que cuesta mantener una dependencia empaquetada: `init_maintenance_cost_mu` es UN tick de mantenimiento (10 s) con los recursos
      * del arranque, a precio de ahora (`celaut cost`).
      *

@@ -62,8 +62,8 @@ class ChatSeguridadTest extends TestCase
         $caddyfile = (string) file_get_contents($ruta);
         [$publico, $interno] = explode('http://127.0.0.1:8001', $caddyfile, 2);
 
-        $this->assertMatchesRegularExpression('/path_regexp\s+\S+\s+\(\?i\)interno\/chat\s+handle\s+@\S+\s*\{\s*respond\s+"[^"]*"\s+404/s', $publico);
-        $this->assertLessThan(strpos($publico, 'php_server'), strpos($publico, 'interno/chat'), 'El bloqueo debe ir antes de php_server');
+        $this->assertMatchesRegularExpression('/path_regexp\s+\S+\s+\(\?i\)interno\/\(chat\|cards\)\s+handle\s+@\S+\s*\{\s*respond\s+"[^"]*"\s+404/s', $publico);
+        $this->assertLessThan(strpos($publico, 'php_server'), strpos($publico, 'interno/'), 'El bloqueo debe ir antes de php_server');
         $this->assertStringContainsString('bind 127.0.0.1', $interno);
         $this->assertStringContainsString('handle /interno/chat/*', $interno);
     }

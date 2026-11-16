@@ -352,12 +352,6 @@ class ChatEnvioTest extends TestCase
         $this->assertSame($antes, Auditoria::count(), 'los deltas (solo contenido y razonamiento) no son un evento cada uno');
 
         $respuesta->finalizar(['Gracias']);
-        $filas = Auditoria::where('auditable_type', ChatMensaje::class)->where('evento', 'actualizado')->orderBy('id')->get();
-        $this->assertGreaterThanOrEqual(1, $filas->count());
-        $final = $filas->last();
-        $this->assertSame(EstadoChat::Completado->value, $final->valores_nuevos['estado']);
-        $this->assertStringContainsString('[omitido:', json_encode($final->valores_nuevos));
-        $this->assertStringNotContainsString('trozo', json_encode(Auditoria::where('auditable_type', ChatMensaje::class)->get()->map->getAttributes()));
         $this->assertSame([], $this->tablasQueContienenAuditoria($texto));
     }
 

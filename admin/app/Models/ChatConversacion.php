@@ -40,7 +40,7 @@ class ChatConversacion extends Model
     private static function asegurar(): void
     {
         if (! static::query()->whereKey(self::ID)->exists()) {
-            DB::table('chat_conversacion')->insertOrIgnore([
+            DB::connection('chat')->table('chat_conversacion')->insertOrIgnore([
                 'id' => self::ID,
                 'creada_ms' => (int) (microtime(true) * 1000),
                 'ultima_secuencia' => 0,

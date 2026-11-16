@@ -43,7 +43,7 @@ trait DosBases
         foreach (self::BASES_FUSION as $clave => $base) {
             $this->pdos[$clave] = $this->abrir($base);
             $this->pdos[$clave]->exec('TRUNCATE users, alimentos, hogares, perfiles, menus, disponibilidad_dias, existencias, feedback, registros_comida, '
-                .'consumos_menu, notifications, agente_archivos, ajustes, chat_conversacion, chat_archivos, chat_mensajes, chat_peticiones_secreto, '
+                .'consumos_menu, notifications, agente_archivos, ajustes, '
                 .'borrados, auditorias CASCADE');
         }
     }

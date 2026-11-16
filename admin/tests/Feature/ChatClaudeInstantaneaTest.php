@@ -83,7 +83,7 @@ class ChatClaudeInstantaneaTest extends TestCase
 
         [$leeme, $dir] = $this->exportar();
 
-        $this->assertSame(['LEEME.json', 'alimentos.json', 'consumos.json', 'conversacion.json', 'disponibilidad.json', 'existencias.json', 'feedback.json',
+        $this->assertSame(['LEEME.json', 'alimentos.json', 'catalogos.json', 'consumos.json', 'conversacion.json', 'disponibilidad.json', 'existencias.json', 'feedback.json',
             'hogares.json', 'menus.json', 'menus/menu-'.$this->menu->id.'.json', 'perfiles.json', 'registros_comida.csv', 'tomas.csv'], $this->archivos($dir));
         $this->assertSame('2026-11-05', $leeme['hoy']);
         $this->assertSame($leeme, json_decode(file_get_contents($dir.'/LEEME.json'), true));
@@ -172,7 +172,7 @@ class ChatClaudeInstantaneaTest extends TestCase
         [, $dir2] = $this->exportar();
         $suma = 0;
         foreach ($this->archivos($dir2) as $f) {
-            $suma += $f === 'LEEME.json' || $f === 'conversacion.json' ? 0 : filesize($dir2.'/'.$f);
+            $suma += $f === 'LEEME.json' || $f === 'catalogos.json' || $f === 'conversacion.json' ? 0 : filesize($dir2.'/'.$f);
         }
         $this->assertLessThanOrEqual(5000, $suma);
     }
@@ -272,7 +272,7 @@ class ChatClaudeInstantaneaTest extends TestCase
 
         $suma = 0;
         foreach ($this->archivos($dir) as $f) {
-            $suma += $f === 'LEEME.json' || $f === 'conversacion.json' || str_starts_with($f, 'fotos/') ? 0 : filesize($dir.'/'.$f);
+            $suma += $f === 'LEEME.json' || $f === 'catalogos.json' || $f === 'conversacion.json' || str_starts_with($f, 'fotos/') ? 0 : filesize($dir.'/'.$f);
         }
         $this->assertLessThanOrEqual(40, $suma);
         $this->assertNotEmpty(array_filter($leeme['archivos'], fn (array $a): bool => isset($a['omitido'])));

@@ -83,6 +83,8 @@ return [
         'horas' => 24,
         'margen' => 1.25,
         'periodo_s' => 10,
+        // Fraccion maxima del saldo conjunto (servicio + base) que puede acabar en la base: el resto se queda para el servicio principal.
+        'reparto' => 0.3,
     ],
     'vigilancia_cada_s' => 300,
 

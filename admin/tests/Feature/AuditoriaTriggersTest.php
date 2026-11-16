@@ -2,11 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Enums\EstadoChat;
 use App\Models\AgenteArchivo;
 use App\Models\Alimento;
 use App\Models\Auditoria;
-use App\Models\ChatMensaje;
 use App\Models\Hogar;
 use App\Models\Menu;
 use App\Models\Perfil;
@@ -182,14 +180,9 @@ class AuditoriaTriggersTest extends TestCase
         $this->actingAs($this->usuario());
 
         AgenteArchivo::create(['ruta' => 'encargos/uno.json', 'contenido' => str_repeat('a', 1234)]);
-        ChatMensaje::create(['message_id' => 'm1', 'sequence' => 1, 'contenido' => [['tipo' => 'texto', 'texto' => 'mi cena secreta']], 'estado' => EstadoChat::Pendiente,
-            'created_ms' => 1, 'updated_ms' => 1]);
 
         $archivo = $this->filas(AgenteArchivo::class)->sole();
         $this->assertSame('[omitido: 1234 bytes]', $archivo->valores_nuevos['contenido']);
-        $mensaje = $this->filas(ChatMensaje::class)->sole();
-        $this->assertStringStartsWith('[omitido:', $mensaje->valores_nuevos['contenido']);
-        $this->assertStringNotContainsString('cena secreta', json_encode($mensaje->getAttributes(), JSON_UNESCAPED_UNICODE));
     }
 
     public function test_los_textos_largos_se_recortan_y_lo_sensible_dentro_de_un_json_se_enmascara(): void
@@ -207,23 +200,6 @@ class AuditoriaTriggersTest extends TestCase
         $this->assertEquals(['api_token' => '***', 'texto' => 'ok'], $cambios[0]->valores_nuevos['cambios']);   // jsonb no conserva el orden de las claves
         $this->assertStringEndsWith('… [truncado]', $cambios[1]->valores_nuevos['cambios']);
         $this->assertStringNotContainsString('abc', json_encode($cambios[1]->getAttributes()));
-    }
-
-    public function test_los_deltas_de_un_mensaje_no_son_eventos_pero_si_su_estado(): void
-    {
-        $this->actingAs($this->usuario());
-        $mensaje = ChatMensaje::create(['message_id' => 'm1', 'sequence' => 1, 'contenido' => [['tipo' => 'texto', 'texto' => 'a']], 'estado' => EstadoChat::EnCurso,
-            'created_ms' => 1, 'updated_ms' => 1]);
-        $antes = Auditoria::count();
-
-        $mensaje->update(['contenido' => [['tipo' => 'texto', 'texto' => 'ab']], 'razonamiento' => 'pienso', 'updated_ms' => 2]);
-        $this->assertSame($antes, Auditoria::count());
-
-        $mensaje->update(['estado' => EstadoChat::Completado, 'contenido' => [['tipo' => 'texto', 'texto' => 'abc']], 'updated_ms' => 3]);
-        $fila = $this->filas(ChatMensaje::class)->last();
-        $this->assertSame('actualizado', $fila->evento);
-        $this->assertSame(['IN_PROGRESS'], [$fila->valores_antiguos['estado']]);
-        $this->assertSame('COMPLETED', $fila->valores_nuevos['estado']);
     }
 
     public function test_una_transaccion_revertida_no_deja_auditoria(): void
