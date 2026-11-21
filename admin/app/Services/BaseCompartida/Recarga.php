@@ -3,6 +3,7 @@
 namespace App\Services\BaseCompartida;
 
 use App\Models\Auditoria;
+use App\Services\Coder\Saldo;
 use App\Services\Celaut\Nodo;
 use App\Services\Celaut\NodoException;
 use Throwable;
@@ -95,6 +96,11 @@ class Recarga
                 }
                 if (($respuesta['success'] ?? false) === true) {
                     $anadido = $cantidad;
+                    // The burn-rate samples of the Coder must not count this deposit as burn.
+                    try {
+                        Saldo::anotarDeposito($cantidad);
+                    } catch (Throwable) {
+                    }
                     $estado = $cantidad >= $faltaTotal ? 'ok' : 'parcial';
 
                     break;

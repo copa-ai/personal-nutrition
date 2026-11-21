@@ -16,7 +16,7 @@ use Throwable;
  *
  * The state lives in App\Models\Ajuste (keys "coder.*"). The files for the other pieces are in config coder.directorio:
  * destino.json (the SSH forwarder reads it) and, in the share, .coder/authorized_keys (the Coder reads it).
- * The money rules (caps, percentage, minimum life) are not in this class. The funding step adds them to the same command.
+ * The money rules (caps, percentage, minimum life) are in the class Saldo.
  *
  * A user error is a CoderException with a Spanish message. A node error is wrapped in a CoderException too.
  */
@@ -31,7 +31,7 @@ class Coder
     public const ERROR = 'error';
 
     /** Settings that belong to one life of the Coder. The stop action sets them to null. */
-    private const DE_VIDA = ['servicio', 'tipo', 'referencia', 'lease', 'uri', 'error', 'lanzado_en', 'enviado_mu', 'horas_vida', 'saldo_mu'];
+    private const DE_VIDA = ['servicio', 'tipo', 'referencia', 'lease', 'uri', 'error', 'lanzado_en', 'enviado_mu', 'horas_vida', 'saldo_mu', 'precio', 'ultimo_rechazo'];
 
     public function __construct(
         private readonly Nodo $nodo,
@@ -230,6 +230,7 @@ class Coder
         $lease = (int) $r['lease'];
         Ajuste::fijar('coder.lease', $lease);
         Ajuste::fijar('coder.uri', (string) $r['uri']);
+        Saldo::olvidarMuestras();   // the start charge is not burn: the burn rate starts again
 
         [$host, $puerto] = $this->separarUri((string) $r['uri']);
         if ($host === null || ! $this->esperarSsh($host, $puerto)) {
@@ -398,7 +399,7 @@ class Coder
             'ajeno' => $estado !== self::NINGUNO && $dueno !== null && $dueno !== Instancia::id(),
             'claves' => count($this->claves()),
             'destino' => is_file($this->rutaDestino()),
-            // The funding step writes these three settings. They are null until it runs.
+            // Saldo writes these three settings. They are null until the first funding pass.
             'horas_vida' => Ajuste::obtener('coder.horas_vida'),
             'saldo_mu' => Ajuste::obtener('coder.saldo_mu'),
             'enviado_mu' => Ajuste::obtener('coder.enviado_mu'),

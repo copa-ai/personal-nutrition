@@ -242,3 +242,105 @@ Context: Nodo has string constructor arguments and the container cannot fill the
 Decision: AppServiceProvider binds Coder::class to Coder::desdeConfig(). Tests replace it with $this->app->instance(). Fakes are subclasses of Nodo, SondaSsh and LectorEspecificacion in tests/Support.
 Reason: The command and the job get the class by injection and need no static call.
 Effect: A fake node needs no shell script. The real process call is tested in NodoCoderProcesoTest.
+
+## 41. One class for the money rules, with a pure core
+Context: The rules must be easy to test. The code that moves balance needs the node, the settings and the audit log.
+Decision: App\Services\Coder\Saldo holds both. The static method decidir takes plain values and returns permitted, reason, failed control and maximum amount. It reads no setting and calls no node. Saldo takes Nodo and Coder in its constructor.
+Reason: A pure method is tested with many cases and no fake. The transfer code is tested with the fake node.
+Effect: The panel step calls addBalance, guardarLimites and status. The command calls vigilar. Rejected option: put the rules in Coder, which already holds the launch code.
+
+## 42. Setting keys for the panel
+Context: The panel step binds to the settings.
+Decision: Three keys are edited by the user: coder.tope_mu (total cap, digit string, null means default), coder.porcentaje_max (integer 1 to 100) and coder.horas_minimas (integer 0 to 8760). The panel calls Saldo::guardarLimites, which validates and calls Ajuste::fijar. The defaults are in config coder.saldo: 24 hours of cap with margin 1.25, 20 percent, 48 hours.
+Reason: One method validates all three values together. A bad value changes nothing.
+Effect: Other keys are written by Saldo only: coder.muestras_saldo, coder.depositado_hijos_mu, coder.precio, coder.ultimo_rechazo, coder.saldo_mu, coder.saldo_nutrition_mu, coder.horas_vida and coder.enviado_mu. The panel only reads them, through status().
+
+## 43. The cap rule is applied as written
+Context: The agreed rule says MU sent during this life plus the current balance must not pass the cap. Sent MU that is still in the balance counts twice.
+Decision: I kept the rule as written. "Sent" means the top-ups only. The MU of the launch (initial balance) are not in it, but they are in the current balance.
+Reason: The rule is agreed. The double count makes it stricter, never looser. With the default cap (24 hours with margin) the Coder lives about one day.
+Effect: The real total that nutrition pays for one Coder is about half of the cap plus the launch MU. A user who wants more raises the cap in the panel.
+
+## 44. The life control looks at the life after the transfer
+Context: The agreed rule refuses when the life of nutrition now is under X hours. A transfer can push a healthy nutrition under X.
+Decision: The control refuses when nutrition would keep less than X hours of burn after the transfer. It needs balance minus amount at least X hours times 3600 times the burn rate. With the life already under X, the maximum is 0.
+Reason: The goal of the control is that nutrition never goes under X because of the Coder. The check on the life now would not give that.
+Effect: The rule is stricter than the agreed one. The boundary is exact: life of exactly X hours after the transfer passes. The check uses integer MU, so the rounding goes up (more MU kept).
+
+## 45. Maximum amount, and a smaller transfer in the loop
+Context: A refusal for the full target would leave the Coder without balance although part of it is allowed.
+Decision: decidir always returns the largest amount that passes the three controls. addBalance never changes the amount: if it is too large, it refuses and says the maximum. The loop sends the maximum instead of the target when the maximum is at least one hour of maintenance (or the whole gap, if smaller).
+Reason: A person who types an amount expects that amount or a clear refusal. The loop has no person: a partial top-up is better than none, but a transfer of a few MU each pass is noise.
+Effect: A refusal of the loop means that even one hour does not fit under the controls.
+
+## 46. Burn rate from balance samples, not from the ledger
+Context: The verification found a better method: celaut account with --from-seq gives the movements, so the rate of the maintenance rows is exact. Nodo has only the cheap read (head and balance).
+Decision: I used samples as the agreed design says. A sample is time, nutrition balance and the total that nutrition deposited in its children. Burn between two samples is balance fall minus the deposit delta. Rate is total burn divided by total time.
+Reason: It needs no new Nodo method and no parsing of unverified JSON. A read costs about 100 MU, and the ledger read costs 100 MU plus one per row.
+Effect: The estimate includes every cost of nutrition, such as tunnel opens. It is noisy for a few samples. Rejected option for now: the ledger method. It can replace tasa() later with no change to the controls.
+
+## 47. The deposit counter covers Recarga too
+Context: nutrition also deposits balance into the PostgreSQL child (App\Services\BaseCompartida\Recarga). Those MU would look like burn.
+Decision: One counter, coder.depositado_hijos_mu, counts every deposit of nutrition. Saldo and Recarga both add to it. Recarga calls Saldo::anotarDeposito inside a try block, so an error there never stops the database top-up.
+Reason: The rate must not depend on who deposited.
+Effect: The counter is read before the balance. A deposit between the two reads can only raise the burn of one interval. The next interval then shows a negative burn and is dropped. The read-and-add of the counter is not atomic across processes. The error is small and goes to the safe side.
+
+## 48. When the rate is unknown
+Context: Too few or bad samples must never allow a transfer.
+Decision: The rate is unknown (null) when there are fewer than 4 samples, when the samples span less than 600 s, when fewer than 3 intervals are valid, or when the rate is 0 or negative. An interval with no time or a negative burn (a refund, a credit) is dropped. All limits are in config coder.saldo.
+Reason: A refund or a credit hides burn. With a long list one dropped interval is acceptable. With the minimum list it is not.
+Effect: After a launch, the first top-up waits about 15 minutes. The initial balance of the launch covers that time (about 1 hour by default). The list keeps at most 72 samples and drops those older than 12 hours.
+
+## 49. Volatile values are written without an audit row
+Context: Ajuste::fijar writes an audit row on each change. A sample every 300 s, with the whole list, would fill the audit log.
+Decision: Saldo writes samples, counters, balances, price and the last refusal with a private method that calls updateOrCreate directly. The three limits and the launch values still use Ajuste::fijar.
+Reason: The audit log is for decisions and money moves, not for readings.
+Effect: Each transfer and each refusal has its own audit row (see 53). A changed limit has the standard setting row.
+
+## 50. Price source and default cap
+Context: The default cap is 24 hours of maintenance at the current price. celaut cost gives three values and no resources.
+Decision: The price is max_maintenance_cost_mu of the running service (one period of 10 s at the largest resources). The class stores it in coder.precio with its read time and reads again after 600 s. Default cap = price times 8640 periods times 1.25. The hours left of the Coder use the same price. The panel view uses stored values only.
+Reason: The largest price is the safe bound. A page view must not wait for the node.
+Effect: Hours left of the Coder are a lower estimate. Until the first read, the cap is unknown and nothing is sent. If the node refuses the price read, the old price stays. The period (10 s) comes from config nutrition.recarga.periodo_s; a real period can last longer, so the hours are an estimate.
+
+## 51. Target and threshold of the loop
+Context: A deposit on each pass would add an audit row every 5 minutes.
+Decision: The loop aims at 12 hours of maintenance (config coder.saldo.objetivo_horas). It tops up only when the balance is under half of the target. It then sends the gap to the target, limited by the controls.
+Reason: The target is under the default cap, so the loop alone does not use it all. A threshold gives few and larger transfers.
+Effect: The Coder balance goes between 6 and 12 hours. A user who wants more adds balance by hand.
+
+## 52. Record first, deposit second, roll back on failure
+Context: A crash between the node call and the record would let the cap be passed again.
+Decision: enviar adds the amount to coder.enviado_mu and to the deposit counter before the call to celaut deposit. If the node refuses (success false) or does not answer, it subtracts the amount again.
+Reason: A crash can only make the counters too high. A counter that is too high only makes the controls stricter.
+Effect: A failed deposit uses no cap. It has an audit row (coder.saldo_fallo) and shows in the panel as the last refusal with the control "deposito".
+
+## 53. Audit events and silence for the loop
+Context: Every refusal must be audited. A loop that is refused for the same reason would write a row every 300 s.
+Decision: Events: coder.saldo_enviado, coder.saldo_rechazado (control, reason, amount, source, maximum, balances) and coder.saldo_fallo. A refusal of a user action is always audited. A refusal of the loop is audited when the control or the source changes, or when the last audit of it is older than one hour. The last refusal is always stored for the panel.
+Reason: The log keeps every change of reason and every hour of a lasting refusal. It does not fill with copies.
+Effect: With a refusal that lasts a day, the log has about 24 rows from the loop. This is a small step away from "every refusal" and it is only for repeated loop refusals.
+
+## 54. A lock for all transfers
+Context: The panel (web process) and the loop can decide at the same time on the same balance.
+Decision: addBalance and topUpToTarget run inside Cache::lock("coder-saldo", 180 s). A busy lock gives a Spanish error for the panel and the action "ocupado" for the loop. If the cache cannot give a lock, the code runs without it.
+Reason: Two transfers with the same balance read could pass the cap together.
+Effect: Both processes run on one VM and share the file or database cache. A lock that a crash leaves is free after 180 s.
+
+## 55. Two loops in start.sh
+Context: A dead Coder must close its SSH pipes in about one minute. The funding pass can run every 300 s, like vigilar-base.
+Decision: The command nutrition:vigilar-coder has the option --saldo. Without it, it only checks the lease (loop of 60 s). With it, it checks the lease and then samples and funds (new loop of 300 s). Both loops end with "|| true" and the command always exits with success. Errors go to the output.
+Reason: One command keeps the logic in one place. Two periods match the two needs.
+Effect: The first funding pass runs at start, not after 300 s. The node gets one celaut list more per 300 s.
+
+## 56. Samples before and after a launch or stop
+Context: The launch charge (initial balance and build cost) leaves the nutrition balance in one step. It is not burn.
+Decision: Saldo samples at every pass, with or without a Coder. The launch code clears the samples after the node accepts the start. Stop and launch clear the last refusal and the stored price.
+Reason: Samples before the launch would show a large false burn. With no Coder the read costs about 100 MU per pass, and it gives a rate before the first launch.
+Effect: A sample taken during a long launch is lost. After a stop, the refund credit is dropped as a negative interval.
+
+## 57. Number limits and input rules
+Context: The amounts come from the panel, from the node and from settings. PHP integers have 64 bits.
+Decision: Every amount is an integer or a string of digits. A balance above 10^15 MU is cut to 10^15. A request above 10^15 is refused as too large. Signs, decimals, exponents, spaces inside and non-text values are refused. The percentage is cut to 0 to 100 inside the rule.
+Reason: With these limits no product or sum can overflow. A refusal is always better than a wrong number.
+Effect: The control "cantidad" is checked before all others and has its own reason text. The three real controls keep the agreed order.

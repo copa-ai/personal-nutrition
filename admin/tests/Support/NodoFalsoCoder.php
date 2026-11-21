@@ -28,6 +28,22 @@ class NodoFalsoCoder extends Nodo
 
     public int $lease = 5;
 
+    /** Balance of nutrition, as `celaut account` gives it. Null: the node does not answer. */
+    public ?string $saldoNutrition = '1000000';
+
+    /** Balance of the Coder lease, as `celaut metrics` gives it. */
+    public string $saldoCoder = '1000';
+
+    public bool $suspendido = false;
+
+    /** If set, `celaut deposit` answers success false with this message. */
+    public ?string $rechazoDeposito = null;
+
+    /** If true, `celaut deposit` throws a NodoException. */
+    public bool $falloDeposito = false;
+
+    public bool $falloMetricas = false;
+
     public function __construct()
     {
         parent::__construct('celaut-falso');
@@ -107,5 +123,43 @@ class NodoFalsoCoder extends Nodo
         $this->pool = [];
 
         return ['refund_mu' => '77'];
+    }
+
+    public function cuenta(int $presupuestoMu = 10000): array
+    {
+        $this->llamadas[] = ['cuenta', []];
+        if ($this->saldoNutrition === null) {
+            throw new NodoException('sin respuesta', true);
+        }
+
+        return ['balance_mu' => $this->saldoNutrition];
+    }
+
+    public function metricas(int $lease): array
+    {
+        $this->llamadas[] = ['metricas', [$lease]];
+        if ($this->falloMetricas) {
+            throw new NodoException('no lease '.$lease);
+        }
+
+        return ['balance_mu' => $this->saldoCoder, 'suspended' => $this->suspendido];
+    }
+
+    public function depositar(int $lease, string $mu): array
+    {
+        $this->llamadas[] = ['depositar', [$lease, $mu]];
+        if ($this->falloDeposito) {
+            throw new NodoException('sin respuesta', true);
+        }
+        if ($this->rechazoDeposito !== null) {
+            return ['success' => false, 'message' => $this->rechazoDeposito];
+        }
+        if ((int) $mu > (int) $this->saldoNutrition) {
+            return ['success' => false, 'message' => 'insufficient balance'];
+        }
+        $this->saldoNutrition = (string) ((int) $this->saldoNutrition - (int) $mu);
+        $this->saldoCoder = (string) ((int) $this->saldoCoder + (int) $mu);
+
+        return ['success' => true, 'message' => 'ok'];
     }
 }

@@ -297,6 +297,10 @@ lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutriti
 # --- Coder watcher: every 60 s, checks that the Coder child is still in the node pool and removes its SSH target if it died ---
 lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutrition:vigilar-coder || true; sleep "$1"; done' vigilante-coder 60
 
+# --- Coder funding: every 300 s, samples the balance of nutrition and tops the Coder up when the three controls pass ---
+# A failure goes to the log and never stops the service (the command exits 0 and the loop ignores its status).
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutrition:vigilar-coder --saldo || true; sleep "$1"; done' vigilante-saldo 300
+
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"
 lanzar como chat CHAT_SECRETO="$CHAT_SECRETO" CHAT_PUERTO=50051 CARDS_PUERTO=50052 CHAT_URL_INTERNA=http://127.0.0.1:8001 -- \

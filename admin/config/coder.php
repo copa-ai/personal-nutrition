@@ -47,4 +47,20 @@ return [
     // The celaut CLI (v0.6.3) cannot read the spec of a service. With this value, a launch whose spec we cannot read is refused.
     // Value "confirmar": the user can confirm in the panel that the service mounts the share.
     'spec_desconocida' => 'rechazar',
+
+    // Funding controls (App\Services\Coder\Saldo). The user changes the three limits in the panel (settings coder.tope_mu,
+    // coder.porcentaje_max, coder.horas_minimas). The values here are the defaults and the constants of the rules.
+    'saldo' => [
+        'horas_tope' => 24,          // default total cap: this many hours of Coder maintenance at the current price
+        'margen' => 1.25,            // margin on the default cap, for a price rise
+        'porcentaje' => 20,          // default: the Coder holds at most this percentage of the joint balance
+        'horas_minimas' => 48,       // default: nutrition keeps at least this many hours of life after a transfer
+        'objetivo_horas' => 12,      // the watcher tops the Coder up to this many hours of maintenance
+        'umbral' => 0.5,             // the watcher tops up only when the balance is under this part of the target
+        'precio_vigente_s' => 600,   // a read of celaut cost stays valid for this time
+        'muestras_minimas' => 4,     // fewer samples: the burn rate is unknown and nothing is sent
+        'segundos_minimos' => 600,   // the samples must span at least this time
+        'muestras_maximo' => 72,     // samples kept (6 hours at one per 300 s)
+        'muestras_vigencia_s' => 43200,
+    ],
 ];
