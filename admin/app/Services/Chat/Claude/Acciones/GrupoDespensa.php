@@ -32,7 +32,7 @@ class GrupoDespensa implements GrupoAcciones
             'crear_alimento' => ['tipo', 'nombre', 'categoria', 'unidad'],
             'editar_alimento' => ['tipo', 'alimento', 'nombre', 'categoria', 'unidad'],
             'borrar_alimento' => ['tipo', 'alimento'],
-            'anadir_existencia' => ['tipo', 'hogar', 'alimento', 'cantidad', 'unidad', 'caduca_el'],
+            'anadir_existencia' => ['tipo', 'alimento', 'cantidad', 'unidad', 'caduca_el'],
             'editar_existencia' => ['tipo', 'existencia_id', 'cantidad', 'unidad', 'caduca_el'],
             'borrar_existencia' => ['tipo', 'existencia_id'],
             'restar_existencias' => ['tipo', 'items'],
@@ -136,7 +136,7 @@ class GrupoDespensa implements GrupoAcciones
     /** @param  array<string, mixed>  $a */
     private function validarAnadirExistencia(array $a): array|string
     {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
+        $hogar = $this->v->hogar();
         $alimento = $this->v->alimento($a['alimento'] ?? null);
         $cantidad = $this->v->numero($a['cantidad'] ?? null, 'cantidad', 0.01, 1000000);
         $caduca = ($a['caduca_el'] ?? null) === null ? null : $this->v->fechaReal($a['caduca_el'], 'caduca_el');

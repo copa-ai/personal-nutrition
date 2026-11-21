@@ -6,6 +6,7 @@ use App\Filament\Resources\Alimentos\Schemas\AlimentoForm;
 use App\Models\Alimento;
 use App\Models\Hogar;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
@@ -17,8 +18,7 @@ class ExistenciaForm
         return $schema
             ->columns(2)
             ->components([
-                Select::make('hogar_id')->label('Hogar')->relationship('hogar', 'nombre')->required()
-                    ->default(fn (): ?string => Hogar::query()->value('id')),
+                Hidden::make('hogar_id')->default(fn (): string => Hogar::unico()->id),
                 Select::make('alimento_id')->label('Alimento')->relationship('alimento', 'nombre')->required()
                     ->searchable()->preload()->createOptionForm(AlimentoForm::campos()),
                 TextInput::make('cantidad')->label('Cantidad')->numeric()->minValue(0)->required(),

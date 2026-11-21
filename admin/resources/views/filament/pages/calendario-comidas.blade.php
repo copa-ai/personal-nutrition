@@ -96,7 +96,7 @@
 
     @if ($perfil === null)
         <x-filament::section>
-            Todavía no hay ningún hogar con perfiles. Crea un hogar y sus perfiles para ver aquí lo que come cada uno.
+            Todavía no hay ningún perfil. Créalos en Perfiles para ver aquí lo que come cada uno.
         </x-filament::section>
     @else
         <div class="cal cal--{{ $vista }}">
@@ -108,15 +108,6 @@
                     <h2 class="cal-titulo">{{ $titulo }}</h2>
                 </div>
                 <div class="cal-grupo">
-                    @if ($hogares->count() > 1)
-                        <x-filament::input.wrapper>
-                            <x-filament::input.select wire:model.live="hogarId" aria-label="Hogar">
-                                @foreach ($hogares as $id => $nombre)
-                                    <option value="{{ $id }}">{{ $nombre }}</option>
-                                @endforeach
-                            </x-filament::input.select>
-                        </x-filament::input.wrapper>
-                    @endif
                     <x-filament::input.wrapper>
                         <x-filament::input.select wire:model.live="perfilId" aria-label="Perfil">
                             @foreach ($perfiles as $id => $nombre)

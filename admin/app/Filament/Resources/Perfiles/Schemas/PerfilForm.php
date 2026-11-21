@@ -4,7 +4,7 @@ namespace App\Filament\Resources\Perfiles\Schemas;
 
 use App\Models\Hogar;
 use Closure;
-use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -20,8 +20,7 @@ class PerfilForm
         return $schema
             ->components([
                 Section::make('Persona')->columns(2)->schema([
-                    Select::make('hogar_id')->label('Hogar')->relationship('hogar', 'nombre')->required()
-                        ->default(fn (): ?string => Hogar::query()->value('id')),
+                    Hidden::make('hogar_id')->default(fn (): string => Hogar::unico()->id),
                     TextInput::make('nombre')->label('Nombre')->required()->maxLength(255),
                     Toggle::make('activo')->label('Activo')->default(true)
                         ->helperText('Un perfil inactivo no entra en los menús nuevos.'),

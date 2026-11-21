@@ -73,23 +73,10 @@ class Validadores
         return $this->rechazo('Falta el perfil (su id).');
     }
 
-    /** Hogar por id, o por nombre exacto si es unico. */
-    public function hogar(mixed $valor, string $campo = 'hogar'): Hogar|Rechazo
+    /** El hogar de la aplicación: hay uno solo, así que las acciones no lo indican (si lo traen, se ignora). */
+    public function hogar(mixed $valor = null, string $campo = 'hogar'): Hogar
     {
-        if (is_string($valor) && Str::isUuid($valor)) {
-            return Hogar::query()->find($valor) ?? $this->rechazo("No existe un hogar con id {$valor}.");
-        }
-        if (is_string($valor) && trim($valor) !== '') {
-            $encontrados = Hogar::query()->whereRaw('lower(nombre) = ?', [mb_strtolower(trim($valor))])->get();
-
-            return match ($encontrados->count()) {
-                1 => $encontrados->first(),
-                0 => $this->rechazo('No existe un hogar llamado «'.mb_substr($valor, 0, 60).'».'),
-                default => $this->rechazo('Hay varios hogares llamados «'.mb_substr($valor, 0, 60).'»: hay que dar su id.'),
-            };
-        }
-
-        return $this->rechazo("Falta {$campo} (el id del hogar).");
+        return Hogar::unico();
     }
 
     /** Alimento por id, o por nombre exacto (el nombre es unico en el catalogo). */

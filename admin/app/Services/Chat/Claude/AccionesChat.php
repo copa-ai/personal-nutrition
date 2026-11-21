@@ -26,7 +26,7 @@ use Throwable;
  *
  * Archivo: {"acciones": [ {"tipo": "...", ...}, ... ]}. Catalogo (campos en cada Grupo*; * = pide confirmacion):
  *   comidas   registrar_comida corregir_comida borrar_registro_comida* anotar_feedback editar_feedback borrar_feedback*
- *   personas  crear_hogar renombrar_hogar borrar_hogar* crear_perfil editar_perfil borrar_perfil* fijar_tiempos borrar_tiempos*
+ *   personas  renombrar_hogar crear_perfil editar_perfil borrar_perfil* fijar_tiempos borrar_tiempos*
  *   despensa  crear_alimento editar_alimento borrar_alimento* anadir_existencia editar_existencia borrar_existencia* restar_existencias*
  *   menus     crear_menu generar_menu reintentar_generacion cancelar_generacion* activar_menu(*) elegir_opcion editar_menu_con_comentario*
  *             intercambiar_menu descartar_cambios_menu* editar_opcion_menu cambiar_categorias_toma borrar_menu*

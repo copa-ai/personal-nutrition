@@ -10,14 +10,14 @@ use App\Services\Chat\Claude\Rechazo;
 use App\Services\Chat\Claude\Validadores;
 
 /**
- * Hogares, perfiles y tiempos de cocinado por dia de la semana (lo que se edita en Hogares y Perfiles del panel).
- *   crear_hogar {nombre}                         renombrar_hogar {hogar, nombre}        borrar_hogar {hogar} (confirmacion)
- *   crear_perfil {hogar, nombre, activo?, objetivo?, kcal_diarias?, proteina_pct?, carbohidratos_pct?, grasa_pct?, restricciones?, notas?}
+ * Hogares, perfiles y tiempos de cocinado por dia de la semana (lo que se edita en Mi hogar, Tiempos de cocinado y Perfiles del panel).
+ *   renombrar_hogar {nombre}                     (el hogar es uno solo: no se crea, ni se borra, ni se indica en las acciones)
+ *   crear_perfil {nombre, activo?, objetivo?, kcal_diarias?, proteina_pct?, carbohidratos_pct?, grasa_pct?, restricciones?, notas?}
  *   editar_perfil {perfil, nombre?, activo?, objetivo?, kcal_diarias?, proteina_pct?, carbohidratos_pct?, grasa_pct?, restricciones?, notas?}
  *   borrar_perfil {perfil} (confirmacion)
- *   fijar_tiempos {hogar, dia_semana: 1-7, minutos_desayuno?, minutos_almuerzo?, minutos_comida?, minutos_merienda?, minutos_cena?}
- *   borrar_tiempos {hogar, dia_semana} (confirmacion)
- * `hogar` y `perfil` son un id (o un nombre exacto si es unico). Un minutos_* a null es «no se cocina» (comida, cena) o «sin limite».
+ *   fijar_tiempos {dia_semana: 1-7, minutos_desayuno?, minutos_almuerzo?, minutos_comida?, minutos_merienda?, minutos_cena?}
+ *   borrar_tiempos {dia_semana} (confirmacion)
+ * `perfil` es un id (o un nombre exacto si es unico). Un minutos_* a null es «no se cocina» (comida, cena) o «sin limite».
  */
 class GrupoPersonas implements GrupoAcciones
 {
@@ -30,23 +30,19 @@ class GrupoPersonas implements GrupoAcciones
     public function claves(): array
     {
         return [
-            'crear_hogar' => ['tipo', 'nombre'],
-            'renombrar_hogar' => ['tipo', 'hogar', 'nombre'],
-            'borrar_hogar' => ['tipo', 'hogar'],
-            'crear_perfil' => ['tipo', 'hogar', ...self::CAMPOS_PERFIL],
+            'renombrar_hogar' => ['tipo', 'nombre'],
+            'crear_perfil' => ['tipo', ...self::CAMPOS_PERFIL],
             'editar_perfil' => ['tipo', 'perfil', ...self::CAMPOS_PERFIL],
             'borrar_perfil' => ['tipo', 'perfil'],
-            'fijar_tiempos' => ['tipo', 'hogar', 'dia_semana', ...self::MINUTOS],
-            'borrar_tiempos' => ['tipo', 'hogar', 'dia_semana'],
+            'fijar_tiempos' => ['tipo', 'dia_semana', ...self::MINUTOS],
+            'borrar_tiempos' => ['tipo', 'dia_semana'],
         ];
     }
 
     public function validar(string $tipo, array $accion): array|string
     {
         return match ($tipo) {
-            'crear_hogar' => $this->validarCrearHogar($accion),
             'renombrar_hogar' => $this->validarRenombrarHogar($accion),
-            'borrar_hogar' => $this->validarBorrarHogar($accion),
             'crear_perfil' => $this->validarCrearPerfil($accion),
             'editar_perfil' => $this->validarEditarPerfil($accion),
             'borrar_perfil' => $this->validarBorrarPerfil($accion),
@@ -57,24 +53,13 @@ class GrupoPersonas implements GrupoAcciones
 
     public function destructiva(array $normalizada): bool
     {
-        return in_array($normalizada['tipo'], ['borrar_hogar', 'borrar_perfil', 'borrar_tiempos'], true);
-    }
-
-    /** @param  array<string, mixed>  $a */
-    private function validarCrearHogar(array $a): array|string
-    {
-        $nombre = $this->v->texto($a['nombre'] ?? null, 'nombre', 1, 255);
-        if (($motivo = $this->v->motivo($nombre)) !== null) {
-            return $motivo;
-        }
-
-        return ['tipo' => 'crear_hogar', 'nombre' => $nombre, 'quiero' => "Crear el hogar «{$nombre}»"];
+        return in_array($normalizada['tipo'], ['borrar_perfil', 'borrar_tiempos'], true);
     }
 
     /** @param  array<string, mixed>  $a */
     private function validarRenombrarHogar(array $a): array|string
     {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
+        $hogar = $this->v->hogar();
         $nombre = $this->v->texto($a['nombre'] ?? null, 'nombre', 1, 255);
         if (($motivo = $this->v->motivo($hogar, $nombre)) !== null) {
             return $motivo;
@@ -84,23 +69,9 @@ class GrupoPersonas implements GrupoAcciones
     }
 
     /** @param  array<string, mixed>  $a */
-    private function validarBorrarHogar(array $a): array|string
-    {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
-        if (($motivo = $this->v->motivo($hogar)) !== null) {
-            return $motivo;
-        }
-        $perfiles = $hogar->perfiles()->count();
-        $menus = $hogar->menus()->count();
-
-        return ['tipo' => 'borrar_hogar', 'hogar_id' => $hogar->id, 'nombre' => $hogar->nombre,
-            'quiero' => "Borrar el hogar «{$hogar->nombre}» con sus {$perfiles} perfiles, {$menus} menús, existencias y tiempos"];
-    }
-
-    /** @param  array<string, mixed>  $a */
     private function validarCrearPerfil(array $a): array|string
     {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
+        $hogar = $this->v->hogar();
         $campos = $this->camposPerfil($a, true);
         if (($motivo = $this->v->motivo($hogar)) !== null) {
             return $motivo;
@@ -156,7 +127,7 @@ class GrupoPersonas implements GrupoAcciones
     /** @param  array<string, mixed>  $a */
     private function validarFijarTiempos(array $a): array|string
     {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
+        $hogar = $this->v->hogar();
         $dia = $this->v->enum(DiaSemana::class, $a['dia_semana'] ?? null, 'dia_semana');
         $minutos = [];
         foreach (self::MINUTOS as $campo) {
@@ -182,7 +153,7 @@ class GrupoPersonas implements GrupoAcciones
     /** @param  array<string, mixed>  $a */
     private function validarBorrarTiempos(array $a): array|string
     {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
+        $hogar = $this->v->hogar();
         $dia = $this->v->enum(DiaSemana::class, $a['dia_semana'] ?? null, 'dia_semana');
         if (($motivo = $this->v->motivo($hogar, $dia)) !== null) {
             return $motivo;
@@ -267,20 +238,10 @@ class GrupoPersonas implements GrupoAcciones
     public function aplicar(array $a): string
     {
         switch ($a['tipo']) {
-            case 'crear_hogar':
-                (new Hogar)->fill(['nombre' => $a['nombre']])->save();
-
-                return "Creado el hogar «{$a['nombre']}».";
-
             case 'renombrar_hogar':
                 Hogar::query()->findOrFail($a['hogar_id'])->fill(['nombre' => $a['nombre']])->save();
 
                 return "Hogar renombrado a «{$a['nombre']}».";
-
-            case 'borrar_hogar':
-                Hogar::query()->findOrFail($a['hogar_id'])->delete();
-
-                return "Borrado el hogar «{$a['nombre']}».";
 
             case 'crear_perfil':
                 (new Perfil)->fill(['hogar_id' => $a['hogar_id']] + $a['campos'])->save();

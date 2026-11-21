@@ -7,7 +7,6 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
@@ -18,13 +17,11 @@ class PerfilesTable
         return $table
             ->columns([
                 TextColumn::make('nombre')->label('Nombre')->searchable()->sortable(),
-                TextColumn::make('hogar.nombre')->label('Hogar')->sortable()->toggleable(),
                 IconColumn::make('activo')->label('Activo')->boolean(),
                 TextColumn::make('kcal_diarias')->label('Kcal/día')->numeric()->sortable()->toggleable(),
                 TextColumn::make('restricciones')->label('Restricciones')->badge()->color('warning')->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('hogar')->label('Hogar')->relationship('hogar', 'nombre'),
                 TernaryFilter::make('activo')->label('Activo'),
             ])
             ->recordActions([

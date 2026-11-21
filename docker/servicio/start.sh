@@ -201,6 +201,7 @@ fase migraciones ok
 agente_vigilar
 fase usuario "en curso"
 app php artisan usuario:inicial
+app php artisan hogar:inicial
 fase usuario ok
 
 # --- Web: FrankenPHP (Caddy con PHP embebido; HTTP, el TLS lo pone el tunel), con el entorno de la app y nada mas ---

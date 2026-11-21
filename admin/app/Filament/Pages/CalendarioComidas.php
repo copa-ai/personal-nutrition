@@ -36,8 +36,6 @@ class CalendarioComidas extends Page
     /** Un día cualquiera del mes o de la semana que se está viendo (Y-m-d). */
     public string $ancla = '';
 
-    public ?string $hogarId = null;
-
     public ?string $perfilId = null;
 
     /** Día del que se enseña el detalle (Y-m-d). */
@@ -46,14 +44,6 @@ class CalendarioComidas extends Page
     public function mount(): void
     {
         $this->ancla = $this->hoy()->toDateString();
-        $this->hogarId = Hogar::query()->orderBy('nombre')->value('id');
-    }
-
-    /** Otro hogar tiene otros perfiles: se empieza por el primero. */
-    public function updatedHogarId(): void
-    {
-        $this->perfilId = null;
-        $this->diaElegido = null;
     }
 
     public function cambiarVista(string $vista): void
@@ -84,12 +74,11 @@ class CalendarioComidas extends Page
     /** @return array<string, mixed> */
     public function getViewData(): array
     {
-        $hogares = Hogar::query()->orderBy('nombre')->pluck('nombre', 'id');
-        $hogar = (Str::isUuid((string) $this->hogarId) ? Hogar::query()->find($this->hogarId) : null) ?? Hogar::query()->orderBy('nombre')->first();
-        $perfiles = $hogar ? Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->pluck('nombre', 'id') : collect();
-        $perfil = $hogar ? (Str::isUuid((string) $this->perfilId) ? Perfil::query()->where('hogar_id', $hogar->id)->find($this->perfilId) : null) ?? Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->first() : null;
+        $hogar = Hogar::unico();
+        $perfiles = Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->pluck('nombre', 'id');
+        $perfil = (Str::isUuid((string) $this->perfilId) ? Perfil::query()->where('hogar_id', $hogar->id)->find($this->perfilId) : null) ?? Perfil::query()->where('hogar_id', $hogar->id)->orderBy('nombre')->first();
 
-        $datos = ['hogares' => $hogares, 'perfiles' => $perfiles, 'perfil' => $perfil, 'hogar' => $hogar, 'vista' => $this->vista];
+        $datos = ['perfiles' => $perfiles, 'perfil' => $perfil, 'hogar' => $hogar, 'vista' => $this->vista];
         if ($perfil === null) {
             return $datos;
         }

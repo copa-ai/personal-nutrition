@@ -154,9 +154,7 @@ class CalendarioComidasTest extends TestCase
         $this->pagina()->call('cambiarVista', 'año')->assertSet('vista', 'mes')
             ->call('elegirDia', 'no-es-una-fecha')->assertSet('diaElegido', null)
             ->set('ancla', 'basura')->assertSuccessful()->assertSee('Noviembre 2026')
-            ->set('hogarId', (string) Str::uuid())->assertSuccessful()
             ->set('perfilId', (string) Str::uuid())->assertSuccessful()
-            ->set('hogarId', 'basura')->assertSuccessful()
             ->set('perfilId', 'basura')->assertSuccessful();
     }
 
@@ -166,13 +164,13 @@ class CalendarioComidasTest extends TestCase
         $ajeno = Perfil::factory()->for($otro)->create(['nombre' => 'Ajeno']);
         $this->comido('2026-11-02', MomentoComida::Comida, 'Secreto', $ajeno->id);
 
-        Livewire::test(CalendarioComidas::class)->set('hogarId', $this->hogar->id)->set('perfilId', $ajeno->id)->assertDontSee('Secreto');
+        Livewire::test(CalendarioComidas::class)->set('perfilId', $ajeno->id)->assertDontSee('Secreto');
     }
 
-    public function test_sin_hogares_se_explica_que_falta_crearlos(): void
+    public function test_sin_perfiles_se_explica_que_falta_crearlos(): void
     {
-        Hogar::query()->delete();
+        Perfil::query()->delete();
 
-        Livewire::test(CalendarioComidas::class)->assertSuccessful()->assertSee('Todavía no hay ningún hogar con perfiles');
+        Livewire::test(CalendarioComidas::class)->assertSuccessful()->assertSee('Todavía no hay ningún perfil');
     }
 }

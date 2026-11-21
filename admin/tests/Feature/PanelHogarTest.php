@@ -9,9 +9,9 @@ use App\Enums\TipoFeedback;
 use App\Filament\Resources\Alimentos\Pages\ListAlimentos;
 use App\Filament\Resources\Existencias\Pages\CreateExistencia;
 use App\Filament\Resources\Existencias\Pages\ListExistencias;
-use App\Filament\Resources\Hogares\Pages\EditHogar;
-use App\Filament\Resources\Hogares\Pages\ListHogares;
-use App\Filament\Resources\Hogares\RelationManagers\DisponibilidadRelationManager;
+use App\Filament\Pages\AjustesHogar;
+use App\Filament\Resources\Tiempos\Pages\CreateTiempo;
+use App\Filament\Resources\Tiempos\Pages\ListTiempos;
 use App\Filament\Resources\Perfiles\Pages\CreatePerfil;
 use App\Filament\Resources\Perfiles\Pages\EditPerfil;
 use App\Filament\Resources\Perfiles\Pages\ListPerfiles;
@@ -44,7 +44,7 @@ class PanelHogarTest extends TestCase
         $hogar = Hogar::factory()->create();
         Perfil::factory()->for($hogar)->create();
 
-        foreach ([ListHogares::class, ListPerfiles::class, ListAlimentos::class, ListExistencias::class, ListRegistrosComida::class] as $pagina) {
+        foreach ([ListTiempos::class, ListPerfiles::class, ListAlimentos::class, ListExistencias::class, ListRegistrosComida::class] as $pagina) {
             Livewire::test($pagina)->assertSuccessful();
         }
     }
@@ -94,20 +94,37 @@ class PanelHogarTest extends TestCase
 
     public function test_los_tiempos_del_hogar_se_crean_y_no_se_repite_el_dia(): void
     {
-        $hogar = Hogar::factory()->create();
+        $hogar = Hogar::unico();
 
-        Livewire::test(DisponibilidadRelationManager::class, ['ownerRecord' => $hogar, 'pageClass' => EditHogar::class])
-            ->callAction(TestAction::make('create')->table(), ['dia_semana' => DiaSemana::Lunes->value, 'minutos_comida' => 30, 'minutos_cena' => null])
+        Livewire::test(CreateTiempo::class)
+            ->fillForm(['dia_semana' => DiaSemana::Lunes->value, 'minutos_comida' => 30, 'minutos_cena' => null])
+            ->call('create')
             ->assertHasNoFormErrors();
 
         $this->assertSame(1, $hogar->disponibilidad()->count());
         $this->assertNull($hogar->disponibilidad()->sole()->minutos_cena);
 
-        Livewire::test(DisponibilidadRelationManager::class, ['ownerRecord' => $hogar, 'pageClass' => EditHogar::class])
-            ->callAction(TestAction::make('create')->table(), ['dia_semana' => DiaSemana::Lunes->value, 'minutos_comida' => 20])
+        Livewire::test(CreateTiempo::class)
+            ->fillForm(['dia_semana' => DiaSemana::Lunes->value, 'minutos_comida' => 20])
+            ->call('create')
             ->assertHasFormErrors(['dia_semana']);
 
         $this->assertSame(1, $hogar->disponibilidad()->count());
+    }
+
+    public function test_el_hogar_es_unico_se_crea_solo_y_se_ajusta_desde_mi_hogar(): void
+    {
+        $this->assertSame(0, Hogar::query()->count());
+        $hogar = Hogar::unico();
+        $this->assertSame([$hogar->id, 2], [Hogar::unico()->id, $hogar->platos_por_toma]);
+        $this->assertSame(1, Hogar::query()->count());
+
+        Livewire::test(AjustesHogar::class)
+            ->assertFormSet(['nombre' => 'Casa', 'platos_por_toma' => 2])
+            ->fillForm(['nombre' => 'Mi casa', 'platos_por_toma' => 3])
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(['Mi casa', 3], [$hogar->fresh()->nombre, $hogar->fresh()->platos_por_toma]);
     }
 
     public function test_el_feedback_se_crea_desde_el_perfil(): void

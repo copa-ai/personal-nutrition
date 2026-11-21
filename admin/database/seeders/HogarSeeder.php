@@ -14,7 +14,7 @@ class HogarSeeder extends Seeder
 {
     public function run(): void
     {
-        $hogar = Hogar::query()->create(['nombre' => 'Casa']);
+        $hogar = Hogar::unico();
 
         foreach (DiaSemana::cases() as $dia) {
             $finDeSemana = $dia->value >= 6;

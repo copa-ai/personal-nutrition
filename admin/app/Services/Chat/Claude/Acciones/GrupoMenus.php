@@ -29,7 +29,7 @@ class GrupoMenus implements GrupoAcciones
     public function claves(): array
     {
         return [
-            'crear_menu' => ['tipo', 'hogar', 'fecha_inicio', 'nombre', 'generar'],
+            'crear_menu' => ['tipo', 'fecha_inicio', 'nombre', 'generar'],
             'generar_menu' => ['tipo', 'menu_id'],
             'reintentar_generacion' => ['tipo', 'menu_id'],
             'cancelar_generacion' => ['tipo', 'menu_id', 'forzar'],
@@ -86,7 +86,7 @@ class GrupoMenus implements GrupoAcciones
     /** @param  array<string, mixed>  $a */
     private function validarCrear(array $a): array|string
     {
-        $hogar = $this->v->hogar($a['hogar'] ?? null);
+        $hogar = $this->v->hogar();
         $inicio = $this->v->fechaDeMenu($a['fecha_inicio'] ?? null, 'fecha_inicio');
         $generar = $a['generar'] ?? false;
         if (($motivo = $this->v->motivo($hogar, $inicio)) !== null) {

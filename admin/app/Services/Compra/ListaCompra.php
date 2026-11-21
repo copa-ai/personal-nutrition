@@ -27,7 +27,7 @@ class ListaCompra
 
     public function hogar(): ?Hogar
     {
-        return Hogar::query()->orderBy('nombre')->first();
+        return Hogar::unico();
     }
 
     /** Identificador del mazo: cambia cuando cambia el menu activo, sus cambios o las opciones elegidas. Null si no hay menu con contenido. */

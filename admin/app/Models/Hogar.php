@@ -20,6 +20,19 @@ class Hogar extends Model
 
     protected $table = 'hogares';
 
+    /** Id del hogar que crea `hogar:inicial`. Es fijo para que dos instancias que comparten base (y lo crean a la vez) acaben con una sola fila al fusionarse. */
+    public const ID_INICIAL = '0192f3c4-0000-7000-8000-00000000a001';
+
+    /**
+     * El hogar de la aplicación: hay uno solo, nunca se elige. Si no existe todavía (base recién migrada, pruebas) se crea.
+     * Si hubiera varios por datos antiguos, es el más antiguo.
+     */
+    public static function unico(): self
+    {
+        return self::query()->oldest()->orderBy('id')->first()
+            ?? self::query()->forceCreate(['id' => self::ID_INICIAL, 'nombre' => 'Casa', 'platos_por_toma' => 2]);
+    }
+
     protected function casts(): array
     {
         return ['cambios' => 'array', 'platos_por_toma' => 'integer'];

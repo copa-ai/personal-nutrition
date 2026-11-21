@@ -38,13 +38,6 @@ class RegistroComidaForm
                 Hidden::make('otra_cosa')->default(false)->dehydrated(fn (string $operation): bool => $operation === 'create'),
                 // Lo último que se rellenó solo con la receta programada: sirve para no borrar lo que el usuario escribió él.
                 Hidden::make('valor_programado')->default(fn (string $operation): ?string => $operation === 'create' ? self::valoresIniciales()['descripcion'] : null)->dehydrated(false),
-                Select::make('hogar_id')->label('Hogar')->options(fn (): array => Hogar::query()->orderBy('nombre')->pluck('nombre', 'id')->all())
-                    ->default(fn (): ?string => self::hogarUnico())->live()->dehydrated(false)->required()
-                    ->visible(fn (string $operation): bool => $operation === 'create' && self::hogarUnico() === null)
-                    ->afterStateUpdated(function (Get $get, Set $set, string $operation): void {
-                        $set('perfiles', []);
-                        self::refrescar($get, $set, $operation);
-                    }),
                 Select::make('perfiles')->label('Perfiles')->multiple()->required()->searchable()->live()
                     ->options(fn (Get $get): array => self::perfilesDelHogar(self::hogarDe(self::estado($get))))
                     ->helperText('Se anota una comida por cada perfil elegido.')
@@ -78,29 +71,19 @@ class RegistroComidaForm
     /** Lo que el formulario sabe ahora, en un array, para decidir qué hay programado. */
     public static function estado(Get $get): array
     {
-        return ['hogar_id' => $get('hogar_id'), 'perfiles' => $get('perfiles'), 'fecha' => $get('fecha'), 'momento' => $get('momento'), 'otra_cosa' => $get('otra_cosa')];
+        return ['perfiles' => $get('perfiles'), 'fecha' => $get('fecha'), 'momento' => $get('momento'), 'otra_cosa' => $get('otra_cosa')];
     }
 
-    /** Id del hogar si solo hay uno; null si hay varios o ninguno. */
-    public static function hogarUnico(): ?string
+    /** Id del hogar de la aplicación (uno solo). */
+    public static function hogarUnico(): string
     {
-        $ids = Hogar::query()->limit(2)->pluck('id');
-
-        return $ids->count() === 1 ? (string) $ids->first() : null;
+        return (string) Hogar::unico()->id;
     }
 
-    /** El hogar elegido, el único que haya o el del primer perfil elegido. */
+    /** El hogar de la aplicación; el estado del formulario ya no elige hogar. */
     public static function hogarDe(array $estado): ?string
     {
-        if (! empty($estado['hogar_id'])) {
-            return (string) $estado['hogar_id'];
-        }
-        if (($unico = self::hogarUnico()) !== null) {
-            return $unico;
-        }
-        $perfil = $estado['perfiles'][0] ?? null;
-
-        return $perfil ? Perfil::query()->whereKey($perfil)->value('hogar_id') : null;
+        return self::hogarUnico();
     }
 
     /** @return array<string, string> */

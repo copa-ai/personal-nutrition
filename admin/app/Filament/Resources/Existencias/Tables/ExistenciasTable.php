@@ -7,7 +7,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class ExistenciasTable
@@ -27,10 +26,8 @@ class ExistenciasTable
                         $state->diffInDays(now()) <= 3 => 'warning',
                         default => null,
                     }),
-                TextColumn::make('hogar.nombre')->label('Hogar')->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('alimento.nombre')
-            ->filters([SelectFilter::make('hogar')->label('Hogar')->relationship('hogar', 'nombre')])
             ->recordActions([EditAction::make()])
             ->toolbarActions([
                 BulkActionGroup::make([

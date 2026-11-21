@@ -61,7 +61,7 @@ class RespondedorBot implements Respondedor
     public function contestar(ChatMensaje $pregunta): Respuesta
     {
         $hoy = now()->toImmutable();
-        $hogar = Hogar::query()->orderBy('nombre')->first();
+        $hogar = Hogar::unico();
         /** @var Collection<int, Perfil> $perfiles */
         $perfiles = $hogar ? $hogar->perfiles()->activos()->orderBy('nombre')->get() : collect();
         $texto = $pregunta->texto();
@@ -151,9 +151,6 @@ class RespondedorBot implements Respondedor
     private function menu(Intencion $intencion, ?Hogar $hogar, Collection $perfiles, CarbonImmutable $hoy): Respuesta
     {
         $menu = $hogar?->menuActivo;
-        if ($hogar === null) {
-            return new Respuesta('Todavía no hay ningún hogar configurado. Créalo en el panel de administración y vuelvo a ayudarte.');
-        }
         if (! $menu) {
             return new Respuesta('El hogar no tiene un menú activo todavía. Genera uno desde el panel (Menús) y te lo enseño aquí.', $this->sugerencias(['Despensa', 'Ayuda']));
         }
@@ -223,9 +220,6 @@ class RespondedorBot implements Respondedor
 
     private function despensa(?Hogar $hogar, CarbonImmutable $hoy): Respuesta
     {
-        if ($hogar === null) {
-            return new Respuesta('Todavía no hay ningún hogar configurado. Créalo en el panel de administración.');
-        }
         $widget = $this->mostrar(Vistas::despensa($hogar->existencias()->with('alimento')->get(), $hoy), 'La despensa es demasiado larga para mostrarla entera. Mírala en el panel (Existencias).');
 
         return new Respuesta(Mensaje::nuevo()->texto('Esto es lo que hay en casa:')->render()."\n\n".$widget, $this->sugerencias(['Menú de hoy', 'Registrar lo que he comido']));
