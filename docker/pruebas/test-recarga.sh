@@ -141,7 +141,7 @@ verificar "change in lang reloads" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ]"
 PID_WEB=$(cat "$C/web.pid")
 tail -f /dev/null & AJENO=$!
 pid_valido "$AJENO" frankenphp && mal "pid_valido accepts a wrong command line" || ok "pid_valido rejects a wrong command line"
-APP_UID_ANTES=$APP_UID; APP_UID=0
+APP_UID_ANTES=$APP_UID; APP_UID=$(( $(id -u) + 1 ))   # an owner that is not the owner of the test process (also true when the test runs as root)
 pid_valido "$PID_WEB" sleep && mal "pid_valido accepts a wrong owner" || ok "pid_valido rejects a wrong owner"
 APP_UID=$APP_UID_ANTES
 echo "$AJENO" > "$C/web.pid"
