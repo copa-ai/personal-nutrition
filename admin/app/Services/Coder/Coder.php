@@ -527,7 +527,7 @@ class Coder
     }
 
     /** Write a file by rename in the same directory: a reader sees the old file or the new file, never half of it. */
-    private function escribirAtomico(string $ruta, string $contenido, int $modo): void
+    public static function escribirAtomico(string $ruta, string $contenido, int $modo): void
     {
         $temporal = $ruta.'.tmp'.bin2hex(random_bytes(4));
         // Create the file with its final mode first: a secret must never be readable for a moment.

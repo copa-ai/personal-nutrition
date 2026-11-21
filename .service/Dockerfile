@@ -91,7 +91,7 @@ RUN cd /opt/nutrition/project/admin \
     && rm -rf /tmp/storage-build /opt/nutrition/project/admin/bootstrap/cache/*.php.tmp
 
 # Subidas de la copia de seguridad (por defecto PHP admite 2 MB; Livewire limita a 12 MB).
-RUN printf 'upload_max_filesize=16M\npost_max_size=20M\nmemory_limit=512M\nopcache.enable=1\nopcache.validate_timestamps=0\n' > /usr/local/etc/php/conf.d/zz-nutrition.ini
+RUN printf 'upload_max_filesize=512M\npost_max_size=520M\nmemory_limit=512M\nopcache.enable=1\nopcache.validate_timestamps=0\n' > /usr/local/etc/php/conf.d/zz-nutrition.ini
 
 # Kit del agente + runner: las mismas rutas que en docker/Dockerfile.agente, porque se reutiliza su entrypoint.
 COPY ./agente /opt/agente-kit

@@ -344,3 +344,75 @@ Context: The amounts come from the panel, from the node and from settings. PHP i
 Decision: Every amount is an integer or a string of digits. A balance above 10^15 MU is cut to 10^15. A request above 10^15 is refused as too large. Signs, decimals, exponents, spaces inside and non-text values are refused. The percentage is cut to 0 to 100 inside the rule.
 Reason: With these limits no product or sum can overflow. A refusal is always better than a wrong number.
 Effect: The control "cantidad" is checked before all others and has its own reason text. The three real controls keep the agreed order.
+
+## 58. One page, three services, no rules in the page
+Context: The page must start, stop, fund and reload the Coder. The rules already exist in Coder, Saldo and the watcher.
+Decision: CoderPagina (App\Filament\Pages) only reads input and calls Coder, Saldo and the new ControlRecarga. It has no money rule and no launch rule of its own. Class name: CoderPagina, as ListaCompraPagina, because the name Coder is taken by the service. Group Ajustes, slug coder, sort 12.
+Reason: One rule in one place. A rule copy in the page would drift.
+Effect: The page checks the guest tag before the launch only to hide the button. Coder::lanzar has the last word and the job refuses again.
+
+## 59. ControlRecarga holds the watcher files
+Context: The flags and recarga.json must be written and read the same way by every caller. The page should stay thin.
+Decision: App\Services\Coder\ControlRecarga writes auto-recarga, recargar-ahora and restaurar-original, and reads recarga.json. It reuses Coder::escribirAtomico, which is now public static. Rejected: a second atomic writer.
+Reason: The step asked for no duplicate logic. The write by rename is already tested.
+Effect: A flag is never half written. A missing control directory gives a Spanish error and no crash.
+
+## 60. recarga.json is untrusted input
+Context: A crash or a Coder with write access can leave a missing, partial or wrong recarga.json. The page prints some of its text.
+Decision: ControlRecarga::estado gives a default for each field. It checks each type, keeps only known states and results, cuts the message to 400 characters, removes control characters, and accepts a tree hash only as 64 hex characters. A file over 64 KiB is ignored. Blade escapes the text.
+Reason: The page must render in all cases, and a field must never become markup.
+Effect: Without a valid file, the page says "sin datos" for the watcher. It still works.
+
+## 61. Locked properties and a second check on confirm
+Context: A browser can change every public property of a Livewire page.
+Decision: preparacion and rutaPaquete are #[Locked]. The confirm step runs Coder::preparar again, checks the block rule again, and dispatches the normalized reference from that result, never the typed text. Rejected: trust the stored preparation.
+Reason: The cost and the spec result can change between the two steps. A client must not fake a clean preparation.
+Effect: One more node call at confirm. A client cannot skip the block rule. The package path still goes through Coder::referencia, which accepts only files in the packages folder.
+
+## 62. Upload path: Livewire upload, random name, no client path
+Context: The user uploads a .celaut.bee file up to 512 MB.
+Decision: The page uses WithFileUploads and a plain file input. On upload it calls Coder::guardarPaquete with the temporary file and the client name. The client name only decides the extension check. The stored name is random. The temporary upload is deleted at once, also after an error. Rejected: the Filament FileUpload field (it needs a form and a disk for a file that must not stay on a public disk).
+Reason: guardarPaquete already checks extension, size and the id.
+Effect: The client file name never reaches the file system.
+
+## 63. Upload limits in four places
+Context: The default limits are too small. Livewire allows 12 MB. PHP allowed 16 MB. Caddy allowed 20 MB.
+Decision: Added config/livewire.php (rule max 512 MB, upload time 15 minutes). The PHP ini is 512M and 520M for upload and post. Caddy gives 520 MB only to the path matching ^/livewire[^/]*/upload-file$, and keeps 20 MB for all other paths. The memory limit stays 512M.
+Reason: A global large limit would let any page receive a large body. A file upload streams to disk.
+Effect: Four numbers must stay equal (coder.php, livewire.php, Dockerfile, Caddyfile). The Caddy snippet passes caddy validate in isolation. It is not tested with FrankenPHP, and the Livewire route name is a guess for Livewire 4.
+
+## 64. Cost and resources shown at the confirm step
+Context: celaut cost gives no resources. For a package that the node does not hold, it gives no cost.
+Decision: The step shows the three cost values and the admission bound of service.json (3 GiB, 10 GiB, 2 CPU) as "up to". If the cost is unknown, it says so and offers an optional field for the start bound in MU (--initial-mu). The field is empty by default.
+Reason: The user can then limit the start cost when the node cannot price it. A default bound would need a price that is not known.
+Effect: With no bound and no cost, the node uses its default (cost plus about 1 hour). The text warns the user.
+
+## 65. Actions with a confirm modal
+Context: Money, a stop and a restore are hard to undo.
+Decision: Launch, stop, force stop, add balance and restore original are Filament actions with requiresConfirmation and a text that names the effect. Add balance has an amount field. Reload now has no modal (the watcher checks the code first). Limits and keys use buttons, with no modal. The auto reload switch applies at once and is audited (coder.recarga_auto).
+Reason: A modal is for what cannot be undone. A reload is safe by design.
+Effect: Each action is testable by name with callAction.
+
+## 66. Error handling: one wrapper
+Context: The node can fail, time out or refuse. A page crash would hide the controls.
+Decision: Every action runs in `protegido`. CoderException and NodoException become a red notification with the message. Any other error is reported to the log and shows a short generic notice. The view data reads the state and the balance with `seguro`, with a fallback.
+Reason: The page must stay usable when the node is down.
+Effect: A page view makes no node call. It reads stored values only (see entry 50).
+
+## 67. Polling only while launching
+Context: A launch runs minutes in the queue. Constant polling can erase text that the user types in a field that is not sent yet.
+Decision: The page polls every 5 s only in the state "launching". In that state the launch form is hidden.
+Reason: No typed text is lost. The user still sees the end of the launch.
+Effect: In other states, the user must reload the page to see a change of the watcher or of the balance. The action buttons refresh the page.
+
+## 68. Connect block text
+Context: The page does not know the node name of this instance.
+Decision: The command uses the placeholder <instancia-de-esta-app>. The listen port is the same as the slot port (2222). The ssh config has HostKeyAlias nutrition-coder, because the host key stays the same across launches and the address is always 127.0.0.1. The page warns that each tunnel connection costs MU.
+Reason: Without an alias, a second tunnel on the same port would raise a host key warning. The cost note comes from the node docs (NETWORKS and USAGE).
+Effect: The user replaces one placeholder.
+
+## 69. Confirm mode for an unreadable spec
+Context: The default setting refuses a service when the spec cannot be read (entry 33 onward).
+Decision: The page follows the setting. With "rechazar" it shows the reason and no launch button. With "confirmar" it shows a box that the user must tick, and passes that choice to the job.
+Reason: The page must not be a way around the setting.
+Effect: With the default setting, no launch works until a spec reader exists. This is the known open issue of the earlier steps.
