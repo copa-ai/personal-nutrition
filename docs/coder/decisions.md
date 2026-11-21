@@ -14,7 +14,7 @@ Effect: The share is bigger. The pack has more files (see entry 3).
 
 ## 2. Run scripts stay outside the share
 Context: The Coder can write all files in the share. start.sh runs as root. The agent kit and the chat translator run as other users.
-Decision: start.sh, Caddyfile, bucle.sh, the status page, /opt/agente-kit, /opt/runner and /opt/chat stay at their old paths. The Dockerfile copies them a second time, outside the share. The project copy of docker/ is only for reading and editing by the Coder.
+Decision: start.sh, Caddyfile, bucle.sh, the status page, /opt/agente-kit, /opt/runner and /opt/chat stay at their old paths. The Dockerfile copies them a second time, outside the share. The Coder only reads and edits the project copy of docker/.
 Reason: A Coder could change a script that root runs. It would gain root in the nutrition VM. This rule protects the root scripts and the other users (agente, chat, sshproxy). It does not make the Coder a separate trust domain from the app: the Coder can read all secrets of the app (entry 86).
 Effect: A change to start.sh in the share has no effect until the next repack. The Laravel code reloads without a repack. Rejected option: run start.sh from the share.
 
@@ -32,8 +32,8 @@ Effect: The restore action must extract with -C /opt/nutrition/project. The imag
 
 ## 5. Writable data stays outside the share
 Context: Laravel writes to storage and to bootstrap/cache.
-Decision: No change to the env variables that start.sh already sets: LARAVEL_STORAGE_PATH and the APP_*_CACHE paths point to /var/lib/nutrition/admin. Filament assets are built in the image under admin/public. The app user reads the share. It writes only one path in it: .coder/authorized_keys (entry 34).
-Reason: The share ownership on virtiofs is not verified. The Coder may create root-owned files. A read-only need is safe in both cases.
+Decision: No change to the env variables that start.sh already sets: LARAVEL_STORAGE_PATH and the APP_*_CACHE paths point to /var/lib/nutrition/admin. The Dockerfile builds the Filament assets under admin/public in the image. The app user reads the share. It writes only one path in it: .coder/authorized_keys (entry 34).
+Reason: I did not verify the share ownership on virtiofs. The Coder may create root-owned files. A read-only need is safe in both cases.
 Effect: start.sh runs chmod -R a+rX on the share at each start. If chmod fails, it logs a warning and continues. A missing artisan file stops the start with a clear error on the status page.
 
 ## 6. Restartable loop script
@@ -52,7 +52,7 @@ Effect: The maintenance price rises a little, because the price follows resource
 Context: A node must hold room for a Coder child. The agreed bound is 3 GiB memory, 10 GiB disk and 2 CPU.
 Decision: service.json gets possible_environment_workload with one clause that has one workload and only at_most. It is separate from the postgres clause in initial_environment_workload.
 Reason: The check is an admission check at launch of nutrition. It has no cost and no reservation. at_init is not needed.
-Effect: A node that is too small refuses nutrition itself. It is not verified that the bound limits which hash the panel launches later.
+Effect: A node that is too small refuses nutrition itself. I did not verify that the bound limits which hash the panel launches later.
 
 ## 9. SSH slot position
 Context: The SSH slot is the fourth api slot, port 2222, tcp, protocol_stack [["ssh"]].
@@ -62,7 +62,7 @@ Effect: The forwarder that listens on 2222 comes in a later step. Until then, th
 
 ## 10. Watcher is one bash script with a sourceable core
 Context: The reload logic needs small functions and a local test. No PHP or docker exists on the development machine.
-Decision: docker/servicio/recarga.sh holds all logic in functions. It runs the loop only when run as a script. The RECARGA_* variables change paths and commands. docker/pruebas/test-recarga.sh sources it with fake php, fake health and web processes made by bucle.sh.
+Decision: docker/servicio/recarga.sh holds all logic in functions. It runs the loop only when a user runs the file as a script. The RECARGA_* variables change paths and commands. docker/pruebas/test-recarga.sh sources it with fake php, fake health and web processes that bucle.sh makes.
 Reason: Tests run the real code and need no root. Bash is already in the image. A Python watcher would add a second language for the same job.
 Effect: The test covers good reload, syntax error, boot error, health rollback, auto off, reload now and restore original. It does not run real PHP, FrankenPHP or setpriv.
 
@@ -86,7 +86,7 @@ Effect: The panel writes auto-recarga as the app user. The watcher removes the t
 
 ## 14. Cheap fingerprint, content hashes only on change
 Context: The poll runs every 5 seconds. A content hash of vendor would be slow.
-Decision: The poll hashes path, size and mtime (find -printf, sha256sum) of the watched paths. Content manifests (sha256 of each file) are made only after a stable change and after a reload. The original manifest is made from the tar and cached in the root-only directory.
+Decision: The poll hashes path, size and mtime (find -printf, sha256sum) of the watched paths. The watcher makes content manifests (sha256 of each file) only after a stable change and after a reload. It makes the original manifest from the tar and caches it in the root-only directory.
 Reason: Polling costs little. The panel still gets exact "changed or not" data and a changed file count.
 Effect: A touch without a content change starts one reload. The count of changed files is exact. Watched paths do not include vendor, public or the other repository folders.
 
@@ -94,13 +94,13 @@ Effect: A touch without a content change starts one reload. The count of changed
 Context: A syntax check does not find a broken provider, a bad route file or a missing class.
 Decision: The boot check runs "php artisan route:list --json --no-interaction" as the app user. It boots the app, runs every provider and loads every route file. It does not touch the database.
 Reason: "artisan --version" does not boot the providers, so it finds too little. A command that reads data would fail when the database is down and would block a good reload. start.sh never runs route:cache, so the command reads the real route files.
-Effect: A run takes about one to two seconds of PHP. Not verified on real PHP: a provider that queries the database at boot would fail this check.
+Effect: A run takes about one to two seconds of PHP. I did not verify this on real PHP: a provider that queries the database at boot would fail this check.
 
 ## 16. php -l only on files that changed since the last good reload
 Context: Checking every PHP file on each change is slow on virtiofs.
-Decision: The file ultima-buena.manifest holds the hashes of the watched files at the last good reload. php -l runs on the watched .php files whose hash differs from it. A missing manifest means all files. A failed check leaves the manifest unchanged, so the files are checked again next time. Blade and JSON files are not checked. The watcher takes the fingerprint again after the checks. If the code changed meanwhile, it checks again (3 tries). The stamp file ultima-buena.stamp keeps the time of the last good reload for the status.
+Decision: The file ultima-buena.manifest holds the hashes of the watched files at the last good reload. php -l runs on the watched .php files whose hash differs from it. A missing manifest means all files. A failed check leaves the manifest unchanged, so the watcher checks the files again next time. The watcher does not check Blade and JSON files. The watcher takes the fingerprint again after the checks. If the code changed meanwhile, it checks again (3 tries). The stamp file ultima-buena.stamp keeps the time of the last good reload for the status.
 Reason: A time test fails when tar, cp -p or rsync -t sets an old time on a file. A hash test does not.
-Effect: A restore of the original removes the stamp, so every file is checked once.
+Effect: A restore of the original removes the stamp, so the watcher checks every file once.
 
 ## 17. Reload method and health check
 Context: The loops from entry 6 restart a child that ends.
@@ -118,10 +118,10 @@ Effect: After an error the old code runs and the status shows the message until 
 Context: The tar holds the whole project, including vendor. The Coder can add files and packages.
 Decision: The watcher extracts the whole tar over the share with --no-same-owner and without .coder. Then it removes files that the tar does not hold in the watched paths and in admin/vendor. It then runs a normal reload with no snapshot rollback. A failed health check gives error_salud. Rejected option: delete and rebuild vendor (large and slow with the app running).
 Reason: Extraction replaces changed vendor files. The prune step removes added vendor files. composer.lock and vendor match again.
-Effect: Files outside these paths (docs, agente, docker) are replaced but extra files there stay. Empty directories stay. Root extracts files that the Coder can influence. Before each extract, the watcher removes symlinks in the share (not in .coder), and it extracts with --no-same-owner. After the extract it clears setuid and setgid bits. File names with a newline are not handled.
+Effect: The extract replaces files outside these paths (docs, agente, docker), but extra files there stay. Empty directories stay. Root extracts files that the Coder can influence. Before each extract, the watcher removes symlinks in the share (not in .coder), and it extracts with --no-same-owner. After the extract it clears setuid and setgid bits. The watcher does not handle file names with a newline.
 
 ## 20. Forwarder is a Python asyncio script with no dependency
-Context: The SSH slot needs a byte pipe from port 2222 to the Coder. The image has python3 and no extra package is needed.
+Context: The SSH slot needs a byte pipe from port 2222 to the Coder. The image has python3, so the forwarder needs no extra package.
 Decision: docker/servicio/ssh-proxy.py uses only the standard library. Settings come from arguments, then SSH_PROXY_* variables, then defaults. Rejected options: socat (not in the image, no live check of the destination file) and a PHP pipe (heavy, runs as the app user).
 Reason: The script is short, testable with unittest and runs with the empty environment.
 Effect: The unit tests in docker/pruebas/test_ssh_proxy.py run without a node.
@@ -136,16 +136,16 @@ Effect: A pipe closes within about one second of a change. A pipe to a Coder tha
 Context: A bad client can open many connections and pay nothing, but nutrition pays 10000 MU for each tunnel connection.
 Decision: Defaults: 16 open pipes, 10 s connect timeout, 14400 s (4 hours) idle timeout, 4096 bytes maximum for the destination file. The idle time counts both directions together. A connection in progress counts against the pipe limit. A connection over the limit closes at once with one log line. Half-close works: after one side sends EOF, the other direction has 30 s (--grace) to finish.
 Reason: VS Code Remote-SSH opens several connections. SSH sessions can be quiet for hours. A shared idle clock stops a pipe only when both sides are quiet.
-Effect: The values are settings (--max, --idle, --connect-timeout). Not tuned on a real node.
+Effect: The values are settings (--max, --idle, --connect-timeout). I did not tune the values on a real node.
 
 ## 23. Strict host validation, no resolution rules
-Context: The destination file is written by the app user from the output of the node, but the forwarder must not trust it.
-Decision: The host must be an IP address (v4 or v6). Or it must be a name of letters, digits, dots and hyphens that starts and ends with a letter or digit. The port must be an integer from 1 to 65535. Other types (text, boolean, float) are refused. The match uses the whole string, so a trailing newline fails.
+Context: The app user writes the destination file from the output of the node, but the forwarder must not trust it.
+Decision: The host must be an IP address (v4 or v6). Or it must be a name of letters, digits, dots and hyphens that starts and ends with a letter or digit. The port must be an integer from 1 to 65535. The forwarder refuses other types (text, boolean, float). The match uses the whole string, so a trailing newline fails.
 Reason: A bad file must not make the forwarder connect to an odd target or write odd text in the log.
 Effect: The forwarder accepts loopback and private addresses. It refuses loopback, unspecified, link-local and multicast targets, and it checks the address that the connection reached, so a name cannot hide them. It does not limit the target to the Coder: the app user writes the file, and the Coder controls the app code (entry 86), so private addresses stay allowed.
 
 ## 24. Forwarder user sshproxy and a group on the coder directory
-Context: The app user owns /var/lib/nutrition/coder (mode 750) and writes destino.json. The forwarder needs to read it. Group app is not suitable: /__config__ is readable by group app.
+Context: The app user owns /var/lib/nutrition/coder (mode 750) and writes destino.json. The forwarder needs to read it. Group app is not suitable: group app can read /__config__.
 Decision: The Dockerfile creates user and group sshproxy (uid and gid 1003, no login shell). start.sh sets the directory to app:sshproxy, mode 750. The file is mode 644 and the app user owns it. The forwarder starts through the "como" function with an empty environment (env -i).
 Reason: The forwarder gets read access to this directory only. It cannot write the destination file or change the directory.
 Effect: The forwarder can also read the other control files in this directory (PID files, flags, recarga.json). They hold no secret. The panel step must write destino.json by atomic rename in the same directory.
@@ -154,23 +154,23 @@ Effect: The forwarder can also read the other control files in this directory (P
 Context: Every piece that ends stops the whole service (wait -n), but the forwarder is not essential for the web app.
 Decision: start.sh runs ssh_proxy_bucle, which restarts the forwarder after 3 seconds. TERM kills the child. The script and the user are outside the shared project, so a Coder cannot change them. The forwarder starts after the web and queue are ready and does not add a phase to the status page.
 Reason: A crash of a debug path must not take down the menu service.
-Effect: A crash loop shows in app.log. Not verified on a real VM: setpriv and the port bind at 2222 as a non-root user (port above 1023, so no capability is needed).
+Effect: A crash loop shows in app.log. I did not verify setpriv and the port bind at 2222 as a non-root user on a real VM (port above 1023, so the process needs no capability).
 
 ## 26. The host key comes from PHP sodium, not from ssh-keygen
 Context: The image has no ssh-keygen. The Coder needs an OpenSSH private key in CODER_SSH_HOST_KEY.
 Decision: App\Services\Coder\ClaveSshHost builds an ed25519 key in the OpenSSH file format with the sodium extension. Rejected options: add openssh-client to the Dockerfile (a package and a sub-process for one call) and PHP openssl (it cannot write the OpenSSH format).
-Reason: Sodium is part of the PHP image. The format is short. A Python copy of the code was read by ssh-keygen -y on this host and gave the right public key.
+Reason: Sodium is part of the PHP image. The format is short. ssh-keygen -y on this host read a Python copy of the code and gave the right public key.
 Effect: No image change. The PHP code itself did not run here. The test ClaveSshHostTest runs ssh-keygen when it exists.
 
-## 27. The host key is stored in a subdirectory that the app user owns
+## 27. The host key lives in a subdirectory that the app user owns
 Context: /var/lib/nutrition/secretos was root only (mode 700). The panel code runs as the app user and must write the key there.
-Decision: start.sh sets secretos to mode 711 and makes secretos/coder (owner app, mode 700). The key file is secretos/coder/ssh_host_ed25519, mode 600, written by rename.
+Decision: start.sh sets secretos to mode 711 and makes secretos/coder (owner app, mode 700). The key file is secretos/coder/ssh_host_ed25519, mode 600, and the panel writes it by rename.
 Reason: The app user must enter secretos to reach its subdirectory. Mode 711 lets it enter and does not let it list. Files directly in secretos stay mode 600 for root.
-Effect: Other users (agent, chat) can test if a name exists in secretos, but cannot read it. The key is created at the first launch, not at start.
+Effect: Other users (agent, chat) can test if a name exists in secretos, but cannot read it. Nutrition makes the key at the first launch, not at start.
 
 ## 28. Spec reading is a replaceable class that returns "unknown"
 Context: celaut v0.6.3 cannot read the spec of a service (see the verification result). The agreed rule says to refuse a service with no guest share "project".
-Decision: App\Services\Coder\LectorEspecificacion returns null (unknown). The default value of config coder.spec_desconocida is "rechazar": a launch is refused with a Spanish message. The value "confirmar" lets the user confirm in the panel that the service mounts the share. Rejected options: parse the .bee file in PHP (protobuf and multiblock code, too large) and a Python helper with bee-rpc (not in the image).
+Decision: App\Services\Coder\LectorEspecificacion returns null (unknown). The default value of config coder.spec_desconocida is "rechazar": Coder::lanzar refuses a launch with a Spanish message. The value "confirmar" lets the user confirm in the panel that the service mounts the share. Rejected options: parse the .bee file in PHP (protobuf and multiblock code, too large) and a Python helper with bee-rpc (not in the image).
 Reason: The rule stays strict. A real reader can replace the class later with no change in Coder.
 Effect: With the default, no Coder can launch until a reader exists or the setting is "confirmar". This blocks the feature on purpose. The panel step must show the refusal text.
 
@@ -184,7 +184,7 @@ Effect: Each state change writes an audit row "ajuste.cambiado". The funding ste
 Context: The table "ajustes" is in the core schema of the shared database. Two devices on one database see the same coder.* rows.
 Decision: A launch stores coder.instancia = Instancia::id(). If the state is not "none" and the owner is another instance, estado() sets ajeno=true. Launch, stop and the watcher then refuse or skip.
 Reason: A second device must not read a lease from another node and mark the Coder as dead, or stop it.
-Effect: One Coder for each shared database at a time. A Coder of a device that is lost stays "ajeno" until the owner stops it. A manual change of coder.estado to none clears it.
+Effect: One Coder for each shared database at a time. A Coder of a lost device stays "ajeno" until the owner stops it. A manual change of coder.estado to none clears it.
 
 ## 31. Launch runs in a queue job and a stuck launch times out
 Context: celaut acquire can take minutes. A web request cannot wait for it.
@@ -192,45 +192,45 @@ Decision: App\Jobs\LanzarCoder calls Coder::lanzar (tries 1, no timeout). Coder:
 Reason: If the queue worker dies or the reload watcher restarts it, the state must not stay "launching" for ever.
 Effect: A reload of the app can kill a launch that is in progress. The watcher then gives "error" after 40 minutes, or the user stops with force. The lease of such a launch can stay in the pool.
 
-## 32. The SSH address is the uri of acquire, checked by the SSH banner
+## 32. The SSH address is the uri of acquire, and the launch checks the SSH banner
 Context: celaut gives no slot list for a child. `uri` is the first address of the first api slot.
-Decision: The launch connects to the uri and reads a line that starts with SSH-2.0-. It retries for 180 s. If the test fails, the service is stopped, the state is "error" and no destino.json is written. The contract says that the ssh slot is the first api slot.
+Decision: The launch connects to the uri and reads a line that starts with SSH-2.0-. It retries for 180 s. If the test fails, the launch stops the service, sets the state to "error" and writes no destino.json. The contract says that the ssh slot is the first api slot.
 Reason: A wrong first slot would send the user to a wrong service. The banner test needs no node command.
-Effect: A Coder whose first slot is not SSH never gets a target. The test connection is made from nutrition to the child and costs nothing. Not verified on a node.
+Effect: A Coder whose first slot is not SSH never gets a target. Nutrition makes the test connection to the child, and it costs nothing. I did not verify this on a node.
 
 ## 33. Rules for the authorized keys
-Context: The text of the panel is written in a file that the Coder reads as authorized_keys, as root in its VM.
-Decision: ClavesSsh accepts a line only if it matches "type base64 [comment]" as a whole. Types: ssh-ed25519, ecdsa-sha2-nistp256/384/521, ssh-rsa. The blob must start with the same type name. The comment has 1 to 64 characters from A-Z a-z 0-9 @ . _ : + = - and space. Blank lines are skipped, equal keys count once, the maximum is 20, and one bad line rejects the whole text. Rejected option: keep the good lines and drop the bad ones.
+Context: The panel writes its text in a file that the Coder reads as authorized_keys, as root in its VM.
+Decision: ClavesSsh accepts a line only if it matches "type base64 [comment]" as a whole. Types: ssh-ed25519, ecdsa-sha2-nistp256/384/521, ssh-rsa. The blob must start with the same type name. The comment has 1 to 64 characters from A-Z a-z 0-9 @ . _ : + = - and space. ClavesSsh skips blank lines, equal keys count once, the maximum is 20, and one bad line rejects the whole text. Rejected option: keep the good lines and drop the bad ones.
 Reason: A quote, a comma or a control character in the comment could add an option. Silent drops hide errors.
 Effect: Comment lines with # and keys with options fail. The user sees the line number. An empty text is valid and removes all keys.
 
-## 34. The keys are written at each save and at each launch
-Context: The share is new at each start of nutrition, so .coder/authorized_keys is lost. The key list is also in Ajuste.
-Decision: guardarClaves writes the file by rename (mode 644) and then stores the list. Launch writes the file again from the list before it starts the service. If the write fails, nothing is started.
+## 34. The code writes the keys at each save and at each launch
+Context: The share is new at each start of nutrition, so .coder/authorized_keys does not survive. The key list is also in Ajuste.
+Decision: guardarClaves writes the file by rename (mode 644) and then stores the list. Launch writes the file again from the list before it starts the service. If the write fails, the launch starts nothing.
 Reason: A launch with no keys file would give a Coder that nobody can enter, and it would cost money.
-Effect: The directory .coder in the share belongs to the app user (start.sh creates it with chown), and the app writes only this file there. The sshd of the Coder can refuse the file with StrictModes if the owner is wrong (contract requirement 8). This is not verified on virtiofs (see the verification notes).
+Effect: The directory .coder in the share belongs to the app user (start.sh creates it with chown), and the app writes only this file there. The sshd of the Coder can refuse the file with StrictModes if the owner is wrong (contract requirement 8). I did not verify this on virtiofs (see the verification notes).
 
 ## 35. Package upload rules
 Context: The panel accepts a .celaut.bee file. A path from a form field must not reach celaut.
 Decision: guardarPaquete accepts only a name that ends in .celaut.bee and a size up to coder.paquete.tamano_maximo_mb (512). It copies the file to coder/paquetes/<random>.celaut.bee (mode 600) and runs celaut inspect. Launch accepts a path only if its real path is inside that directory. A symbolic link to the outside fails.
-Reason: A stored file with a random name cannot be chosen by the user. The inspect call rejects a file that is not a package.
-Effect: The PHP and Livewire upload limits are separate and must be at least 512 MB. The panel step must set them. Uploaded files are never deleted by nutrition.
+Reason: The user cannot choose a stored file with a random name. The inspect call rejects a file that is not a package.
+Effect: The PHP and Livewire upload limits are separate and must be at least 512 MB. The panel step must set them. Nutrition never deletes uploaded files.
 
 ## 36. The confirm step shows the cost and the resource bound, not the real resources
 Context: celaut cost prints four values and no memory, disk or CPU. The node refuses a cost for a service that it does not hold.
 Decision: preparar returns the cost array (or null with the reason of the node), the admission bound from config coder.recursos, and two spec fields. The real resources are "conocidos: null".
 Reason: A made-up value is worse than an unknown value.
-Effect: For an uploaded package that the node never saw, the panel shows "cost unknown". The start is then bounded only by the initial MU setting.
+Effect: For an uploaded package that the node never saw, the panel shows "cost unknown". Only the initial MU setting then bounds the start.
 
 ## 37. Stop closes the SSH access first, and a forced stop exists
 Context: A stop that the node refuses must not leave the SSH target open.
-Decision: parar removes destino.json before the node call. If the node refuses, the state becomes "error" and the lease stays, so a new stop can run, and a new launch is refused. The option $forzar clears the state anyway. A stop while the state is "launching" needs $forzar.
+Decision: parar removes destino.json before the node call. If the node refuses, the state becomes "error" and the lease stays, so a new stop can run, and Coder::lanzar refuses a new launch. The option $forzar clears the state anyway. A stop while the state is "launching" needs $forzar.
 Reason: Access closes at once. The user is never stuck with a lease that nutrition cannot stop.
 Effect: A forced stop can leave a lease in the pool. The watcher does not track it any more.
 
 ## 38. A dead Coder gets the state "error" with no lease
 Context: The watcher finds that the lease is not in the pool any more. The lease number has no use then.
-Decision: The watcher removes destino.json, sets "error", stores the reason and clears lease and uri. A launch is allowed when the state is "error" and the lease is null. It is not allowed with an "error" that keeps a lease.
+Decision: The watcher removes destino.json, sets "error", stores the reason and clears lease and uri. The code allows a launch when the state is "error" and the lease is null. It does not allow a launch with an "error" that keeps a lease.
 Reason: A stop of a lease that does not exist would fail for ever.
 Effect: The panel shows the reason until the user launches again. If the node does not answer, the watcher changes nothing.
 
@@ -244,24 +244,24 @@ Effect: A dead Coder closes its SSH pipes in less than about 61 s. The command c
 Context: Nodo has string constructor arguments and the container cannot fill them from config.
 Decision: AppServiceProvider binds Coder::class to Coder::desdeConfig(). Tests replace it with $this->app->instance(). Fakes are subclasses of Nodo, SondaSsh and LectorEspecificacion in tests/Support.
 Reason: The command and the job get the class by injection and need no static call.
-Effect: A fake node needs no shell script. The real process call is tested in NodoCoderProcesoTest.
+Effect: A fake node needs no shell script. NodoCoderProcesoTest tests the real process call.
 
 ## 41. One class for the money rules, with a pure core
 Context: The rules must be easy to test. The code that moves balance needs the node, the settings and the audit log.
 Decision: App\Services\Coder\Saldo holds both. The static method decidir takes plain values and returns permitted, reason, failed control and maximum amount. It reads no setting and calls no node. Saldo takes Nodo and Coder in its constructor.
-Reason: A pure method is tested with many cases and no fake. The transfer code is tested with the fake node.
+Reason: A test of a pure method uses many cases and no fake. A test of the transfer code uses the fake node.
 Effect: The panel step calls addBalance, guardarLimites and status. The command calls vigilar. Rejected option: put the rules in Coder, which already holds the launch code.
 
 ## 42. Setting keys for the panel
 Context: The panel step binds to the settings.
 Decision: The user edits three keys. They are coder.tope_mu (total cap, digit string, null means default), coder.porcentaje_max (integer 1 to 100) and coder.horas_minimas (integer 0 to 8760). The panel calls Saldo::guardarLimites, which validates and calls Ajuste::fijar. The defaults are in config coder.saldo: 24 hours of cap with margin 1.25, 20 percent, 48 hours.
 Reason: One method validates all three values together. A bad value changes nothing.
-Effect: Other keys are written by Saldo only: coder.muestras_saldo, coder.depositado_hijos_mu, coder.precio, coder.ultimo_rechazo, coder.saldo_mu, coder.saldo_nutrition_mu, coder.horas_vida and coder.enviado_mu. The panel only reads them, through status().
+Effect: Only Saldo writes the other keys: coder.muestras_saldo, coder.depositado_hijos_mu, coder.precio, coder.ultimo_rechazo, coder.saldo_mu, coder.saldo_nutrition_mu, coder.horas_vida and coder.enviado_mu. The panel only reads them, through status().
 
-## 43. The cap rule is applied as written
+## 43. The code applies the cap rule as written
 Context: The agreed rule says MU sent during this life plus the current balance must not pass the cap. Sent MU that is still in the balance counts twice.
 Decision: I kept the rule as written. "Sent" means the top-ups only. The MU of the launch (initial balance) are not in it, but they are in the current balance.
-Reason: The rule is agreed. The double count makes it stricter, never looser. With the default cap (24 hours with margin) the Coder lives about one day.
+Reason: We agreed the rule. The double count makes it stricter, never looser. With the default cap (24 hours with margin) the Coder lives about one day.
 Effect: The real total that nutrition pays for one Coder is about half of the cap plus the launch MU. A user who wants more raises the cap in the panel.
 
 ## 44. The life control looks at the life after the transfer
@@ -271,7 +271,7 @@ Reason: The goal of the control is that nutrition never goes under X because of 
 Effect: The rule is stricter than the agreed one. The boundary is exact: life of exactly X hours after the transfer passes. The check uses integer MU, so the rounding goes up (more MU kept).
 
 ## 45. Maximum amount, and a smaller transfer in the loop
-Context: A refusal for the full target would leave the Coder without balance although part of it is allowed.
+Context: A refusal for the full target would leave the Coder without balance although the rule allows part of it.
 Decision: decidir always returns the largest amount that passes the three controls. addBalance never changes the amount: if it is too large, it refuses and says the maximum. The loop sends the maximum instead of the target when the maximum is at least one hour of maintenance (or the whole gap, if smaller).
 Reason: A person who types an amount expects that amount or a clear refusal. The loop has no person: a partial top-up is better than none, but a transfer of a few MU each pass is noise.
 Effect: A refusal of the loop means that even one hour does not fit under the controls.
@@ -286,11 +286,11 @@ Effect: The estimate includes every cost of nutrition, such as tunnel opens. It 
 Context: nutrition also deposits balance into the PostgreSQL child (App\Services\BaseCompartida\Recarga). Those MU would look like burn.
 Decision: One counter, coder.depositado_hijos_mu, counts every deposit of nutrition. Saldo and Recarga both add to it. Recarga calls Saldo::anotarDeposito inside a try block, so an error there never stops the database top-up.
 Reason: The rate must not depend on who deposited.
-Effect: The counter is read before the balance. A deposit between the two reads can only raise the burn of one interval. The next interval then shows a negative burn and is dropped. The read-and-add of the counter is not atomic across processes. The error is small and goes to the safe side.
+Effect: The code reads the counter before the balance. A deposit between the two reads can only raise the burn of one interval. The next interval then shows a negative burn, and the code drops it. The read-and-add of the counter is not atomic across processes. The error is small and goes to the safe side.
 
 ## 48. When the rate is unknown
 Context: Too few or bad samples must never allow a transfer.
-Decision: The rate is unknown (null) in these cases. There are fewer than 4 samples. The samples span less than 600 s. Fewer than 3 intervals are valid. The rate is 0 or negative. An interval with no time or a negative burn (a refund, a credit) is dropped. All limits are in config coder.saldo.
+Decision: The rate is unknown (null) in these cases. There are fewer than 4 samples. The samples span less than 600 s. Fewer than 3 intervals are valid. The rate is 0 or negative. The code drops an interval with no time or a negative burn (a refund, a credit). All limits are in config coder.saldo.
 Reason: A refund or a credit hides burn. With a long list one dropped interval is acceptable. With the minimum list it is not.
 Effect: After a launch, the first top-up waits about 15 minutes. The initial balance of the launch covers that time (about 1 hour by default). The list keeps at most 72 samples and drops those older than 12 hours.
 
@@ -304,7 +304,7 @@ Effect: Each transfer and each refusal has its own audit row (see 53). A changed
 Context: The default cap is 24 hours of maintenance at the current price. celaut cost gives three values and no resources.
 Decision: The price is max_maintenance_cost_mu of the running service (one period of 10 s at the largest resources). The class stores it in coder.precio with its read time and reads again after 600 s. Default cap = price times 8640 periods times 1.25. The hours left of the Coder use the same price. The panel view uses stored values only.
 Reason: The largest price is the safe bound. A page view must not wait for the node.
-Effect: Hours left of the Coder are a lower estimate. Until the first read, the cap is unknown and nothing is sent. If the node refuses the price read, the old price stays. The period (10 s) comes from config nutrition.recarga.periodo_s; a real period can last longer, so the hours are an estimate.
+Effect: Hours left of the Coder are a lower estimate. Until the first read, the cap is unknown and the loop sends nothing. If the node refuses the price read, the old price stays. The period (10 s) comes from config nutrition.recarga.periodo_s; a real period can last longer, so the hours are an estimate.
 
 ## 51. Target and threshold of the loop
 Context: A deposit on each pass would add an audit row every 5 minutes.
@@ -313,14 +313,14 @@ Reason: The target is under the default cap, so the loop alone does not use it a
 Effect: The Coder balance goes between 6 and 12 hours. A user who wants more adds balance by hand.
 
 ## 52. Record first, deposit second, roll back on failure
-Context: A crash between the node call and the record would let the cap be passed again.
+Context: A crash between the node call and the record would let the code pass the cap again.
 Decision: enviar adds the amount to coder.enviado_mu and to the deposit counter before the call to celaut deposit. If the node refuses (success false) or does not answer, it subtracts the amount again.
 Reason: A crash can only make the counters too high. A counter that is too high only makes the controls stricter.
 Effect: A failed deposit uses no cap. It has an audit row (coder.saldo_fallo) and shows in the panel as the last refusal with the control "deposito".
 
 ## 53. Audit events and silence for the loop
-Context: Every refusal must be audited. A loop that is refused for the same reason would write a row every 300 s.
-Decision: Events: coder.saldo_enviado, coder.saldo_rechazado (control, reason, amount, source, maximum, balances) and coder.saldo_fallo. A refusal of a user action is always audited. A refusal of the loop is audited in two cases. The control or the source changes. Or the last audit of it is older than one hour. The last refusal is always stored for the panel.
+Context: The code must audit every refusal. A loop that the controls refuse for the same reason would write a row every 300 s.
+Decision: Events: coder.saldo_enviado, coder.saldo_rechazado (control, reason, amount, source, maximum, balances) and coder.saldo_fallo. The code always audits a refusal of a user action. It audits a refusal of the loop in two cases. The control or the source changes. Or the last audit of it is older than one hour. The code always stores the last refusal for the panel.
 Reason: The log keeps every change of reason and every hour of a lasting refusal. It does not fill with copies.
 Effect: With a refusal that lasts a day, the log has about 24 rows from the loop. This is a small step away from "every refusal" and it is only for repeated loop refusals.
 
@@ -340,29 +340,29 @@ Effect: The first funding pass runs at start, not after 300 s. The node gets one
 Context: The launch charge (initial balance and build cost) leaves the nutrition balance in one step. It is not burn.
 Decision: Saldo samples at every pass, with or without a Coder. The launch code clears the samples after the node accepts the start. Stop and launch clear the last refusal and the stored price.
 Reason: Samples before the launch would show a large false burn. With no Coder the read costs about 100 MU per pass, and it gives a rate before the first launch.
-Effect: A sample taken during a long launch is lost. After a stop, the refund credit is dropped as a negative interval.
+Effect: Saldo loses a sample that it takes during a long launch. After a stop, the code drops the refund credit as a negative interval.
 
 ## 57. Number limits and input rules
 Context: The amounts come from the panel, from the node and from settings. PHP integers have 64 bits.
-Decision: Every amount is an integer or a string of digits. A balance above 10^15 MU is cut to 10^15. A request above 10^15 is refused as too large. Signs, decimals, exponents, spaces inside and non-text values are refused. The percentage is cut to 0 to 100 inside the rule.
+Decision: Every amount is an integer or a string of digits. The rule cuts a balance above 10^15 MU to 10^15. It refuses a request above 10^15 as too large. It also refuses signs, decimals, exponents, spaces inside and non-text values. It cuts the percentage to 0 to 100.
 Reason: With these limits no product or sum can overflow. A refusal is always better than a wrong number.
-Effect: The control "cantidad" is checked before all others and has its own reason text. The three real controls keep the agreed order.
+Effect: The rule checks the control "cantidad" before all others. This control has its own reason text. The three real controls keep the agreed order.
 
 ## 58. One page, three services, no rules in the page
 Context: The page must start, stop, fund and reload the Coder. The rules already exist in Coder, Saldo and the watcher.
-Decision: CoderPagina (App\Filament\Pages) only reads input and calls Coder, Saldo and the new ControlRecarga. It has no money rule and no launch rule of its own. Class name: CoderPagina, as ListaCompraPagina, because the name Coder is taken by the service. Group Ajustes, slug coder, sort 12.
+Decision: CoderPagina (App\Filament\Pages) only reads input and calls Coder, Saldo and the new ControlRecarga. It has no money rule and no launch rule of its own. Class name: CoderPagina, as ListaCompraPagina, because the service already uses the name Coder. Group Ajustes, slug coder, sort 12.
 Reason: One rule in one place. A rule copy in the page would drift.
 Effect: The page checks the guest tag before the launch only to hide the button. Coder::lanzar has the last word and the job refuses again.
 
 ## 59. ControlRecarga holds the watcher files
-Context: The flags and recarga.json must be written and read the same way by every caller. The page should stay thin.
+Context: Every caller must write and read the flags and recarga.json the same way. The page should stay thin.
 Decision: App\Services\Coder\ControlRecarga writes auto-recarga, recargar-ahora and restaurar-original, and reads recarga.json. It reuses Coder::escribirAtomico, which is now public static. Rejected: a second atomic writer.
-Reason: The step asked for no duplicate logic. The write by rename is already tested.
-Effect: A flag is never half written. A missing control directory gives a Spanish error and no crash.
+Reason: The step asked for no duplicate logic. The write by rename already has a test.
+Effect: The code never writes half a flag. A missing control directory gives a Spanish error and no crash.
 
 ## 60. recarga.json is untrusted input
 Context: A crash or a Coder with write access can leave a missing, partial or wrong recarga.json. The page prints some of its text.
-Decision: ControlRecarga::estado gives a default for each field. It checks each type and keeps only known states and results. It cuts the message to 400 characters, removes control characters, and accepts a tree hash only as 64 hex characters. A file over 64 KiB is ignored. Blade escapes the text.
+Decision: ControlRecarga::estado gives a default for each field. It checks each type and keeps only known states and results. It cuts the message to 400 characters, removes control characters, and accepts a tree hash only as 64 hex characters. The class ignores a file over 64 KiB. Blade escapes the text.
 Reason: The page must render in all cases, and a field must never become markup.
 Effect: Without a valid file, the page says "sin datos" for the watcher. It still works.
 
@@ -374,7 +374,7 @@ Effect: One more node call at confirm. A client cannot skip the block rule. The 
 
 ## 62. Upload path: Livewire upload, random name, no client path
 Context: The user uploads a .celaut.bee file up to 512 MB.
-Decision: The page uses WithFileUploads and a plain file input. On upload it calls Coder::guardarPaquete with the temporary file and the client name. The client name only decides the extension check. The stored name is random. The temporary upload is deleted at once, also after an error. Rejected: the Filament FileUpload field (it needs a form and a disk for a file that must not stay on a public disk).
+Decision: The page uses WithFileUploads and a plain file input. On upload it calls Coder::guardarPaquete with the temporary file and the client name. The client name only decides the extension check. The stored name is random. The page deletes the temporary upload at once, also after an error. Rejected: the Filament FileUpload field (it needs a form and a disk for a file that must not stay on a public disk).
 Reason: guardarPaquete already checks extension, size and the id.
 Effect: The client file name never reaches the file system.
 
@@ -382,30 +382,30 @@ Effect: The client file name never reaches the file system.
 Context: The default limits are too small. Livewire allows 12 MB. PHP allowed 16 MB. Caddy allowed 20 MB.
 Decision: Added config/livewire.php (rule max 512 MB, upload time 15 minutes). The PHP ini is 512M and 520M for upload and post. Caddy gives 520 MB only to the path matching ^/livewire[^/]*/upload-file$, and keeps 20 MB for all other paths. The memory limit stays 512M.
 Reason: A global large limit would let any page receive a large body. A file upload streams to disk.
-Effect: Four numbers must stay equal (coder.php, livewire.php, Dockerfile, Caddyfile). The Caddy snippet passes caddy validate in isolation. It is not tested with FrankenPHP, and the Livewire route name is a guess for Livewire 4.
+Effect: Four numbers must stay equal (coder.php, livewire.php, Dockerfile, Caddyfile). The Caddy snippet passes caddy validate in isolation. I did not test it with FrankenPHP, and the Livewire route name is a guess for Livewire 4.
 
 ## 64. Cost and resources shown at the confirm step
 Context: celaut cost gives no resources. For a package that the node does not hold, it gives no cost.
 Decision: The step shows the three cost values and the admission bound of service.json (3 GiB, 10 GiB, 2 CPU) as "up to". If the cost is unknown, it says so and offers an optional field for the start bound in MU (--initial-mu). The field is empty by default.
-Reason: The user can then limit the start cost when the node cannot price it. A default bound would need a price that is not known.
+Reason: The user can then limit the start cost when the node cannot price it. A default bound would need a price, and the price is unknown.
 Effect: With no bound and no cost, the node uses its default (cost plus about 1 hour). The text warns the user.
 
 ## 65. Actions with a confirm modal
 Context: Money, a stop and a restore are hard to undo.
-Decision: Launch, stop, force stop, add balance and restore original are Filament actions with requiresConfirmation and a text that names the effect. Add balance has an amount field. Reload now has no modal (the watcher checks the code first). Limits and keys use buttons, with no modal. The auto reload switch applies at once and is audited (coder.recarga_auto).
-Reason: A modal is for what cannot be undone. A reload is safe by design.
+Decision: Launch, stop, force stop, add balance and restore original are Filament actions with requiresConfirmation and a text that names the effect. Add balance has an amount field. Reload now has no modal (the watcher checks the code first). Limits and keys use buttons, with no modal. The auto reload switch applies at once, and the code audits it (coder.recarga_auto).
+Reason: A modal is for what the user cannot undo. A reload is safe by design.
 Effect: Each action is testable by name with callAction.
 
 ## 66. Error handling: one wrapper
 Context: The node can fail, time out or refuse. A page crash would hide the controls.
-Decision: Every action runs in `protegido`. CoderException and NodoException become a red notification with the message. Any other error is reported to the log and shows a short generic notice. The view data reads the state and the balance with `seguro`, with a fallback.
+Decision: Every action runs in `protegido`. CoderException and NodoException become a red notification with the message. The page reports any other error to the log and shows a short generic notice. The view data reads the state and the balance with `seguro`, with a fallback.
 Reason: The page must stay usable when the node is down.
 Effect: A page view makes no node call. It reads stored values only (see entry 50).
 
 ## 67. Polling only while launching
-Context: A launch runs minutes in the queue. Constant polling can erase text that the user types in a field that is not sent yet.
-Decision: The page polls every 5 s only in the state "launching". In that state the launch form is hidden.
-Reason: No typed text is lost. The user still sees the end of the launch.
+Context: A launch runs minutes in the queue. Constant polling can erase text that the user types in a field that the user did not send yet.
+Decision: The page polls every 5 s only in the state "launching". In that state the page hides the launch form.
+Reason: The user loses no typed text. The user still sees the end of the launch.
 Effect: In other states, the user must reload the page to see a change of the watcher or of the balance. The action buttons refresh the page.
 
 ## 68. Connect block text
@@ -432,7 +432,7 @@ Context: A network share can outlive both services and can join services that ar
 Decision: The feature does not use a network share.
 Rejected options: A network share between nutrition and the Coder.
 Reason: A network share needs an extra owner. It has more states, and a failure there is hard to see. The parent share has one owner and one life.
-Effect: The code is lost when nutrition stops (see entry 85). The Coder keeps its work in git.
+Effect: The share loses the code when nutrition stops (see entry 85). The Coder keeps its work in git.
 
 ## 72. No control API between the Coder and nutrition
 Context: The Coder must tell nutrition when to reload.
@@ -451,7 +451,7 @@ Effect: A bad edit can start a reload. The checks and the rollback limit the dam
 Context: A change can pass the syntax and boot checks and still fail at run time.
 Decision: After each good reload the watcher saves a small tar of the code directories. If the health check fails, the watcher restores it.
 Reason: The user can then use the app after a bad edit. The Coder is not always a person who can fix the code at once.
-Effect: One snapshot only. The snapshot has no vendor. A bad change to vendor is not rolled back. Use "Restore original" for that case.
+Effect: One snapshot only. The snapshot has no vendor. The watcher does not roll back a bad change to vendor. Use "Restore original" for that case.
 
 ## 75. SSH is the only access path
 Context: The user needs a shell, an editor and a file view in the Coder.
@@ -475,7 +475,7 @@ Effect: The rules are in Saldo::decidir (entries 41 to 45). The user can change 
 
 ## 78. Rules for SSH keys
 Context: The text in the panel becomes authorized_keys in the Coder VM.
-Decision: Only five key types are valid. No key options are valid. The maximum is 20 keys. The file is written by rename.
+Decision: Only five key types are valid. No key options are valid. The maximum is 20 keys. The code writes the file by rename.
 Reason: A key option such as `command=` can run a command or open a port. A strict list closes this risk. A rename never gives a half file.
 Effect: See entry 33 for the exact rules. The Coder reads the file at each login, so a change needs no relaunch.
 
@@ -483,9 +483,9 @@ Effect: See entry 33 for the exact rules. The Coder reads the file at each login
 Context: A new host key at each launch shows a warning to the user and breaks `known_hosts`.
 Decision: Nutrition makes the host key at the first launch. It stores the key in /var/lib/nutrition/secretos and passes it in CODER_SSH_HOST_KEY.
 Reason: The address is always 127.0.0.1 through the tunnel, so the key is the only identity check.
-Effect: The key is stored in the nutrition VM, so it stays when nutrition restarts only if the disk stays (see TODO.md). The key appears in the argument list of the celaut process for a short time. It allows host impersonation only.
+Effect: Nutrition stores the key in the nutrition VM, so the key stays when nutrition restarts only if the disk stays (see TODO.md). The key appears in the argument list of the celaut process for a short time. It allows host impersonation only.
 
-## 80. The Coder is launched with a reusable configuration
+## 80. Nutrition launches the Coder with a reusable configuration
 Context: The node reuses an idle instance with the same service and the same configuration.
 Decision: The launch passes the host key as the only environment variable. It never uses --new.
 Reason: A stable configuration lets the node reuse an instance, and the lease stays in the pool until nutrition stops it.
@@ -501,7 +501,7 @@ Effect: A shutdown of nutrition that has no stop leaves an orphan Coder. A fix i
 Context: The project text is Spanish. The Coder docs, comments and commits need a clear style for a reader with a different native language.
 Decision: New documentation, code comments and commit messages for this feature use ASD-STE100 English. UI text stays Spanish.
 Reason: The panel is for Spanish speakers. The docs and the code are for developers and for the authors of other services.
-Effect: Existing Spanish comments in other files are not changed.
+Effect: This decision does not change existing Spanish comments in other files.
 
 ## 83. Single household
 Context: The panel has one household, and Hogar::unico() returns it.
@@ -520,7 +520,7 @@ Context: The node owns the share through the nutrition instance. It makes the sh
 Decision: The docs say that nutrition holds no copy of the live tree. The Coder must keep its work in git. Nutrition makes no automatic backup of the share.
 Rejected options: A periodic copy of the share to the database. It would store code of unknown size and trust.
 Reason: Git in the Coder VM is the standard way to keep code. The snapshot of entry 74 is for rollback only, not for backup.
-Effect: A stop of nutrition loses the edits that are not pushed. The README of this directory says so.
+Effect: A stop of nutrition loses the edits that the Coder did not push. The README of this directory says so.
 
 ## 86. Trust model: the Coder is in the trust domain of the app
 Context: The Coder edits PHP files that the app runs as the user app, with the full environment of the app. Entry 2 said that the Coder is a separate trust domain. That is wrong.
