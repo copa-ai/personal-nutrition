@@ -264,6 +264,14 @@ medir_memoria() {
 }
 lanzar medir_memoria
 
+# --- Reload watcher (recarga.sh): reloads the app when a Coder child changes the shared code. Runs as root: it restarts the web and queue
+#     loops with a kill, but it runs php, artisan and php -l as the app user with an empty environment. Files: see the header of recarga.sh.
+#     A crash of the watcher must not stop the service, so a small loop restarts it. TERM stops the watcher too. ---
+RECARGA_NOMBRES=""
+for v in "${ENTORNO_APP[@]}"; do RECARGA_NOMBRES+="${v%%=*} "; done
+lanzar env "${ENTORNO_APP[@]}" RECARGA_NOMBRES="$RECARGA_NOMBRES" bash -c \
+    'trap "kill \$h 2>/dev/null; exit 0" TERM INT; while true; do /opt/nutrition/recarga.sh & h=$!; wait $h; sleep 5; done'
+
 # --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red y guarda copias de seguridad de ella ---
 # La primera vuelta es nada mas arrancar (no tras 300 s): asi la primera copia de seguridad de la base se toma en cuanto se conecta con ella.
 lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutrition:vigilar-base "$2" || true; sleep "$1"; done' vigilante 300 "$RUN_DB"

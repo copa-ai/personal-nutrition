@@ -56,3 +56,63 @@ Context: The SSH slot is the fourth api slot, port 2222, tcp, protocol_stack [["
 Decision: I added it after the cards slot and used the exact JSON from the verification. The slot has no prose.
 Reason: The order of the existing slots stays the same. The first slot (HTTP, 8000) remains the first address of nutrition.
 Effect: The forwarder that listens on 2222 comes in a later step. Until then, the port has no listener.
+
+## 10. Watcher is one bash script with a sourceable core
+Context: The reload logic needs small functions and a local test. No PHP or docker exists on the development machine.
+Decision: docker/servicio/recarga.sh holds all logic in functions. It runs the loop only when run as a script. The RECARGA_* variables change paths and commands. docker/pruebas/test-recarga.sh sources it with fake php, fake health and web processes made by bucle.sh.
+Reason: Tests run the real code and need no root. Bash is already in the image. A Python watcher would add a second language for the same job.
+Effect: The test covers good reload, syntax error, boot error, health rollback, auto off, reload now and restore original. It does not run real PHP, FrankenPHP or setpriv.
+
+## 11. Watcher lives outside the share, in a loop that restarts it
+Context: start.sh stops the whole service when one piece ends (wait -n). The watcher runs as root and reads files the Coder writes.
+Decision: The Dockerfile copies recarga.sh to /opt/nutrition/recarga.sh, outside the share (same rule as entry 2). start.sh starts it in a small bash loop that restarts it after 5 seconds and stops it on TERM. It passes the app environment variable names in RECARGA_NOMBRES and the values in its own environment.
+Reason: The Coder must not change a root script. A watcher crash must not stop the app. The watcher needs the app environment only for php and artisan.
+Effect: The watcher process holds the database password in its environment, as root. Rejected option: bucle.sh for the watcher (it writes a PID file as root in a directory that the app user owns).
+
+## 12. Root-only state directory
+Context: /var/lib/nutrition/coder belongs to the app user. A compromised app could plant a symlink there, and root would follow it when it writes.
+Decision: The snapshot, its stamp and the manifests live in /var/lib/nutrition/coder-root (root, mode 700). Only the flags and recarga.json stay in the coder directory. The watcher writes recarga.json through the app user (tee and mv with setpriv).
+Reason: Root never writes to a path that the app user controls.
+Effect: This differs from the first plan, which kept the snapshot in /var/lib/nutrition/coder. The panel does not need the snapshot. Root still reads and removes the flag files. A removal of a symlink removes only the link.
+
+## 13. File names and status fields
+Context: The panel step must read and write the control files.
+Decision: Flags are auto-recarga (content 0, off, no or false means OFF; a missing file means ON), recargar-ahora and restaurar-original. The status file is recarga.json. Its fields are in the header of recarga.sh: estado, resultado, mensaje, fecha, fecha_unix, auto, pendiente, cambios, arbol_vivo, arbol_original, igual_original, ultima_buena, recargas.
+Reason: Spanish names follow the rest of the panel. A flag file is simple for PHP to create and for bash to test.
+Effect: The panel writes auto-recarga as the app user. The watcher removes the two action flags when it takes them. The panel must not rely on a reply before the next poll (5 seconds plus the reload time).
+
+## 14. Cheap fingerprint, content hashes only on change
+Context: The poll runs every 5 seconds. A content hash of vendor would be slow.
+Decision: The poll hashes path, size and mtime (find -printf, sha256sum) of the watched paths. Content manifests (sha256 of each file) are made only after a stable change and after a reload. The original manifest is made from the tar and cached in the root-only directory.
+Reason: Polling costs little. The panel still gets exact "changed or not" data and a changed file count.
+Effect: A touch without a content change starts one reload. The count of changed files is exact. Watched paths do not include vendor, public or the other repository folders.
+
+## 15. Boot check is artisan route:list
+Context: A syntax check does not find a broken provider, a bad route file or a missing class.
+Decision: The boot check runs "php artisan route:list --json --no-interaction" as the app user. It boots the app, runs every provider and loads every route file. It does not touch the database.
+Reason: "artisan --version" does not boot the providers, so it finds too little. A command that reads data would fail when the database is down and would block a good reload. start.sh never runs route:cache, so the command reads the real route files.
+Effect: A run takes about one to two seconds of PHP. Not verified on real PHP: a provider that queries the database at boot would fail this check.
+
+## 16. php -l only on files newer than the last good reload
+Context: Checking every PHP file on each change is slow on virtiofs.
+Decision: The stamp file ultima-buena.stamp has the time of the start of the last good reload. php -l runs on watched .php files newer than it. A missing stamp means all files. A failed check leaves the stamp unchanged, so the files are checked again next time. Blade and JSON files are not checked.
+Reason: The stamp uses the start time of the cycle, so an edit during a cycle is checked in the next one.
+Effect: A restore of the original removes the stamp, so every file is checked once.
+
+## 17. Reload method and health check
+Context: The loops from entry 6 restart a child that ends.
+Decision: The watcher runs optimize:clear, sends TERM to the FrankenPHP PID and waits for a new PID file (max 40 s). It sends TERM to both queue workers and does not wait: a worker ends its current job first, then bucle.sh starts it with the new code. The health check is an HTTP 200 on http://127.0.0.1:8000/up, one try per second, 30 tries.
+Reason: A menu job can last hours. A wait for the worker would block the reload. The route /up exists in bootstrap/app.php and needs no login.
+Effect: A queue job that is running keeps the old code until it ends. optimize:clear also clears the database cache store (cache:clear): a failure only gives a log warning. During the web restart the app is down for a few seconds.
+
+## 18. Rollback and error states
+Context: A change can pass the checks and still break the app.
+Decision: After a failed health check, the watcher restores the last good snapshot, runs optimize:clear, restarts web and queue, and checks health again. Result revertido on success. Result error_salud when there is no snapshot or the restored code also fails. After a failed check or a rollback, the watcher stores the fingerprint as seen, so it does not retry the same code every 5 seconds. A new edit starts a new attempt. At start, if the app is healthy and there is no snapshot, the current code becomes the first snapshot.
+Reason: This prevents a loop of reload and rollback. The first snapshot gives the first change a safe base.
+Effect: After an error the old code runs and the status shows the message until the next change or a manual reload.
+
+## 19. Restore original details
+Context: The tar holds the whole project, including vendor. The Coder can add files and packages.
+Decision: The watcher extracts the whole tar over the share with --no-same-owner and without .coder, then removes files that the tar does not hold in the watched paths and in admin/vendor. It then runs a normal reload with no snapshot rollback. A failed health check gives error_salud. Rejected option: delete and rebuild vendor (large and slow with the app running).
+Reason: Extraction replaces changed vendor files. The prune step removes added vendor files. composer.lock and vendor match again.
+Effect: Files outside these paths (docs, agente, docker) are replaced but extra files there stay. Empty directories stay. Root extracts files that the Coder wrote: tar can follow a symlink that the Coder planted. Accept this risk for now. File names with a newline are not handled.

@@ -103,8 +103,9 @@ COPY ./docker/servicio/start.sh /opt/nutrition/start.sh
 COPY ./docker/servicio/Caddyfile /opt/nutrition/Caddyfile
 COPY ./docker/servicio/estado /opt/nutrition/estado
 COPY ./docker/servicio/bucle.sh /opt/nutrition/bucle.sh
-RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/estado/servidor.py \
-    && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh /opt/nutrition/bucle.sh \
+COPY ./docker/servicio/recarga.sh /opt/nutrition/recarga.sh
+RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/recarga.sh /opt/nutrition/estado/servidor.py \
+    && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/recarga.sh \
     && mkdir -p /var/lib/nutrition
 
 # Copia original del proyecto, FUERA del directorio compartido (el montaje oculta el contenido de la imagen en esa ruta). Se hace al final,
