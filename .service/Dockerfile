@@ -56,7 +56,8 @@ COPY ./.dependencies /opt/nutrition/celaut/.dependencies
 # Un usuario por pieza: lo que el agente (que ejecuta Bash) puede leer no incluye ni la base ni APP_KEY.
 RUN groupadd -g 1000 app     && useradd -m -u 1000 -g 1000 -s /bin/bash app \
     && groupadd -g 1001 agente && useradd -m -u 1001 -g 1001 -s /bin/bash agente \
-    && groupadd -g 1002 chat   && useradd -m -u 1002 -g 1002 -s /bin/bash chat
+    && groupadd -g 1002 chat   && useradd -m -u 1002 -g 1002 -s /bin/bash chat \
+    && groupadd -g 1003 sshproxy && useradd -m -u 1003 -g 1003 -s /usr/sbin/nologin sshproxy
 
 # Traductor gRPC del chat (docker/chat; usuario chat, entorno vacio, sin datos propios): venv con grpcio y protobuf (mismas versiones
 # que los stubs de la etapa «stubs»; grpcio-tools no hace falta en tiempo de ejecucion) y stubs generados junto al servidor.
@@ -104,8 +105,11 @@ COPY ./docker/servicio/Caddyfile /opt/nutrition/Caddyfile
 COPY ./docker/servicio/estado /opt/nutrition/estado
 COPY ./docker/servicio/bucle.sh /opt/nutrition/bucle.sh
 COPY ./docker/servicio/recarga.sh /opt/nutrition/recarga.sh
-RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/recarga.sh /opt/nutrition/estado/servidor.py \
+# SSH forwarder (user sshproxy). It is outside the shared project, so a Coder child cannot change it.
+COPY ./docker/servicio/ssh-proxy.py /opt/nutrition/ssh-proxy.py
+RUN sed -i 's/\r$//' /opt/nutrition/ssh-proxy.py /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/recarga.sh /opt/nutrition/estado/servidor.py \
     && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/recarga.sh \
+    && chmod 755 /opt/nutrition/ssh-proxy.py \
     && mkdir -p /var/lib/nutrition
 
 # Copia original del proyecto, FUERA del directorio compartido (el montaje oculta el contenido de la imagen en esa ruta). Se hace al final,

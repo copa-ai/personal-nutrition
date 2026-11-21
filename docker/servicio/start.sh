@@ -10,6 +10,7 @@
 #                             (directorio compartido con un Coder hijo) dentro de un bucle (bucle.sh): matar el hijo lo relanza.
 #                             Los PID de web y cola estan en /var/lib/nutrition/coder/*.pid
 #   cola    (usuario app)     queue:work --queue=default (menus: pueden durar horas) y otro --queue=chat (respuestas del chat)
+#   ssh     (usuario sshproxy) reenvio TCP 0.0.0.0:2222 -> destino de $CODER/destino.json (docker/servicio/ssh-proxy.py). Entorno vacio.
 #   chat    (usuario chat)    traductor gRPC de la interfaz «chat» de chatui (docker/chat/servidor.py, venv /opt/chat-venv) 0.0.0.0:50051
 #                             <- segundo slot de service.json -> api (http2 -> grpc -> chat). No guarda datos: habla por HTTP con la web
 #                             en 127.0.0.1:8001/interno/chat (segundo sitio del Caddyfile, solo loopback y no declarado en service.json, asi
@@ -156,7 +157,8 @@ A="$DATOS/admin"
 chmod -R a+rX "$PROYECTO" 2>/dev/null || echo "start.sh: aviso: no se pudo hacer legible $PROYECTO" >&2
 # Control files shared by the panel (user app) and the reload watcher (root). Old PID files belong to the previous run.
 rm -f "$CODER"/*.pid "$CODER"/*.pid.tmp
-chown app:app "$CODER"; chmod 750 "$CODER"
+# Group sshproxy can read the directory (destino.json) and cannot write in it: the forwarder user needs no other right.
+chown app:sshproxy "$CODER"; chmod 750 "$CODER"
 mkdir -p "$A/storage/framework/cache" "$A/storage/framework/sessions" "$A/storage/framework/views" "$A/storage/logs" \
          "$A/storage/app/private" "$A/agente" "$A/bootstrap-cache" "$A/celaut"
 chown -R app:app "$A"; chmod 700 "$A"
@@ -271,6 +273,20 @@ RECARGA_NOMBRES=""
 for v in "${ENTORNO_APP[@]}"; do RECARGA_NOMBRES+="${v%%=*} "; done
 lanzar env "${ENTORNO_APP[@]}" RECARGA_NOMBRES="$RECARGA_NOMBRES" bash -c \
     'trap "kill \$h 2>/dev/null; exit 0" TERM INT; while true; do /opt/nutrition/recarga.sh & h=$!; wait $h; sleep 5; done'
+
+# --- SSH forwarder (ssh-proxy.py): slot 2222 of service.json. User sshproxy, empty environment. It reads the target from
+#     $CODER/destino.json (written by the app user, mode 644, in a directory that only app can write) and pipes bytes. It never parses SSH.
+#     A crash must not stop the service, so a small loop restarts it. TERM stops it. ---
+ssh_proxy_bucle() {
+    local h=""
+    trap 'kill $h 2>/dev/null; exit 0' TERM INT
+    while true; do
+        ( como sshproxy SSH_PROXY_PORT=2222 SSH_PROXY_DESTINO="$CODER/destino.json" -- python3 /opt/nutrition/ssh-proxy.py ) & h=$!
+        wait $h || true
+        sleep 3
+    done
+}
+lanzar ssh_proxy_bucle
 
 # --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red y guarda copias de seguridad de ella ---
 # La primera vuelta es nada mas arrancar (no tras 300 s): asi la primera copia de seguridad de la base se toma en cuanto se conecta con ella.

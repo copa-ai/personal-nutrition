@@ -116,3 +116,39 @@ Context: The tar holds the whole project, including vendor. The Coder can add fi
 Decision: The watcher extracts the whole tar over the share with --no-same-owner and without .coder, then removes files that the tar does not hold in the watched paths and in admin/vendor. It then runs a normal reload with no snapshot rollback. A failed health check gives error_salud. Rejected option: delete and rebuild vendor (large and slow with the app running).
 Reason: Extraction replaces changed vendor files. The prune step removes added vendor files. composer.lock and vendor match again.
 Effect: Files outside these paths (docs, agente, docker) are replaced but extra files there stay. Empty directories stay. Root extracts files that the Coder wrote: tar can follow a symlink that the Coder planted. Accept this risk for now. File names with a newline are not handled.
+
+## 20. Forwarder is a Python asyncio script with no dependency
+Context: The SSH slot needs a byte pipe from port 2222 to the Coder. The image has python3 and no extra package is needed.
+Decision: docker/servicio/ssh-proxy.py uses only the standard library. Settings come from arguments, then SSH_PROXY_* variables, then defaults. Rejected options: socat (not in the image, no live check of the destination file) and a PHP pipe (heavy, runs as the app user).
+Reason: The script is short, testable with unittest and runs with the empty environment.
+Effect: The unit tests in docker/pruebas/test_ssh_proxy.py run without a node.
+
+## 21. The destination file is read for each connection and each second
+Context: The Coder can stop, or a new Coder can start, while pipes are open.
+Decision: The forwarder reads destino.json for each new connection. A watcher task reads it every second. A pipe whose target is not the current target closes. A removed or invalid file closes all pipes. The same content again keeps the pipes.
+Reason: This needs no signal from the panel or from vigilar-coder. The command only writes or removes the file.
+Effect: A pipe closes within about one second of a change. A pipe to a Coder that died stays open until the command removes the file or the TCP connection breaks.
+
+## 22. Limits and timeouts
+Context: A bad client can open many connections and pay nothing, but nutrition pays 10000 MU for each tunnel connection.
+Decision: Defaults: 16 open pipes, 10 s connect timeout, 14400 s (4 hours) idle timeout, 4096 bytes maximum for the destination file. The idle time counts both directions together. A connection over the limit closes at once with one log line.
+Reason: VS Code Remote-SSH opens several connections. SSH sessions can be quiet for hours. A shared idle clock stops a pipe only when both sides are quiet.
+Effect: The values are settings (--max, --idle, --connect-timeout). Not tuned on a real node.
+
+## 23. Strict host validation, no resolution rules
+Context: The destination file is written by the app user from the output of the node, but the forwarder must not trust it.
+Decision: The host must be an IP address (v4 or v6) or a name of letters, digits, dots and hyphens that starts and ends with a letter or digit. The port must be an integer from 1 to 65535. Other types (text, boolean, float) are refused. The match uses the whole string, so a trailing newline fails.
+Reason: A bad file must not make the forwarder connect to an odd target or write odd text in the log.
+Effect: The forwarder accepts loopback and private addresses. It does not limit the target to the Coder: only the app user can write the file.
+
+## 24. Forwarder user sshproxy and a group on the coder directory
+Context: The app user owns /var/lib/nutrition/coder (mode 750) and writes destino.json. The forwarder needs to read it. Group app is not suitable: /__config__ is readable by group app.
+Decision: The Dockerfile creates user and group sshproxy (uid and gid 1003, no login shell). start.sh sets the directory to app:sshproxy, mode 750. The file is mode 644 and the app user owns it. The forwarder starts through the "como" function with an empty environment (env -i).
+Reason: The forwarder gets read access to this directory only. It cannot write the destination file or change the directory.
+Effect: The forwarder can also read the other control files in this directory (PID files, flags, recarga.json). They hold no secret. The panel step must write destino.json by atomic rename in the same directory.
+
+## 25. Restart loop and place in start.sh
+Context: Every piece that ends stops the whole service (wait -n), but the forwarder is not essential for the web app.
+Decision: start.sh runs ssh_proxy_bucle, which restarts the forwarder after 3 seconds. TERM kills the child. The script and the user are outside the shared project, so a Coder cannot change them. The forwarder starts after the web and queue are ready and does not add a phase to the status page.
+Reason: A crash of a debug path must not take down the menu service.
+Effect: A crash loop shows in app.log. Not verified on a real VM: setpriv and the port bind at 2222 as a non-root user (port above 1023, so no capability is needed).
