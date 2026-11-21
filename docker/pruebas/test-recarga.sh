@@ -156,6 +156,31 @@ echo "$PID_WEB" > "$C/web.pid"
 printf '%s' "$(json_texto $'admin/app/a\x01\x7f\xff.php: "x" \\')" | python3 -c "import sys,json; json.loads('\"'+sys.stdin.read()+'\"')" 2>/dev/null \
     && ok "json_texto output is a valid JSON string" || mal "json_texto output is a valid JSON string"
 
+# 6f. The reload lock: no reload while a Coder launch is in progress (file "lanzando" younger than 2400 s).
+PID_WEB=$(cat "$C/web.pid")
+date +%s > "$C/lanzando"
+cambia "$P/admin/app/A.php" '// during launch'
+SALIDA=$(una_vuelta 2>&1; una_vuelta 2>&1; una_vuelta 2>&1)
+verificar "lock: automatic reload waits, change stays pending" "[ \"\$(cat $C/web.pid)\" = $PID_WEB ] && [ \"\$(json pendiente)\" = True ]"
+verificar "lock: espera_lanzamiento is true in recarga.json" "[ \"\$(json espera_lanzamiento)\" = True ]"
+verificar "lock: one log line for three passes" "[ \$(printf '%s\n' \"\$SALIDA\" | grep -c 'espera a que termine el lanzamiento') -eq 1 ]"
+touch "$C/recargar-ahora"; una_vuelta > /dev/null 2>&1
+verificar "lock: reload-now flag waits and is kept" "[ \"\$(cat $C/web.pid)\" = $PID_WEB ] && [ -e $C/recargar-ahora ]"
+touch "$C/restaurar-original"; una_vuelta > /dev/null 2>&1
+verificar "lock: restore waits and its flag is kept" "[ \"\$(cat $C/web.pid)\" = $PID_WEB ] && [ -e $C/restaurar-original ] && grep -q 'during launch' '$P/admin/app/A.php'"
+rm -f "$C/restaurar-original"
+rm -f "$C/lanzando"; una_vuelta > /dev/null 2>&1
+verificar "lock removed: the pending reload runs and the wait ends" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ] && [ ! -e $C/recargar-ahora ] && [ \"\$(json espera_lanzamiento)\" = False ] && [ \"\$(json resultado)\" = ok ]"
+# A stale lock (older than the limit), a bad lock and a future lock do not block.
+for contenido in "$(( $(date +%s) - 3000 ))" "basura" "$(( $(date +%s) + 99999 ))"; do
+    PID_WEB=$(cat "$C/web.pid")
+    printf '%s\n' "$contenido" > "$C/lanzando"
+    cambia "$P/admin/app/A.php" '// stale lock'
+    una_vuelta > /dev/null 2>&1
+    verificar "lock '$contenido' does not block" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ] && [ \"\$(json espera_lanzamiento)\" = False ]"
+done
+rm -f "$C/lanzando"
+
 # 7. Restore original: files return, extra files go, .coder and vendor are right.
 cambia "$P/admin/app/A.php" '// edit 3'
 echo '<?php // extra' > "$P/admin/app/Extra.php"

@@ -130,6 +130,19 @@ class CoderPaginaTest extends TestCase
         $this->pagina()->assertSee('No se recargó: error de sintaxis PHP')->assertSee('PHP Parse error en app/X.php')->assertSee('3 fichero(s) distintos');
     }
 
+    public function test_muestra_que_la_recarga_espera_al_lanzamiento(): void
+    {
+        $datos = ['estado' => 'vigilando', 'resultado' => 'ninguno', 'pendiente' => true, 'espera_lanzamiento' => true];
+        file_put_contents($this->archivo('recarga.json'), json_encode($datos));
+        $this->pagina()->assertSee('la recarga espera a que termine el lanzamiento');
+
+        file_put_contents($this->archivo('recarga.json'), json_encode(['espera_lanzamiento' => 'si'] + $datos));
+        $this->pagina()->assertDontSee('la recarga espera a que termine el lanzamiento');
+
+        file_put_contents($this->archivo('recarga.json'), json_encode(['espera_lanzamiento' => false] + $datos));
+        $this->pagina()->assertDontSee('la recarga espera a que termine el lanzamiento');
+    }
+
     // --- Launch ---
 
     public function test_rechaza_un_servicio_sin_la_etiqueta_de_invitado(): void

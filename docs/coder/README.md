@@ -72,7 +72,8 @@ The panel and the watcher talk through small files in /var/lib/nutrition/coder.
 | auto-recarga | panel | Auto reload. A missing file means ON. |
 | recargar-ahora | panel | Flag. Start one reload now. |
 | restaurar-original | panel | Flag. Restore the original, then reload. |
-| recarga.json | watcher | Status for the panel. |
+| lanzando | app | Lock. The app writes it (unix time) while it launches a Coder. The watcher starts no reload while it is younger than 2400 s. |
+| recarga.json | watcher | Status for the panel. It has the field espera_lanzamiento. |
 
 Auto reload is ON by default.
 When it is OFF, the watcher ignores changes until the user presses "Recargar ahora".

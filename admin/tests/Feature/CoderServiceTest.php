@@ -384,6 +384,96 @@ class CoderServiceTest extends TestCase
         }
     }
 
+    // --- reload lock ---
+
+    private function lanzando(): string
+    {
+        return $this->carpeta.'/coder/lanzando';
+    }
+
+    public function test_durante_el_lanzamiento_existe_el_fichero_lanzando_y_al_acabar_se_quita(): void
+    {
+        $visto = null;
+        $this->sonda->alProbar = function () use (&$visto): void {
+            $visto = [
+                'existe' => is_file($this->lanzando()),
+                'modo' => fileperms($this->lanzando()) & 0777,
+                'hora' => (int) trim((string) file_get_contents($this->lanzando())),
+                'estado' => $this->coder()->estado()['estado'],
+            ];
+        };
+        $antes = time();
+
+        $this->coder()->lanzar(self::HASH);
+
+        $this->assertTrue($visto['existe']);
+        $this->assertSame(Coder::LANZANDO, $visto['estado']);
+        $this->assertSame(0644, $visto['modo']);
+        $this->assertGreaterThanOrEqual($antes, $visto['hora']);
+        $this->assertLessThanOrEqual(time(), $visto['hora']);
+        $this->assertFileDoesNotExist($this->lanzando());
+        $this->assertSame([], glob($this->carpeta.'/coder/lanzando.tmp*') ?: []);
+    }
+
+    public function test_si_el_lanzamiento_falla_el_fichero_lanzando_se_quita(): void
+    {
+        $this->nodo->rechazo = 'Insufficient balance';
+        try {
+            $this->coder()->lanzar(self::HASH);
+            $this->fail('Debia fallar.');
+        } catch (CoderException) {
+            $this->assertFileDoesNotExist($this->lanzando());
+        }
+
+        $this->nodo->rechazo = null;
+        $this->sonda->respuesta = null;
+        $this->sonda->alProbar = fn () => $this->assertFileExists($this->lanzando());
+        try {
+            $this->coder()->lanzar(self::HASH, confirmaSinSpec: false);
+        } catch (CoderException) {
+            // The SSH test fails on purpose.
+        }
+        $this->assertFileDoesNotExist($this->lanzando());
+    }
+
+    public function test_si_el_lanzamiento_lanza_una_excepcion_el_fichero_lanzando_se_quita(): void
+    {
+        $this->sonda->alProbar = function (): void {
+            throw new \LogicException('fallo inesperado');
+        };
+        try {
+            $this->coder()->lanzar(self::HASH);
+            $this->fail('Debia fallar.');
+        } catch (\LogicException) {
+            $this->assertFileDoesNotExist($this->lanzando());
+        }
+    }
+
+    public function test_parar_quita_el_fichero_lanzando_tambien_forzando(): void
+    {
+        Ajuste::fijar('coder.estado', Coder::LANZANDO);
+        Ajuste::fijar('coder.instancia', 'prueba');
+        file_put_contents($this->lanzando(), time()."\n");
+        $this->coder()->parar(forzar: true);
+        $this->assertFileDoesNotExist($this->lanzando());
+
+        $this->coder()->lanzar(self::HASH);
+        file_put_contents($this->lanzando(), time()."\n");
+        $this->coder()->parar();
+        $this->assertFileDoesNotExist($this->lanzando());
+    }
+
+    public function test_vigilar_quita_el_fichero_lanzando_al_dar_por_colgado_un_lanzamiento(): void
+    {
+        Ajuste::fijar('coder.estado', Coder::LANZANDO);
+        Ajuste::fijar('coder.instancia', 'prueba');
+        Ajuste::fijar('coder.lanzado_en', now()->subHours(2)->toIso8601String());
+        file_put_contents($this->lanzando(), (time() - 7200)."\n");
+
+        $this->assertSame('colgado', $this->coder()->vigilar());
+        $this->assertFileDoesNotExist($this->lanzando());
+    }
+
     // --- stop ---
 
     public function test_parar_quita_destino_para_la_instancia_y_limpia_el_estado(): void

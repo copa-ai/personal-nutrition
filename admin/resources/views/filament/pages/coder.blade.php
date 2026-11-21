@@ -153,6 +153,7 @@
                     @if ($recarga['arbol_vivo']) (huella <code>{{ substr($recarga['arbol_vivo'], 0, 12) }}</code>) @endif</li>
                 <li>Vigilante: <strong>{{ $recarga['disponible'] ? $recarga['estado'] : 'sin datos (no ha escrito su estado)' }}</strong>
                     @if ($recarga['pendiente']) · hay cambios sin cargar @endif
+                    @if ($recarga['espera_lanzamiento']) · la recarga espera a que termine el lanzamiento @endif
                     @if ($recargaPedida) · recarga pedida @endif
                     @if ($restauracionPedida) · restauración pedida @endif</li>
                 <li>Última recarga: <strong>{{ $resultadoTexto }}</strong>

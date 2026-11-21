@@ -4,7 +4,7 @@ This file records the design decisions for the Coder feature.
 Each entry has a Context, a Decision, a Reason and an Effect.
 Some entries also have a line "Rejected options".
 Entries 1 to 69 come from the build steps (image, reload, ssh, coder, funds, panel).
-Entries 70 to 89 record the agreed design decisions and the limits that the build did not record.
+Entries 70 to 90 record the agreed design decisions and the limits that the build did not record.
 
 ## 1. Project tree path and content
 Context: The agreed share path is /opt/nutrition/project. The old code path was /opt/nutrition/admin.
@@ -545,3 +545,10 @@ Context: In the first test on a node, the app answered 403 for every path (also 
 Decision: Each pass of the watcher (5 s) calls asegurar_acceso. If the root of the project is not readable and searchable for others, or the app user cannot read admin/artisan, the watcher runs chmod a+rx on the root and chmod -R a+rX on the tree. It writes one log line each time that the problem starts. The test in docker/pruebas/test-recarga.sh covers a root with mode 700, one log line for two passes, and a tree with mode 600 files.
 Reason: We infer that the node replaces /opt/nutrition/project with a new mount when the first child starts, and that the root of the new mount is mode 700 and owned by root. The app user then cannot enter it. We did not look inside the nutrition VM when this happened. Entry 5 and start.sh opened the permissions only at start, before the replacement.
 Effect: The app recovers within about 5 s. During this time the web server answers 403. start.sh still opens the permissions at start. If the node changes the owner of the files as well, a chmod can be not enough: check this with an SSH login to a Coder (see the verification notes).
+
+## 90. A reload waits for a Coder launch in progress
+Context: A reload restarts the queue workers. If a launch runs in a queue job at that moment, the job dies and the state stays "launching" until the watcher of the app marks it as an error (up to 40 minutes). A Coder that edits the code can cause this itself.
+Decision: Coder::lanzar writes the file $CODER/lanzando when it sets the state to "launching". The content is the unix time in seconds. The file has mode 0644 and is written by rename, like destino.json. The app removes it when the launch ends (a finally block: success, failure or exception), in parar (also forced), in limpiar and when vigilar marks a stuck launch as an error. The watcher recarga.sh starts no reload while the file exists and is younger than 2400 s (config coder.lanzamiento.colgado_s, variable RECARGA_LANZAMIENTO_MAX). This holds for the automatic reload, for the flag recargar-ahora and for restaurar-original. The watcher keeps the pending change and the flags, writes one log line when a wait starts, and reloads when the file is gone or old. A bad content or a time in the future counts as an old file. recarga.json has the new field espera_lanzamiento, and the panel shows "la recarga espera a que termine el lanzamiento".
+Rejected options: A lock in the database (the watcher has no database access). A longer state timeout (it keeps the user waiting after a real crash).
+Reason: A file is the same way that the panel and the watcher already use. The age limit stops a crash of the app from blocking reloads for ever.
+Effect: A reload can be late by the time of a launch (usually less than 3 minutes, at most 40). The Coder can write the lock file, as it can write other files of the app (entry 86). The most it can do is to delay reloads by 40 minutes for each write that it makes, but it must refresh the time to do so.

@@ -213,47 +213,53 @@ class Coder
 
         $this->quitarDestino();
         $this->limpiar();
-        Ajuste::fijar('coder.estado', self::LANZANDO);
-        Ajuste::fijar('coder.instancia', Instancia::id());
-        Ajuste::fijar('coder.servicio', $id);
-        Ajuste::fijar('coder.tipo', $tipo);
-        Ajuste::fijar('coder.referencia', $ref);
-        Ajuste::fijar('coder.lanzado_en', CarbonImmutable::now()->toIso8601String());
-        CoderEstado::fijar('coder.enviado_mu', '0');
-        Auditoria::registrar('coder.lanzamiento', 'Lanzamiento del Coder', ['servicio' => $id, 'tipo' => $tipo]);
-
-        $entorno = [(string) config('coder.variable_clave_host') => $claveHost];
-        $inicialMu ??= config('coder.lanzamiento.inicial_mu') === null ? null : (string) config('coder.lanzamiento.inicial_mu');
         try {
-            $r = $tipo === 'hash'
-                ? $this->nodo->adquirirPorHash($id, $entorno, $inicialMu)
-                : $this->nodo->adquirirPorPaquete($ref, $entorno, $inicialMu);
-        } catch (NodoException $e) {
-            throw $this->fallar('El nodo no lanzó el Coder: '.$e->getMessage(), null);
+            // Tell the reload watcher: a reload now would kill this launch (the queue workers restart).
+            $this->escribirLanzando();
+            Ajuste::fijar('coder.estado', self::LANZANDO);
+            Ajuste::fijar('coder.instancia', Instancia::id());
+            Ajuste::fijar('coder.servicio', $id);
+            Ajuste::fijar('coder.tipo', $tipo);
+            Ajuste::fijar('coder.referencia', $ref);
+            Ajuste::fijar('coder.lanzado_en', CarbonImmutable::now()->toIso8601String());
+            CoderEstado::fijar('coder.enviado_mu', '0');
+            Auditoria::registrar('coder.lanzamiento', 'Lanzamiento del Coder', ['servicio' => $id, 'tipo' => $tipo]);
+
+            $entorno = [(string) config('coder.variable_clave_host') => $claveHost];
+            $inicialMu ??= config('coder.lanzamiento.inicial_mu') === null ? null : (string) config('coder.lanzamiento.inicial_mu');
+            try {
+                $r = $tipo === 'hash'
+                    ? $this->nodo->adquirirPorHash($id, $entorno, $inicialMu)
+                    : $this->nodo->adquirirPorPaquete($ref, $entorno, $inicialMu);
+            } catch (NodoException $e) {
+                throw $this->fallar('El nodo no lanzó el Coder: '.$e->getMessage(), null);
+            }
+            $lease = (int) $r['lease'];
+            Ajuste::fijar('coder.lease', $lease);
+            Ajuste::fijar('coder.uri', (string) $r['uri']);
+            Saldo::olvidarMuestras();   // the start charge is not burn: the burn rate starts again
+
+            [$host, $puerto] = $this->separarUri((string) $r['uri']);
+            if ($host === null || ! $this->esperarSsh($host, $puerto)) {
+                throw $this->fallar(
+                    "El servicio lanzado no responde como SSH en {$r['uri']}. El primer puerto de su api tiene que ser el de SSH. Se ha parado.",
+                    $lease,
+                );
+            }
+
+            try {
+                $this->escribirDestino($host, $puerto, $lease, $id);
+            } catch (RuntimeException $e) {
+                throw $this->fallar('No se pudo escribir el destino del reenviador: '.$e->getMessage(), $lease);
+            }
+
+            Ajuste::fijar('coder.estado', self::EN_MARCHA);
+            Auditoria::registrar('coder.lanzado', 'Coder en marcha', ['servicio' => $id, 'lease' => $lease, 'uri' => $r['uri']]);
+
+            return $this->estado();
+        } finally {
+            $this->quitarLanzando();
         }
-        $lease = (int) $r['lease'];
-        Ajuste::fijar('coder.lease', $lease);
-        Ajuste::fijar('coder.uri', (string) $r['uri']);
-        Saldo::olvidarMuestras();   // the start charge is not burn: the burn rate starts again
-
-        [$host, $puerto] = $this->separarUri((string) $r['uri']);
-        if ($host === null || ! $this->esperarSsh($host, $puerto)) {
-            throw $this->fallar(
-                "El servicio lanzado no responde como SSH en {$r['uri']}. El primer puerto de su api tiene que ser el de SSH. Se ha parado.",
-                $lease,
-            );
-        }
-
-        try {
-            $this->escribirDestino($host, $puerto, $lease, $id);
-        } catch (RuntimeException $e) {
-            throw $this->fallar('No se pudo escribir el destino del reenviador: '.$e->getMessage(), $lease);
-        }
-
-        Ajuste::fijar('coder.estado', self::EN_MARCHA);
-        Auditoria::registrar('coder.lanzado', 'Coder en marcha', ['servicio' => $id, 'lease' => $lease, 'uri' => $r['uri']]);
-
-        return $this->estado();
     }
 
     /**
@@ -275,6 +281,7 @@ class Coder
         }
 
         $this->quitarDestino();
+        $this->quitarLanzando();
         $reembolso = null;
         if ($actual['lease'] !== null) {
             try {
@@ -343,6 +350,7 @@ class Coder
     private function marcarMuerto(string $motivo, ?int $lease): void
     {
         $this->quitarDestino();
+        $this->quitarLanzando();
         Ajuste::fijar('coder.estado', self::ERROR);
         Ajuste::fijar('coder.error', $motivo);
         Ajuste::fijar('coder.lease', null);
@@ -372,6 +380,7 @@ class Coder
 
     private function limpiar(): void
     {
+        $this->quitarLanzando();
         Ajuste::fijar('coder.estado', self::NINGUNO);
         foreach (self::DE_VIDA as $clave) {
             if (in_array($clave, self::VOLATIL, true)) {
@@ -522,6 +531,26 @@ class Coder
     private function quitarDestino(): void
     {
         @unlink($this->rutaDestino());
+    }
+
+    /** Write the lock file for the reload watcher: the unix time in seconds. The watcher does not reload while it is young (coder.lanzamiento.colgado_s). */
+    private function escribirLanzando(): void
+    {
+        try {
+            $this->escribirAtomico($this->rutaLanzando(), time()."\n", 0644);
+        } catch (RuntimeException) {
+            // Without the lock a reload can kill the launch. The launch itself can go on.
+        }
+    }
+
+    private function quitarLanzando(): void
+    {
+        @unlink($this->rutaLanzando());
+    }
+
+    private function rutaLanzando(): string
+    {
+        return rtrim((string) config('coder.directorio'), '/').'/lanzando';
     }
 
     private function rutaDestino(): string

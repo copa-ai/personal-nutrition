@@ -20,6 +20,10 @@
 #                       When OFF, the watcher ignores changes until the flag recargar-ahora exists.
 #   recargar-ahora      Flag. The panel creates it (any content). The watcher removes it and runs one reload.
 #   restaurar-original  Flag. The panel creates it. The watcher removes it, restores the original tar, then reloads.
+#   lanzando            Lock. The app writes it (unix time in seconds) while it launches a Coder, and removes it when the launch ends.
+#                       A reload kills the queue workers and so the launch. While the file exists and is younger than
+#                       RECARGA_LANZAMIENTO_MAX seconds (default 2400), the watcher starts no reload (automatic, recargar-ahora
+#                       or restaurar-original). It keeps the pending change and writes one log line for each wait.
 #   recarga.json        Status. Written by the watcher, through the app user, by atomic rename. Mode 644.
 #   web.pid, cola-default.pid, cola-chat.pid   PID files from bucle.sh. The app user writes them, so the watcher does not trust them:
 #                       it kills a PID only if the process belongs to the app user and its command line is frankenphp or queue:work.
@@ -44,6 +48,7 @@
 #   igual_original true when arbol_vivo equals arbol_original.
 #   ultima_buena   UTC time of the last good reload (ISO 8601) or null.
 #   recargas       Count of good reloads since this watcher started.
+#   espera_lanzamiento  true | false. A reload is due, but the watcher waits for a Coder launch to end (see lanzando).
 #
 # Security rules for this root script (the app user and the Coder can write the share and $CODER):
 #   - Before a restore or a rollback, it removes symlinks in the watched paths and their parents, so tar cannot write outside the share.
@@ -69,6 +74,7 @@ if [ "${RECARGA_COMO+set}" = set ]; then COMO=$RECARGA_COMO; else COMO="setpriv 
 PATH_APP=${RECARGA_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}
 # Names of the environment variables the app needs (from start.sh). The values are read from this process.
 NOMBRES_ENTORNO=${RECARGA_NOMBRES:-}
+LANZAMIENTO_MAX=${RECARGA_LANZAMIENTO_MAX:-2400}   # age in seconds after which the lock "lanzando" is stale
 MAX_BYTES=${RECARGA_MAX_BYTES:-209715200}   # size cap of the watched paths
 # Owner and command line that a PID must have before the watcher kills it.
 APP_UID=${RECARGA_UID:-$(id -u app 2> /dev/null)}
@@ -84,6 +90,7 @@ PODAR_ORIGINAL=("${VIGILADOS[@]}" admin/vendor)
 RUTAS=() HUELLA_VISTA=""
 ESTADO=vigilando RESULTADO=ninguno MENSAJE="" FECHA_UNIX=0
 PENDIENTE=false HUELLA_BASE="" ULTIMA_BUENA="" RECARGAS=0 CAMBIOS=0 ARBOL_VIVO="" ARBOL_ORIGINAL=""
+ESPERA_LANZAMIENTO=false
 
 log() { echo "[$(date -u +%T)] recarga: $*"; }
 
@@ -125,9 +132,9 @@ escribir_estado() {
     auto_activo || auto=false
     [ -z "$ARBOL_VIVO" ] || [ "$ARBOL_VIVO" != "$ARBOL_ORIGINAL" ] || igual=true
     [ -z "$ULTIMA_BUENA" ] || ultima="\"$ULTIMA_BUENA\""
-    printf '{"estado":"%s","resultado":"%s","mensaje":"%s","fecha":"%s","fecha_unix":%s,"auto":%s,"pendiente":%s,"cambios":%s,"arbol_vivo":"%s","arbol_original":"%s","igual_original":%s,"ultima_buena":%s,"recargas":%s}\n' \
+    printf '{"estado":"%s","resultado":"%s","mensaje":"%s","fecha":"%s","fecha_unix":%s,"auto":%s,"pendiente":%s,"cambios":%s,"arbol_vivo":"%s","arbol_original":"%s","igual_original":%s,"ultima_buena":%s,"recargas":%s,"espera_lanzamiento":%s}\n' \
         "$ESTADO" "$RESULTADO" "$(json_texto "$MENSAJE")" "$([ "$FECHA_UNIX" -eq 0 ] || date -u -d "@$FECHA_UNIX" +%FT%TZ)" "$FECHA_UNIX" \
-        "$auto" "$PENDIENTE" "$CAMBIOS" "$ARBOL_VIVO" "$ARBOL_ORIGINAL" "$igual" "$ultima" "$RECARGAS" \
+        "$auto" "$PENDIENTE" "$CAMBIOS" "$ARBOL_VIVO" "$ARBOL_ORIGINAL" "$igual" "$ultima" "$RECARGAS" "$ESPERA_LANZAMIENTO" \
         | como_simple tee "$tmp" > /dev/null \
         && como_simple chmod 644 "$tmp" && como_simple mv -f "$tmp" "$CODER/recarga.json"
 }
@@ -475,14 +482,39 @@ asegurar_acceso() {
     ( cd "$PROYECTO" && chmod -R a+rX . 2> /dev/null ) || true
 }
 
+# True when a Coder launch is in progress: the lock file exists and is younger than LANZAMIENTO_MAX seconds.
+# The app writes the unix time in the file. A bad content, a time in the future or an old time means a stale lock.
+lanzamiento_activo() {
+    local f="$CODER/lanzando" t ahora
+    [ -f "$f" ] && [ ! -L "$f" ] || return 1
+    t=$( { timeout 2 head -c 32 "$f" | tr -d ' \n\r\t'; } 2> /dev/null || true)
+    case "$t" in '' | *[!0-9]*) return 1 ;; esac
+    ahora=$(date +%s)
+    [ "${#t}" -le 12 ] && [ "$t" -le "$ahora" ] && [ $((ahora - t)) -lt "$LANZAMIENTO_MAX" ]
+}
+
+# Keep ESPERA_LANZAMIENTO and the log in step with the wait. $1 is true when a reload is due and a launch blocks it.
+actualizar_espera() {
+    local espera=$1
+    [ "$espera" = "$ESPERA_LANZAMIENTO" ] && return 0
+    ESPERA_LANZAMIENTO=$espera
+    if [ "$espera" = true ]; then log "la recarga espera a que termine el lanzamiento del Coder"; fi
+    escribir_estado
+}
+
 # One pass of the loop.
 una_vuelta() {
-    local h forzar=false ciclo=false
+    local h forzar=false ciclo=false bloqueo=false quiere=false
     asegurar_acceso
+    lanzamiento_activo && bloqueo=true
     if [ -e "$CODER/restaurar-original" ]; then
-        rm -f "$CODER/restaurar-original"
-        restaurar_original
-        return
+        if [ "$bloqueo" = true ]; then quiere=true
+        else
+            rm -f "$CODER/restaurar-original"
+            actualizar_espera false
+            restaurar_original
+            return
+        fi
     fi
     h=$(huella_actual)
     if [ "$h" != "$HUELLA_VISTA" ]; then
@@ -493,7 +525,16 @@ una_vuelta() {
         if [ "$PENDIENTE" = true ] && ! auto_activo; then ESTADO=pendiente; else ESTADO=vigilando; fi
         escribir_estado
     fi
-    if [ -e "$CODER/recargar-ahora" ]; then rm -f "$CODER/recargar-ahora"; forzar=true; fi
+    if [ -e "$CODER/recargar-ahora" ]; then
+        quiere=true
+        if [ "$bloqueo" = false ]; then rm -f "$CODER/recargar-ahora"; forzar=true; fi
+    fi
+    if [ "$PENDIENTE" = true ] && auto_activo; then quiere=true; fi
+    if [ "$bloqueo" = true ] && [ "$quiere" = true ]; then
+        actualizar_espera true
+        return 0
+    fi
+    actualizar_espera false
     if [ "$forzar" = true ]; then ciclo=true; ciclo_recarga "ahora"
     elif [ "$PENDIENTE" = true ] && auto_activo; then ciclo=true; ciclo_recarga "automatica"
     fi

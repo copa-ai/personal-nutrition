@@ -56,13 +56,13 @@ class ControlRecarga
     /**
      * The status of the watcher. Every field has a type and a default, so the view never fails on a missing or wrong field.
      *
-     * @return array{disponible: bool, estado: string, resultado: string, mensaje: string, fecha: string|null, pendiente: bool, cambios: int|null, igual_original: bool|null, arbol_vivo: string|null, ultima_buena: string|null, recargas: int}
+     * @return array{disponible: bool, estado: string, resultado: string, mensaje: string, fecha: string|null, pendiente: bool, cambios: int|null, igual_original: bool|null, arbol_vivo: string|null, ultima_buena: string|null, recargas: int, espera_lanzamiento: bool}
      */
     public function estado(): array
     {
         $vacio = [
             'disponible' => false, 'estado' => 'vigilando', 'resultado' => 'ninguno', 'mensaje' => '', 'fecha' => null,
-            'pendiente' => false, 'cambios' => null, 'igual_original' => null, 'arbol_vivo' => null, 'ultima_buena' => null, 'recargas' => 0,
+            'pendiente' => false, 'cambios' => null, 'igual_original' => null, 'arbol_vivo' => null, 'ultima_buena' => null, 'recargas' => 0, 'espera_lanzamiento' => false,
         ];
         $ruta = $this->ruta('recarga.json');
         $texto = is_file($ruta) ? @file_get_contents($ruta) : false;
@@ -91,6 +91,7 @@ class ControlRecarga
             'arbol_vivo' => is_string($arbol) && preg_match('/^[0-9a-f]{64}$/', $arbol) === 1 ? $arbol : null,
             'ultima_buena' => self::fecha($d['ultima_buena'] ?? null),
             'recargas' => is_int($d['recargas'] ?? null) && $d['recargas'] >= 0 ? $d['recargas'] : 0,
+            'espera_lanzamiento' => ($d['espera_lanzamiento'] ?? false) === true,
         ];
     }
 
