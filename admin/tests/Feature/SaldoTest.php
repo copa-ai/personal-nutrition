@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Ajuste;
 use App\Models\Auditoria;
+use App\Models\CoderEstado;
 use App\Services\Coder\Coder;
 use App\Services\Coder\CoderException;
 use App\Services\Coder\Saldo;
@@ -69,7 +70,7 @@ class SaldoTest extends TestCase
         for ($i = 5; $i >= 1; $i--) {
             $m[] = ['t' => $ahora - $i * 300, 'saldo' => (int) ($fin + $i * 300 * $tasa), 'dep' => 0];
         }
-        Ajuste::fijar('coder.muestras_saldo', $m);
+        CoderEstado::fijar('coder.muestras_saldo', $m);
     }
 
     private function eventos(string $evento): int
@@ -90,8 +91,8 @@ class SaldoTest extends TestCase
         $this->assertSame(5000, $r['mu']);
         $this->assertSame([[5, '5000']], $this->nodo->de('depositar'));
         $this->assertSame('6000', $this->nodo->saldoCoder);
-        $this->assertSame('5000', Ajuste::obtener('coder.enviado_mu'));
-        $this->assertSame('5000', Ajuste::obtener('coder.depositado_hijos_mu'));
+        $this->assertSame('5000', CoderEstado::obtener('coder.enviado_mu'));
+        $this->assertSame('5000', CoderEstado::obtener('coder.depositado_hijos_mu'));
         $this->assertSame(1, $this->eventos('coder.saldo_enviado'));
         $this->assertSame(5000, $this->saldo->status()['enviado_mu']);
     }
@@ -104,8 +105,8 @@ class SaldoTest extends TestCase
         $this->saldo->addBalance(1000);
         $this->saldo->addBalance(2000);
 
-        $this->assertSame('3000', Ajuste::obtener('coder.enviado_mu'));
-        $this->assertSame('3000', Ajuste::obtener('coder.depositado_hijos_mu'));
+        $this->assertSame('3000', CoderEstado::obtener('coder.enviado_mu'));
+        $this->assertSame('3000', CoderEstado::obtener('coder.depositado_hijos_mu'));
         $this->assertSame('4000', $this->nodo->saldoCoder);
     }
 
@@ -120,7 +121,7 @@ class SaldoTest extends TestCase
         $this->assertSame(Saldo::CTRL_TOPE, $r['control']);
         $this->assertSame(323_000, $r['maximo_mu']);
         $this->assertSame([], $this->nodo->de('depositar'));
-        $this->assertSame('0', Ajuste::obtener('coder.enviado_mu'));
+        $this->assertSame('0', CoderEstado::obtener('coder.enviado_mu'));
         $this->assertSame(1, $this->eventos('coder.saldo_rechazado'));
         $this->assertSame(Saldo::CTRL_TOPE, $this->saldo->status()['ultimo_rechazo']['control']);
     }
@@ -240,7 +241,7 @@ class SaldoTest extends TestCase
         $this->assertFalse($r['enviado']);
         $this->assertSame(Saldo::CTRL_CANTIDAD, $r['control']);
         $this->assertSame([], $this->nodo->de('depositar'));
-        $this->assertSame('0', Ajuste::obtener('coder.enviado_mu'));
+        $this->assertSame('0', CoderEstado::obtener('coder.enviado_mu'));
     }
 
     public function test_si_el_nodo_rechaza_el_deposito_no_se_anota_nada(): void
@@ -254,8 +255,8 @@ class SaldoTest extends TestCase
         $this->assertFalse($r['enviado']);
         $this->assertSame(Saldo::CTRL_DEPOSITO, $r['control']);
         $this->assertStringContainsString('insufficient balance', $r['motivo']);
-        $this->assertSame('0', Ajuste::obtener('coder.enviado_mu'));
-        $this->assertSame('0', Ajuste::obtener('coder.depositado_hijos_mu') ?? '0');
+        $this->assertSame('0', CoderEstado::obtener('coder.enviado_mu'));
+        $this->assertSame('0', CoderEstado::obtener('coder.depositado_hijos_mu') ?? '0');
         $this->assertSame(1, $this->eventos('coder.saldo_fallo'));
         $this->assertSame(0, $this->eventos('coder.saldo_enviado'));
     }
@@ -270,7 +271,7 @@ class SaldoTest extends TestCase
 
         $this->assertFalse($r['enviado']);
         $this->assertSame(Saldo::CTRL_DEPOSITO, $r['control']);
-        $this->assertSame('0', Ajuste::obtener('coder.enviado_mu'));
+        $this->assertSame('0', CoderEstado::obtener('coder.enviado_mu'));
         $this->assertSame(1, $this->eventos('coder.saldo_fallo'));
     }
 
@@ -422,11 +423,11 @@ class SaldoTest extends TestCase
 
         $this->assertSame(1_000_000, $l['nutrition']);
         $this->assertSame(1000, $l['coder']);
-        $m = Ajuste::obtener('coder.muestras_saldo');
+        $m = CoderEstado::obtener('coder.muestras_saldo');
         $this->assertCount(1, $m);
         $this->assertSame(1_000_000, $m[0]['saldo']);
         $this->assertSame(700, $m[0]['dep']);
-        $this->assertSame('1000', Ajuste::obtener('coder.saldo_mu'));
+        $this->assertSame('1000', CoderEstado::obtener('coder.saldo_mu'));
     }
 
     public function test_muestrear_sin_coder_toma_solo_el_saldo_del_servicio(): void
@@ -435,20 +436,20 @@ class SaldoTest extends TestCase
 
         $this->assertNull($l['coder']);
         $this->assertSame([], $this->nodo->de('metricas'));
-        $this->assertCount(1, Ajuste::obtener('coder.muestras_saldo'));
+        $this->assertCount(1, CoderEstado::obtener('coder.muestras_saldo'));
     }
 
     public function test_la_lista_de_muestras_tiene_limite_y_olvida_las_viejas(): void
     {
         config(['coder.saldo.muestras_maximo' => 3]);
-        Ajuste::fijar('coder.muestras_saldo', [['t' => now()->getTimestamp() - 13 * 3600, 'saldo' => 5, 'dep' => 0]]);
+        CoderEstado::fijar('coder.muestras_saldo', [['t' => now()->getTimestamp() - 13 * 3600, 'saldo' => 5, 'dep' => 0]]);
 
         for ($i = 0; $i < 5; $i++) {
             $this->saldo->muestrear();
             $this->travel(5)->minutes();
         }
 
-        $m = Ajuste::obtener('coder.muestras_saldo');
+        $m = CoderEstado::obtener('coder.muestras_saldo');
         $this->assertCount(3, $m);
         $this->assertNotContains(5, array_column($m, 'saldo'));
     }
@@ -463,7 +464,7 @@ class SaldoTest extends TestCase
         } catch (CoderException $e) {
             $this->assertStringContainsString('No se pudo leer el saldo', $e->getMessage());
         }
-        $this->assertNull(Ajuste::obtener('coder.muestras_saldo'));
+        $this->assertNull(CoderEstado::obtener('coder.muestras_saldo'));
     }
 
     public function test_si_el_saldo_del_coder_no_se_lee_es_un_error(): void
@@ -481,7 +482,7 @@ class SaldoTest extends TestCase
 
         $this->lanzar();
 
-        $this->assertSame([], Ajuste::obtener('coder.muestras_saldo'));
+        $this->assertSame([], CoderEstado::obtener('coder.muestras_saldo'));
     }
 
     public function test_anotar_depositos_suma_y_no_baja_de_cero(): void
@@ -489,10 +490,10 @@ class SaldoTest extends TestCase
         Saldo::anotarDeposito(500);
         Saldo::anotarDeposito(500);
         Saldo::anotarDeposito(-200);
-        $this->assertSame('800', Ajuste::obtener('coder.depositado_hijos_mu'));
+        $this->assertSame('800', CoderEstado::obtener('coder.depositado_hijos_mu'));
 
         Saldo::anotarDeposito(-5000);
-        $this->assertSame('0', Ajuste::obtener('coder.depositado_hijos_mu'));
+        $this->assertSame('0', CoderEstado::obtener('coder.depositado_hijos_mu'));
     }
 
     public function test_las_muestras_y_los_saldos_no_llenan_la_auditoria(): void
@@ -649,7 +650,7 @@ class SaldoTest extends TestCase
         $r = $this->saldo->topUpToTarget();
 
         $this->assertSame('fallo', $r['accion']);
-        $this->assertSame('0', Ajuste::obtener('coder.enviado_mu'));
+        $this->assertSame('0', CoderEstado::obtener('coder.enviado_mu'));
         $this->assertSame(1, $this->eventos('coder.saldo_fallo'));
     }
 
@@ -659,7 +660,7 @@ class SaldoTest extends TestCase
 
         $this->assertSame('ninguna', $r['accion']);
         $this->assertSame([], $this->nodo->de('depositar'));
-        $this->assertCount(1, Ajuste::obtener('coder.muestras_saldo'));
+        $this->assertCount(1, CoderEstado::obtener('coder.muestras_saldo'));
     }
 
     public function test_con_un_coder_ajeno_el_vigilante_no_llama_al_nodo(): void

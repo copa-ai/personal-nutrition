@@ -17,6 +17,7 @@ class TablasAuditadasTest extends TestCase
         'auditorias' => 'es la propia auditoria (inmutable)',
         'auditoria_tablas' => 'configuracion de la auditoria (la crea la migracion de los triggers)',
         'borrados' => 'tumbas para la fusion (las deja el propio trigger de auditoria)',
+        'coder_estado' => 'estado volatil de los fondos del Coder (una muestra cada 5 minutos llenaria la auditoria)',
         'cache' => 'efimera', 'cache_locks' => 'efimera', 'sessions' => 'efimera',
         'jobs' => 'cola', 'job_batches' => 'cola', 'failed_jobs' => 'cola',
         'password_reset_tokens' => 'efimera',

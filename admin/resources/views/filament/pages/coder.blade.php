@@ -40,6 +40,7 @@
         @if ($estado['estado'] === 'none' || ($estado['estado'] === 'error' && $estado['lease'] === null))
             <x-filament::section heading="Lanzar un Coder">
                 <p class="mb-3">Un Coder es otro servicio Celaut que cambia el código de esta aplicación mientras funciona. Tiene que declarar una carpeta compartida de invitado con la etiqueta <code>{{ $tag }}</code>. Escribe su hash (64 caracteres hexadecimales) o sube un fichero <code>.celaut.bee</code> (hasta {{ $maximoMb }} MB).</p>
+                <p class="mb-3 text-danger-600"><strong>{{ \App\Filament\Pages\CoderPagina::AVISO_CONFIANZA }}</strong></p>
                 <div class="space-y-3">
                     <x-filament::input.wrapper>
                         <x-filament::input type="text" wire:model="referencia" placeholder="hash del servicio (sha3-256, hex)" autocomplete="off" />

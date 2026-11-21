@@ -4,6 +4,7 @@ namespace App\Services\Coder;
 
 use App\Models\Ajuste;
 use App\Models\Auditoria;
+use App\Models\CoderEstado;
 use App\Services\Celaut\Nodo;
 use App\Services\Celaut\NodoException;
 use App\Services\Instancia;
@@ -29,6 +30,9 @@ class Coder
     public const EN_MARCHA = 'running';
 
     public const ERROR = 'error';
+
+    /** Keys of DE_VIDA that live in the table coder_estado (no audit row). The others live in ajustes. */
+    private const VOLATIL = ['enviado_mu', 'horas_vida', 'saldo_mu', 'precio', 'ultimo_rechazo'];
 
     /** Settings that belong to one life of the Coder. The stop action sets them to null. */
     private const DE_VIDA = ['servicio', 'tipo', 'referencia', 'lease', 'uri', 'error', 'lanzado_en', 'enviado_mu', 'horas_vida', 'saldo_mu', 'precio', 'ultimo_rechazo'];
@@ -215,7 +219,7 @@ class Coder
         Ajuste::fijar('coder.tipo', $tipo);
         Ajuste::fijar('coder.referencia', $ref);
         Ajuste::fijar('coder.lanzado_en', CarbonImmutable::now()->toIso8601String());
-        Ajuste::fijar('coder.enviado_mu', '0');
+        CoderEstado::fijar('coder.enviado_mu', '0');
         Auditoria::registrar('coder.lanzamiento', 'Lanzamiento del Coder', ['servicio' => $id, 'tipo' => $tipo]);
 
         $entorno = [(string) config('coder.variable_clave_host') => $claveHost];
@@ -370,7 +374,11 @@ class Coder
     {
         Ajuste::fijar('coder.estado', self::NINGUNO);
         foreach (self::DE_VIDA as $clave) {
-            Ajuste::fijar('coder.'.$clave, null);
+            if (in_array($clave, self::VOLATIL, true)) {
+                CoderEstado::fijar('coder.'.$clave, null);
+            } else {
+                Ajuste::fijar('coder.'.$clave, null);
+            }
         }
     }
 
@@ -400,9 +408,9 @@ class Coder
             'claves' => count($this->claves()),
             'destino' => is_file($this->rutaDestino()),
             // Saldo writes these three settings. They are null until the first funding pass.
-            'horas_vida' => Ajuste::obtener('coder.horas_vida'),
-            'saldo_mu' => Ajuste::obtener('coder.saldo_mu'),
-            'enviado_mu' => Ajuste::obtener('coder.enviado_mu'),
+            'horas_vida' => CoderEstado::obtener('coder.horas_vida'),
+            'saldo_mu' => CoderEstado::obtener('coder.saldo_mu'),
+            'enviado_mu' => CoderEstado::obtener('coder.enviado_mu'),
         ];
     }
 

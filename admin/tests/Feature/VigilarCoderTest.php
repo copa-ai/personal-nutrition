@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\LanzarCoder;
 use App\Models\Ajuste;
+use App\Models\CoderEstado;
 use App\Services\Coder\Coder;
 use App\Services\Coder\Saldo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -127,7 +128,7 @@ class VigilarCoderTest extends TestCase
         for ($i = 5; $i >= 1; $i--) {
             $m[] = ['t' => $ahora - $i * 300, 'saldo' => 1_000_000 + $i * 300, 'dep' => 0];
         }
-        Ajuste::fijar('coder.muestras_saldo', $m);
+        CoderEstado::fijar('coder.muestras_saldo', $m);
 
         $this->artisan('nutrition:vigilar-coder --saldo')->expectsOutputToContain('Saldo: enviado 128600 MU')->assertSuccessful();
 

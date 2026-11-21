@@ -4,6 +4,7 @@ namespace App\Services\Coder;
 
 use App\Models\Ajuste;
 use App\Models\Auditoria;
+use App\Models\CoderEstado;
 use App\Services\Celaut\Nodo;
 use App\Services\Celaut\NodoException;
 use Illuminate\Support\Facades\Cache;
@@ -25,8 +26,9 @@ use Throwable;
  *  - coder.tope_mu          total cap in MU. Empty: the default (24 hours of maintenance with a margin).
  *  - coder.porcentaje_max   percentage of the joint balance. Default config coder.saldo.porcentaje.
  *  - coder.horas_minimas    minimum life of nutrition in hours. Default config coder.saldo.horas_minimas.
- * Volatile values are written without an audit row (see `guardar`): coder.muestras_saldo, coder.depositado_hijos_mu, coder.precio,
- * coder.ultimo_rechazo, coder.saldo_mu, coder.saldo_nutrition_mu, coder.horas_vida, coder.enviado_mu (after the launch).
+ * Volatile values live in the table coder_estado (App\Models\CoderEstado), not in `ajustes`. The `ajustes` table has an audit trigger,
+ * and a write every 5 minutes would fill the audit log. The keys are coder.muestras_saldo, coder.depositado_hijos_mu, coder.precio,
+ * coder.ultimo_rechazo, coder.saldo_mu, coder.saldo_nutrition_mu, coder.horas_vida and coder.enviado_mu.
  *
  * A user error is a CoderException with a Spanish message.
  */
@@ -286,7 +288,7 @@ class Saldo
     /** MU for one maintenance period of the Coder at the largest resources (max_maintenance_cost_mu), as last read. */
     private function precioGuardado(): ?int
     {
-        $p = Ajuste::obtener('coder.precio');
+        $p = CoderEstado::obtener('coder.precio');
         $mu = is_array($p) ? self::aMu($p['periodo_mu'] ?? null) : null;
 
         return $mu !== null && $mu > 0 ? $mu : null;
@@ -295,7 +297,7 @@ class Saldo
     /** Read the price from the node when the stored one is missing or old. On a node error the old price stays. */
     private function actualizarPrecio(?string $servicio): ?int
     {
-        $p = Ajuste::obtener('coder.precio');
+        $p = CoderEstado::obtener('coder.precio');
         $reciente = is_array($p) && isset($p['leido_en']) && (now()->getTimestamp() - (int) $p['leido_en']) < (int) config('coder.saldo.precio_vigente_s');
         if (! $reciente && $servicio !== null) {
             try {
@@ -324,7 +326,7 @@ class Saldo
     public function muestrear(): array
     {
         $estado = $this->coder->estado();
-        $dep = self::aMu(Ajuste::obtener('coder.depositado_hijos_mu', 0)) ?? 0;
+        $dep = self::aMu(CoderEstado::obtener('coder.depositado_hijos_mu', 0)) ?? 0;
         try {
             $nutrition = self::aMu($this->nodo->cuenta()['balance_mu'] ?? null);
             $coder = null;
@@ -346,7 +348,7 @@ class Saldo
 
         $ahora = now()->getTimestamp();
         $muestras = array_values(array_filter(
-            Ajuste::obtener('coder.muestras_saldo', []) ?: [],
+            CoderEstado::obtener('coder.muestras_saldo', []) ?: [],
             fn (mixed $m): bool => is_array($m) && isset($m['t']) && $ahora - (int) $m['t'] <= (int) config('coder.saldo.muestras_vigencia_s'),
         ));
         $muestras[] = ['t' => $ahora, 'saldo' => $nutrition, 'dep' => $dep];
@@ -361,6 +363,63 @@ class Saldo
         return ['nutrition' => $nutrition, 'coder' => $coder, 'suspendido' => $suspendido];
     }
 
+    /**
+     * Run the controls for the amount that the user sets as the maximum of the launch. The Coder has no balance yet.
+     * The total cap applies only when it is known (a first launch has no price yet). A refusal is audited like any other.
+     * A launch with no amount lets the node fund the start with its own default (about 1 hour). This case has no control.
+     *
+     * @throws CoderException with the reason if a control fails or the balance is unknown
+     */
+    public function comprobarInicial(int $mu): void
+    {
+        try {
+            $nutrition = self::aMu($this->nodo->cuenta()['balance_mu'] ?? null);
+        } catch (NodoException $e) {
+            throw new CoderException('No se pudo leer el saldo: '.$e->getMessage());
+        }
+        if ($nutrition === null) {
+            throw new CoderException('El nodo no dio el saldo del servicio.');
+        }
+        $limites = $this->limites();
+        $d = self::decidir([
+            'monto' => $mu,
+            'saldo_coder' => 0,
+            'saldo_nutrition' => $nutrition,
+            'enviado' => 0,
+            'tope' => $limites['tope_mu'] ?? self::MAX_MU,
+            'porcentaje' => $limites['porcentaje'],
+            'horas_minimas' => $limites['horas_minimas'],
+            'muestras' => CoderEstado::obtener('coder.muestras_saldo', []),
+        ]);
+        if (! $d['permitido']) {
+            $this->rechazar($d, 'lanzamiento', $mu, ['nutrition' => $nutrition, 'coder' => 0, 'suspendido' => false], false);
+            throw new CoderException('El máximo del arranque no pasa los límites de saldo: '.$d['motivo']);
+        }
+    }
+
+    /**
+     * Read the balances again and keep the other fields of the reading. No sample is stored.
+     *
+     * @param  array{nutrition: int, coder: int|null, suspendido: bool}  $lectura
+     * @return array{nutrition: int, coder: int|null, suspendido: bool}
+     *
+     * @throws CoderException if the node does not answer or gives a bad balance
+     */
+    private function releer(array $lectura, int $lease): array
+    {
+        try {
+            $nutrition = self::aMu($this->nodo->cuenta()['balance_mu'] ?? null);
+            $coder = self::aMu($this->nodo->metricas($lease)['balance_mu'] ?? null);
+        } catch (NodoException $e) {
+            throw new CoderException('No se pudo leer el saldo: '.$e->getMessage());
+        }
+        if ($nutrition === null || $coder === null) {
+            throw new CoderException('El nodo no dio el saldo.');
+        }
+
+        return [...$lectura, 'nutrition' => $nutrition, 'coder' => $coder];
+    }
+
     /** Forget the samples. The Coder service calls this after a launch: the start charge is not burn. */
     public static function olvidarMuestras(): void
     {
@@ -373,7 +432,7 @@ class Saldo
      */
     public static function anotarDeposito(int $mu): void
     {
-        $actual = self::aMu(Ajuste::obtener('coder.depositado_hijos_mu', 0)) ?? 0;
+        $actual = self::aMu(CoderEstado::obtener('coder.depositado_hijos_mu', 0)) ?? 0;
         self::guardar('coder.depositado_hijos_mu', (string) max(0, min(self::MAX_MU * 1000, $actual + $mu)));
     }
 
@@ -428,7 +487,12 @@ class Saldo
         }
 
         $r = $this->bloqueado(function () use ($lectura, $estado): array {
-            $lectura ??= $this->muestrear();
+            try {
+                // The reading of the caller can be old: a manual transfer can run before this lock. Read the balances again.
+                $lectura = $lectura === null ? $this->muestrear() : $this->releer($lectura, (int) $estado['lease']);
+            } catch (CoderException $e) {
+                return ['accion' => 'sin_nodo', 'mu' => 0, 'motivo' => $e->getMessage()];
+            }
             $precio = $this->precioGuardado() ?? $this->actualizarPrecio($estado['servicio']);
             if ($precio === null || $lectura['coder'] === null) {
                 return ['accion' => 'ninguna', 'mu' => 0, 'motivo' => 'Se desconoce el precio de mantenimiento del Coder.'];
@@ -495,7 +559,7 @@ class Saldo
             return ['enviado' => false, 'mu' => 0, 'motivo' => $d['motivo'], 'control' => $d['control'], 'maximo_mu' => $d['maximo_mu']];
         }
 
-        $enviadoAntes = self::aMu(Ajuste::obtener('coder.enviado_mu', 0)) ?? 0;
+        $enviadoAntes = self::aMu(CoderEstado::obtener('coder.enviado_mu', 0)) ?? 0;
         self::guardar('coder.enviado_mu', (string) min(self::MAX_MU * 1000, $enviadoAntes + $mu));
         self::anotarDeposito($mu);
         $error = null;
@@ -538,11 +602,11 @@ class Saldo
             'monto' => $monto,
             'saldo_coder' => $lectura['coder'],
             'saldo_nutrition' => $lectura['nutrition'],
-            'enviado' => Ajuste::obtener('coder.enviado_mu', 0),
+            'enviado' => CoderEstado::obtener('coder.enviado_mu', 0),
             'tope' => $limites['tope_mu'],
             'porcentaje' => $limites['porcentaje'],
             'horas_minimas' => $limites['horas_minimas'],
-            'muestras' => Ajuste::obtener('coder.muestras_saldo', []),
+            'muestras' => CoderEstado::obtener('coder.muestras_saldo', []),
         ]);
     }
 
@@ -556,7 +620,7 @@ class Saldo
     private function rechazar(array $d, string $origen, int $mu, array $lectura, bool $silenciar): void
     {
         $ahora = now()->getTimestamp();
-        $antes = Ajuste::obtener('coder.ultimo_rechazo');
+        $antes = CoderEstado::obtener('coder.ultimo_rechazo');
         $repetido = $silenciar && is_array($antes) && ($antes['control'] ?? null) === $d['control'] && ($antes['origen'] ?? null) === $origen
             && ($antes['auditado_en'] ?? 0) + self::SILENCIO_S > $ahora;
         self::guardar('coder.ultimo_rechazo', [
@@ -581,13 +645,13 @@ class Saldo
     public function status(): array
     {
         $limites = $this->limites();
-        $coder = self::aMu(Ajuste::obtener('coder.saldo_mu'));
-        $nutrition = self::aMu(Ajuste::obtener('coder.saldo_nutrition_mu'));
-        $muestras = Ajuste::obtener('coder.muestras_saldo', []) ?: [];
+        $coder = self::aMu(CoderEstado::obtener('coder.saldo_mu'));
+        $nutrition = self::aMu(CoderEstado::obtener('coder.saldo_nutrition_mu'));
+        $muestras = CoderEstado::obtener('coder.muestras_saldo', []) ?: [];
         $tasa = self::tasa($muestras);
         $precio = $this->precioGuardado();
-        $enviado = self::aMu(Ajuste::obtener('coder.enviado_mu', 0)) ?? 0;
-        $rechazo = Ajuste::obtener('coder.ultimo_rechazo');
+        $enviado = self::aMu(CoderEstado::obtener('coder.enviado_mu', 0)) ?? 0;
+        $rechazo = CoderEstado::obtener('coder.ultimo_rechazo');
         $maximo = self::decidir([
             'monto' => 1, 'saldo_coder' => $coder ?? 0, 'saldo_nutrition' => $nutrition, 'enviado' => $enviado, 'tope' => $limites['tope_mu'],
             'porcentaje' => $limites['porcentaje'], 'horas_minimas' => $limites['horas_minimas'], 'muestras' => $muestras,
@@ -648,10 +712,10 @@ class Saldo
         }
     }
 
-    /** Write a volatile value with no audit row. A sample every 5 minutes would fill the audit log. */
+    /** Write a volatile value in coder_estado. This table has no audit trigger. */
     private static function guardar(string $clave, mixed $valor): void
     {
-        Ajuste::query()->updateOrCreate(['clave' => $clave], ['valor' => $valor]);
+        CoderEstado::fijar($clave, $valor);
     }
 
     /** @return array{permitido: bool, motivo: string|null, control: string|null, maximo_mu: int, vida_horas: float|null, tasa_mu_s: float|null} */

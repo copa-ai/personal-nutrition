@@ -6,6 +6,7 @@ use App\Filament\Pages\CoderPagina;
 use App\Jobs\LanzarCoder;
 use App\Models\Ajuste;
 use App\Models\Auditoria;
+use App\Models\CoderEstado;
 use App\Models\User;
 use App\Services\Coder\Coder;
 use App\Services\Coder\Saldo;
@@ -89,7 +90,7 @@ class CoderPaginaTest extends TestCase
         for ($i = 5; $i >= 1; $i--) {
             $m[] = ['t' => $ahora - $i * 300, 'saldo' => 1_000_000 + $i * 300, 'dep' => 0];
         }
-        Ajuste::fijar('coder.muestras_saldo', $m);
+        CoderEstado::fijar('coder.muestras_saldo', $m);
     }
 
     // --- View ---
@@ -99,7 +100,7 @@ class CoderPaginaTest extends TestCase
         $this->pagina()->assertOk()
             ->assertSee('Sin Coder')
             ->assertSee('Lanzar un Coder')
-            ->assertSee('nodo tunnel <instancia-de-esta-app> 2222 --listen 2222', false)
+            ->assertSee('nodo tunnel <instancia-de-esta-app> 2222 --listen 2222')
             ->assertSee('HostKeyAlias nutrition-coder')
             ->assertSee('Remote-SSH')
             ->assertSee('desconocidas');
@@ -190,10 +191,31 @@ class CoderPaginaTest extends TestCase
     public function test_confirmar_pone_el_trabajo_en_la_cola_con_el_maximo_del_arranque(): void
     {
         Queue::fake();
+        $this->muestras();
 
         $this->pagina()->set('referencia', strtoupper(self::HASH))->call('preparar')
             ->set('inicialMu', '50000')->callAction('confirmarLanzamiento')->assertNotified('Lanzamiento en marcha');
         Queue::assertPushed(LanzarCoder::class, fn (LanzarCoder $j): bool => $j->referencia === self::HASH && $j->inicialMu === '50000');
+    }
+
+    public function test_un_maximo_de_arranque_que_pasa_el_porcentaje_no_lanza_y_se_audita(): void
+    {
+        Queue::fake();
+        $this->muestras();
+
+        $this->pagina()->set('referencia', self::HASH)->call('preparar')
+            ->set('inicialMu', '900000')->callAction('confirmarLanzamiento')->assertNotified('No se pudo completar la acción');
+        Queue::assertNothingPushed();
+        $this->assertSame(1, Auditoria::query()->where('evento', 'coder.saldo_rechazado')->count());
+    }
+
+    public function test_un_maximo_de_arranque_sin_muestras_no_lanza(): void
+    {
+        Queue::fake();
+
+        $this->pagina()->set('referencia', self::HASH)->call('preparar')
+            ->set('inicialMu', '1000')->callAction('confirmarLanzamiento');
+        Queue::assertNothingPushed();
     }
 
     public function test_un_maximo_de_arranque_malo_no_lanza(): void
@@ -274,7 +296,7 @@ class CoderPaginaTest extends TestCase
 
         $this->pagina()->callAction('anadirSaldo', ['monto' => '1000'])->assertNotified('No se ha enviado el saldo');
         $this->assertSame([], $this->nodo->de('depositar'));
-        $rechazo = Ajuste::obtener('coder.ultimo_rechazo');
+        $rechazo = CoderEstado::obtener('coder.ultimo_rechazo');
         $this->assertNotEmpty($rechazo['control']);
         $this->assertSame(1, Auditoria::query()->where('evento', 'coder.saldo_rechazado')->count());
         $this->pagina()->assertSee($rechazo['motivo']);

@@ -178,6 +178,9 @@ class CoderPagina extends Page
             ->action(fn () => $this->lanzar());
     }
 
+    /** Warning for the user: the Coder runs with the rights of the app. See docs/coder/README.md, "Trust". */
+    public const AVISO_CONFIANZA = 'ATENCIÓN: el Coder cambia el código que corre con los permisos de la aplicación. Puede leer sus claves y secretos y gastar su saldo. Los límites de saldo solo frenan un uso honesto. Lanza solo servicios en los que confíes del todo.';
+
     private function descripcionLanzamiento(): string
     {
         $p = $this->preparacion ?? [];
@@ -186,7 +189,9 @@ class CoderPagina extends Page
             ? 'El coste del arranque no se conoce. '
             : 'El arranque cuesta unos '.self::mu($coste['cost_mu'] ?? null).' MU, y cada periodo de mantenimiento hasta '.self::mu($coste['max_maintenance_cost_mu'] ?? null).' MU. ';
 
-        return $texto.'Este servicio pagará el saldo del Coder. Los controles de saldo limitan lo que se envía después.';
+        return $texto.'Este servicio pagará el saldo del Coder. Los controles de saldo limitan lo que se envía después. '
+            .'Sin un máximo de arranque, el nodo fija el del arranque (una hora de mantenimiento aproximada) y esa primera carga no pasa por los controles. '
+            .self::AVISO_CONFIANZA;
     }
 
     /** Second step: the user confirmed. Check again, then start the job. The job does the long work. */
@@ -209,6 +214,7 @@ class CoderPagina extends Page
                 if ($mu === null || $mu <= 0) {
                     throw new CoderException('El máximo del arranque tiene que ser un número entero de MU mayor que 0, o estar vacío.');
                 }
+                app(Saldo::class)->comprobarInicial($mu);
                 $inicial = (string) $mu;
             }
 

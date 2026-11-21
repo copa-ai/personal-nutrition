@@ -13,7 +13,7 @@ use Throwable;
 class CopiaBase
 {
     /** Tablas que no forman parte de la copia: estado de ejecucion, no datos de la persona. */
-    private const OMITIR = ['migrations', 'auditoria_tablas', 'sessions', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks', 'password_reset_tokens'];
+    private const OMITIR = ['migrations', 'auditoria_tablas', 'coder_estado', 'sessions', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks', 'password_reset_tokens'];
 
     /**
      * Convierte un valor de PHP en un literal SQL de PostgreSQL.
