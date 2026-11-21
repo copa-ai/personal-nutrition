@@ -9,6 +9,8 @@ use App\Services\Coder\Coder;
 use App\Services\Coder\CoderException;
 use App\Services\Coder\Saldo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\LectorEspecificacionFalso;
 use Tests\Support\NodoFalsoCoder;
 use Tests\Support\SondaSshFalsa;
@@ -114,6 +116,7 @@ class SaldoTest extends TestCase
     {
         $this->lanzar();
         $this->semilla();
+        Ajuste::fijar('coder.porcentaje_max', 100);   // the total cap, not the percentage, is the smallest room here
 
         $r = $this->saldo->addBalance('1000000');
 
@@ -230,7 +233,7 @@ class SaldoTest extends TestCase
         return [['0'], [0], ['-100'], [-100], ['abc'], [''], [null], ['1.5'], ['1e3'], [false], ['99999999999999999999999']];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('cantidadesMalas')]
+    #[DataProvider('cantidadesMalas')]
     public function test_una_cantidad_mala_no_toca_el_nodo(mixed $monto): void
     {
         $this->lanzar();
@@ -279,6 +282,7 @@ class SaldoTest extends TestCase
     {
         $this->lanzar();
         $this->semilla();
+        Ajuste::fijar('coder.porcentaje_max', 100);   // the total cap, not the percentage, is the smallest room here
         $this->nodo->rechazoDeposito = 'no';
         $this->saldo->addBalance(5000);
         $this->nodo->rechazoDeposito = null;
@@ -700,7 +704,7 @@ class SaldoTest extends TestCase
     {
         $this->lanzar();
         $this->semilla();
-        $cerrojo = \Illuminate\Support\Facades\Cache::lock('coder-saldo', 60);
+        $cerrojo = Cache::lock('coder-saldo', 60);
         $this->assertTrue($cerrojo->get());
 
         $this->assertSame('ocupado', $this->saldo->topUpToTarget()['accion']);

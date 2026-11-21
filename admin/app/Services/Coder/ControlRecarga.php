@@ -70,7 +70,7 @@ class ControlRecarga
             return $vacio;
         }
         $d = json_decode($texto, true);
-        if (! is_array($d)) {
+        if (! is_array($d) || array_is_list($d)) {   // a JSON list or an empty object is not a status
             return $vacio;
         }
 

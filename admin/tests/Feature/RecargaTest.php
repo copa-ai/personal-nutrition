@@ -5,11 +5,14 @@ namespace Tests\Feature;
 use App\Services\BaseCompartida\Recarga;
 use App\Services\Celaut\Nodo;
 use App\Services\Celaut\NodoException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /** `Recarga` contra un `Nodo` falso: la base se mantiene con saldo, pero sin dejar sin el al servicio principal. */
 class RecargaTest extends TestCase
 {
+    use RefreshDatabase;   // Recarga anota cada deposito en coder_estado (Saldo::anotarDeposito)
+
     public const TICK = 1000;   // MU por tick de 10 s: 24 h = 8640 ticks, x1,25 de margen = 10,8 M MU
 
     /** @param  int|null  $saldoPropio  lo que contesta `celaut account` (null: falla) */

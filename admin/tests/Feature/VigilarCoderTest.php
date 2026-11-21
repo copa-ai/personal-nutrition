@@ -116,7 +116,8 @@ class VigilarCoderTest extends TestCase
             ->expectsOutputToContain('Saldo: rechazado')   // no samples yet: the life of the service is unknown
             ->assertSuccessful();
 
-        $this->assertCount(1, $this->nodo->de('cuenta'));
+        // One read for the sample and one inside the lock of the transfer (the first reading can be old).
+        $this->assertCount(2, $this->nodo->de('cuenta'));
         $this->assertSame([], $this->nodo->de('depositar'));
     }
 

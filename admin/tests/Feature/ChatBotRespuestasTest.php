@@ -215,10 +215,11 @@ class ChatBotRespuestasTest extends TestCase
         $this->assertStringContainsString('aún no tiene contenido', $this->comprobarRespuesta($this->preguntar('menú de hoy')));
     }
 
-    public function test_sin_menu_activo_ni_perfiles(): void
+    public function test_sin_perfiles_el_hogar_unico_sigue_respondiendo_con_su_menu(): void
     {
+        // Un solo hogar por aplicación: la respuesta ya no depende de que quien pregunta tenga un perfil.
         $this->hogar->perfiles()->delete();
-        $this->assertStringContainsString('no tiene un menú activo', $this->comprobarRespuesta($this->preguntar('menú de hoy')));
+        $this->assertStringContainsString('Esto es lo que toca hoy', $this->comprobarRespuesta($this->preguntar('menú de hoy')));
         $this->assertStringContainsString('No te he entendido', $this->comprobarRespuesta($this->preguntar('???')));
     }
 

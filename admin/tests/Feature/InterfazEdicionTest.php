@@ -124,7 +124,6 @@ class InterfazEdicionTest extends TestCase
 
         Livewire::test(CreateRegistroComida::class)
             ->fillForm(['perfiles' => [$this->marta->id, $this->javier->id], 'fecha' => '2026-11-02', 'momento' => 'comida'])
-            ->assertFormFieldHidden('hogar_id')
             ->assertFormFieldDisabled('descripcion')
             ->call('create')
             ->assertHasNoFormErrors();

@@ -13,7 +13,7 @@ use App\Services\Coder\Saldo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
-use Livewire\Exceptions\CannotUpdateLockedPropertyException;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\LectorEspecificacionFalso;
@@ -246,7 +246,7 @@ class CoderPaginaTest extends TestCase
 
     public function test_sube_un_paquete_y_lo_guarda_con_un_nombre_propio(): void
     {
-        $p = $this->pagina()->set('paquete', UploadedFile::fake()->create('mi-editor.celaut.bee', 20));
+        $p = $this->pagina()->set('paquete', UploadedFile::fake()->createWithContent('mi-editor.celaut.bee', str_repeat('x', 2048)));
 
         $ruta = $p->get('rutaPaquete');
         $this->assertNotNull($ruta);
@@ -260,11 +260,11 @@ class CoderPaginaTest extends TestCase
 
     public function test_rechaza_una_extension_mala_y_un_fichero_demasiado_grande(): void
     {
-        $this->pagina()->set('paquete', UploadedFile::fake()->create('malo.zip', 10))
+        $this->pagina()->set('paquete', UploadedFile::fake()->createWithContent('malo.zip', str_repeat('x', 2048)))
             ->assertSet('rutaPaquete', null)->assertNotified('No se pudo completar la acción');
 
         config(['coder.paquete.tamano_maximo_mb' => 1]);
-        $this->pagina()->set('paquete', UploadedFile::fake()->create('grande.celaut.bee', 2048))
+        $this->pagina()->set('paquete', UploadedFile::fake()->createWithContent('grande.celaut.bee', str_repeat('x', 2 * 1024 * 1024)))
             ->assertSet('rutaPaquete', null)->assertNotified('No se pudo completar la acción');
         $this->assertSame([], glob($this->carpeta.'/coder/paquetes/*') ?: []);
     }
