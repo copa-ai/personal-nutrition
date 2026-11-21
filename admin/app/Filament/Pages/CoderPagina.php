@@ -249,7 +249,7 @@ class CoderPagina extends Page
     public function pararForzadoAction(): Action
     {
         return Action::make('pararForzado')->label('Forzar la parada')->icon(Heroicon::OutlinedExclamationTriangle)->color('danger')
-            ->visible(fn (): bool => app(Coder::class)->estado()['estado'] === Coder::ERROR)
+            ->visible(fn (): bool => in_array(app(Coder::class)->estado()['estado'], [Coder::ERROR, Coder::LANZANDO], true))   // a launch can hang: the stop asks for this button
             ->requiresConfirmation()
             ->modalHeading('Forzar la parada')
             ->modalDescription('Se borra el estado del Coder aunque el nodo no confirme la parada. La instancia puede seguir en el nodo y gastar saldo hasta que se agote.')

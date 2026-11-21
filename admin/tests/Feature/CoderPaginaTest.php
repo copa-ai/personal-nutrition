@@ -281,6 +281,23 @@ class CoderPaginaTest extends TestCase
         $this->assertFileDoesNotExist($this->archivo('destino.json'));
     }
 
+    public function test_un_lanzamiento_colgado_se_puede_forzar_a_parar(): void
+    {
+        $this->lanzado();
+        Ajuste::fijar('coder.estado', Coder::LANZANDO);   // the job died (a reload of the app) and the state stayed
+
+        $this->pagina()->assertActionVisible('pararForzado')->callAction('pararForzado')->assertNotified('Estado del Coder borrado');
+        $this->assertSame('none', app(Coder::class)->estado()['estado']);
+        $this->assertSame([[5]], $this->nodo->de('parar'));
+    }
+
+    public function test_el_boton_de_forzar_no_sale_con_el_coder_en_marcha(): void
+    {
+        $this->lanzado();
+
+        $this->pagina()->assertActionHidden('pararForzado');
+    }
+
     public function test_si_el_nodo_no_deja_parar_se_ve_el_aviso_y_la_pagina_sigue(): void
     {
         $this->lanzado();

@@ -190,7 +190,7 @@ Effect: One Coder for each shared database at a time. A Coder of a lost device s
 Context: celaut acquire can take minutes. A web request cannot wait for it.
 Decision: App\Jobs\LanzarCoder calls Coder::lanzar (tries 1, no timeout). Coder::lanzar sets the state to "launching" first. The watcher marks a launch older than coder.lanzamiento.colgado_s (2400 s) as "error". When a refusal occurs before any change, the job stores the reason in coder.error.
 Reason: If the queue worker dies or the reload watcher restarts it, the state must not stay "launching" for ever.
-Effect: A reload of the app can kill a launch that is in progress. The watcher then gives "error" after 40 minutes, or the user stops with force. The lease of such a launch can stay in the pool.
+Effect: A reload of the app can kill a launch that is in progress. The watcher then gives "error" after 40 minutes, or the user stops with force. The lease of such a launch can stay in the pool. The button "Forzar la parada" shows in the state "launching" as well as in "error", so the user does not wait 40 minutes for the watcher (a first test on a node showed this).
 
 ## 32. The SSH address is the uri of acquire, and the launch checks the SSH banner
 Context: celaut gives no slot list for a child. `uri` is the first address of the first api slot.
