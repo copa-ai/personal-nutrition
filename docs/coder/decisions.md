@@ -4,7 +4,7 @@ This file records the design decisions for the Coder feature.
 Each entry has a Context, a Decision, a Reason and an Effect.
 Some entries also have a line "Rejected options".
 Entries 1 to 69 come from the build steps (image, reload, ssh, coder, funds, panel).
-Entries 70 to 87 record the agreed design decisions and the limits that the build did not record.
+Entries 70 to 89 record the agreed design decisions and the limits that the build did not record.
 
 ## 1. Project tree path and content
 Context: The agreed share path is /opt/nutrition/project. The old code path was /opt/nutrition/admin.
@@ -539,3 +539,9 @@ Context: Entry 28 left LectorEspecificacion with a null result, so no launch cou
 Decision: For an uploaded package (.celaut.bee), the class scans the file in reads of 1 MiB with an overlap of 1024 bytes. It looks for the text of a share policy: `setting=share` (the end of the formal), two or three bytes of the protobuf field, then the value (`access`, `env`, `network`, `role`, `tag`, one `key=value` line each, sorted by key). It reports the tag of each entry with `role=guest`. A package with no such entry gives an empty list, and the rule refuses it. For a service id, the result stays null (unknown). Rejected options: a full parse of the protobuf stream in PHP (the filesystem is a multiblock and the policy is at the end of a file of 30 MB or more), and a call to the node (no command exists).
 Reason: A packed service keeps the policy as plain text, so a scan is small, fast (a package of 30 MB takes less than a second) and testable. The scan can give a false guest share if a file of the image holds the same text after `setting=share`. This does not matter for safety: the node alone decides what the Coder mounts, and it refuses a launch whose guest share the parent does not export (SHARED_FILESYSTEMS.md). The worst case is a Coder that cannot see the code.
 Effect: To launch a Coder from the panel with the default setting, upload its package. To launch by hash, set coder.spec_desconocida to "confirmar". A guest share with no tag is named by its path, so the reader does not report it. Tested on a real package of the minimal Coder.
+
+## 89. The watcher opens the share again when the node replaces it
+Context: In the first test on a node, the app answered 403 for every path (also a path that does not exist) as soon as the first Coder launched. The pages of the status server (/estado, /app.log) and the Caddy 404 still worked. On the host, the directory that backs the share (storage/__cache__/microvm/shared_fs/<id>) was created at the moment of the launch, with mode 700 and owner root.
+Decision: Each pass of the watcher (5 s) calls asegurar_acceso. If the root of the project is not readable and searchable for others, or the app user cannot read admin/artisan, the watcher runs chmod a+rx on the root and chmod -R a+rX on the tree. It writes one log line each time that the problem starts. The test in docker/pruebas/test-recarga.sh covers a root with mode 700, one log line for two passes, and a tree with mode 600 files.
+Reason: We infer that the node replaces /opt/nutrition/project with a new mount when the first child starts, and that the root of the new mount is mode 700 and owned by root. The app user then cannot enter it. We did not look inside the nutrition VM when this happened. Entry 5 and start.sh opened the permissions only at start, before the replacement.
+Effect: The app recovers within about 5 s. During this time the web server answers 403. start.sh still opens the permissions at start. If the node changes the owner of the files as well, a chmod can be not enough: check this with an SSH login to a Coder (see the verification notes).

@@ -193,6 +193,15 @@ guardar_copia "$marca" > /dev/null 2>&1; rc=$?
 rm -f "$P/admin/app/enlace" "$marca"
 verificar "snapshot with a symlink: refused, old snapshot kept" "[ $rc -ne 0 ] && cmp -s '$T/privado/ultima-buena.tar.gz' '$T/antes.tar.gz'"
 
+# 9c. A new mount can make the root of the share mode 700: the watcher opens it again, once in the log.
+chmod 700 "$P"
+SALIDA=$(asegurar_acceso 2>&1; asegurar_acceso 2>&1)
+verificar "share root mode 700: opened for others" "[ \$(( 8#\$(stat -c %a $P) & 5 )) -eq 5 ]"
+verificar "share root mode 700: one log line only" "[ \$(printf '%s\n' \"\$SALIDA\" | grep -c 'no puede leer') -eq 1 ]"
+chmod 700 "$P/admin/app"; chmod 600 "$P/admin/app/A.php"
+asegurar_acceso > /dev/null 2>&1; chmod 700 "$P" ; asegurar_acceso > /dev/null 2>&1
+verificar "tree opened again (dir and file)" "[ -r $P/admin/app/A.php ] && [ \$(( \$(stat -c %a $P/admin/app/A.php) % 100 )) -ge 44 ]"
+
 # 10. A size over the cap refuses the reload.
 RECARGA_MAX_BYTES=10 MAX_BYTES=10
 cambia "$P/admin/app/A.php" '// big'

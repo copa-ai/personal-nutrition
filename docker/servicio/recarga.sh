@@ -458,9 +458,27 @@ estabilizar() {
     echo "$h"
 }
 
+# The node can replace the share with a new mount when the first child starts. The root of the new mount can be mode 700 and owned by
+# root. Then the app user cannot enter the project, and the web server answers 403 for every path. The watcher is root: it opens the root
+# and the tree again. It writes one log line for each time that the problem starts.
+ACCESO_AVISADO=false
+asegurar_acceso() {
+    local modo
+    modo=$(stat -c %a "$PROYECTO" 2> /dev/null) || return 0
+    if [ $(( 8#$modo & 5 )) -eq 5 ] && { [ ! -e "$ADMIN/artisan" ] || como_simple test -r "$ADMIN/artisan"; }; then
+        ACCESO_AVISADO=false; return 0
+    fi
+    if [ "$ACCESO_AVISADO" != true ]; then
+        log "aviso: el usuario app no puede leer $PROYECTO (modo $modo): se abre el acceso"; ACCESO_AVISADO=true
+    fi
+    chmod a+rx "$PROYECTO" 2> /dev/null || true
+    ( cd "$PROYECTO" && chmod -R a+rX . 2> /dev/null ) || true
+}
+
 # One pass of the loop.
 una_vuelta() {
     local h forzar=false ciclo=false
+    asegurar_acceso
     if [ -e "$CODER/restaurar-original" ]; then
         rm -f "$CODER/restaurar-original"
         restaurar_original
