@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 
-#[Fillable(['nombre', 'platos_por_toma'])]
+#[Fillable(['nombre', 'platos_por_toma', 'hemisferio', 'zona'])]
 class Hogar extends Model
 {
     /** @use HasFactory<HogarFactory> */
@@ -30,7 +30,7 @@ class Hogar extends Model
     public static function unico(): self
     {
         return self::query()->oldest()->orderBy('id')->first()
-            ?? self::query()->forceCreate(['id' => self::ID_INICIAL, 'nombre' => 'Casa', 'platos_por_toma' => 2]);
+            ?? self::query()->forceCreate(['id' => self::ID_INICIAL, 'nombre' => 'Casa', 'platos_por_toma' => 2, 'hemisferio' => 'norte', 'zona' => 'España']);
     }
 
     protected function casts(): array

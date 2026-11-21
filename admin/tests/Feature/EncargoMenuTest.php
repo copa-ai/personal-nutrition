@@ -53,7 +53,7 @@ class EncargoMenuTest extends TestCase
             $this->menu->construirEncargo()['temporada'],
         );
 
-        config(['agente.menu.hemisferio' => 'sur', 'agente.menu.zona' => 'Chile']);
+        $this->hogar->update(['hemisferio' => 'sur', 'zona' => 'Chile']);
         $sur = $this->menu->construirEncargo()['temporada'];
         $this->assertSame(['primavera', 'sur', 'Chile'], [$sur['estacion'], $sur['hemisferio'], $sur['zona']]);
     }

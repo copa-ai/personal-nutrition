@@ -4,12 +4,13 @@ namespace App\Filament\Pages;
 
 use App\Models\Hogar;
 use BackedEnum;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
-/** El hogar de la aplicación (uno solo, ver Hogar::unico): su nombre y cuántos platos lleva cada comida y cena. Cada campo se guarda al salir de él. */
+/** El hogar de la aplicación (uno solo, ver Hogar::unico): su nombre, cuántos platos lleva cada comida y cena y dónde vive (para que las frutas y verduras sean de temporada). Cada campo se guarda al salir de él. */
 class AjustesHogar extends Page
 {
     protected string $view = 'filament.pages.ajustes-hogar';
@@ -31,7 +32,7 @@ class AjustesHogar extends Page
 
     public function mount(): void
     {
-        $this->form->fill(Hogar::unico()->only(['nombre', 'platos_por_toma']));
+        $this->form->fill(Hogar::unico()->only(['nombre', 'platos_por_toma', 'hemisferio', 'zona']));
     }
 
     public function form(Schema $schema): Schema
@@ -46,6 +47,12 @@ class AjustesHogar extends Page
                         Hogar::unico()->update(['platos_por_toma' => (int) $state]);
                     }
                 }),
+            Select::make('hemisferio')->label('Hemisferio')->options(['norte' => 'Norte', 'sur' => 'Sur'])->required()->live()
+                ->helperText('Define las estaciones: las frutas y verduras del menú son de temporada en esta época del año.')
+                ->afterStateUpdated(fn ($state) => in_array($state, ['norte', 'sur'], true) ? Hogar::unico()->update(['hemisferio' => $state]) : null),
+            TextInput::make('zona')->label('Zona')->required()->maxLength(255)->live(onBlur: true)
+                ->helperText('País o región, por ejemplo «España» o «Galicia»: de ella depende qué es de temporada.')
+                ->afterStateUpdated(fn (?string $state) => filled($state) ? Hogar::unico()->update(['zona' => trim($state)]) : null),
         ]);
     }
 }

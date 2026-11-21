@@ -3,6 +3,7 @@
 namespace App\Models\Menu;
 
 use App\Enums\CategoriaComida;
+use App\Models\Hogar;
 use App\Models\Menu;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
@@ -50,7 +51,7 @@ trait ConstruyeEncargo
             'categorias_validas' => array_column(CategoriaComida::cases(), 'value'),
             'opciones_por_comida' => ['min' => (int) config('agente.menu.opciones_min'), 'max' => (int) config('agente.menu.opciones_max')],
             'platos_por_toma' => max(1, (int) $hogar->platos_por_toma),
-            'temporada' => $this->temporada($fechas),
+            'temporada' => $this->temporada($fechas, $hogar),
             'hogar' => ['nombre' => $hogar->nombre, 'tiempos' => $tiempos],
             'perfiles' => $perfiles->map(fn ($p): array => [
                 'id' => $p->id,
@@ -79,15 +80,15 @@ trait ConstruyeEncargo
 
     /**
      * La temporada de la semana, para que las frutas y verduras sean de temporada por defecto: mes y estación del día central de la semana
-     * (en el hemisferio configurado) y la zona. Si una persona pide otra cosa en sus notas o gustos, manda lo que pida.
+     * (en el hemisferio del hogar) y su zona. Si una persona pide otra cosa en sus notas o gustos, manda lo que pida.
      *
      * @param  list<CarbonImmutable>  $fechas
      * @return array{mes: string, mes_numero: int, estacion: string, hemisferio: string, zona: string}
      */
-    private function temporada(array $fechas): array
+    private function temporada(array $fechas, Hogar $hogar): array
     {
         $centro = $fechas[intdiv(count($fechas), 2)];
-        $sur = config('agente.menu.hemisferio') === 'sur';
+        $sur = $hogar->hemisferio === 'sur';
         $estaciones = ['invierno', 'primavera', 'verano', 'otoño'];
         // Estaciones meteorológicas del hemisferio norte (dic-feb invierno…); en el sur van desfasadas medio año.
         $indice = intdiv($centro->month % 12, 3);
@@ -98,7 +99,7 @@ trait ConstruyeEncargo
             'mes_numero' => $centro->month,
             'estacion' => $estacion,
             'hemisferio' => $sur ? 'sur' : 'norte',
-            'zona' => (string) config('agente.menu.zona'),
+            'zona' => trim((string) $hogar->zona) !== '' ? trim((string) $hogar->zona) : 'España',
         ];
     }
 

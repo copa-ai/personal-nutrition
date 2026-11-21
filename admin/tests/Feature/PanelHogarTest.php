@@ -120,11 +120,11 @@ class PanelHogarTest extends TestCase
         $this->assertSame(1, Hogar::query()->count());
 
         Livewire::test(AjustesHogar::class)
-            ->assertFormSet(['nombre' => 'Casa', 'platos_por_toma' => 2])
-            ->fillForm(['nombre' => 'Mi casa', 'platos_por_toma' => 3])
+            ->assertFormSet(['nombre' => 'Casa', 'platos_por_toma' => 2, 'hemisferio' => 'norte', 'zona' => 'España'])
+            ->fillForm(['nombre' => 'Mi casa', 'platos_por_toma' => 3, 'hemisferio' => 'sur', 'zona' => 'Chile'])
             ->assertHasNoFormErrors();
 
-        $this->assertSame(['Mi casa', 3], [$hogar->fresh()->nombre, $hogar->fresh()->platos_por_toma]);
+        $this->assertSame(['Mi casa', 3, 'sur', 'Chile'], array_values($hogar->fresh()->only(['nombre', 'platos_por_toma', 'hemisferio', 'zona'])));
     }
 
     public function test_el_feedback_se_crea_desde_el_perfil(): void
