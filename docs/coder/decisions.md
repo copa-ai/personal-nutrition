@@ -172,7 +172,7 @@ Effect: Other users (agent, chat) can test if a name exists in secretos, but can
 Context: celaut v0.6.3 cannot read the spec of a service (see the verification result). The agreed rule says to refuse a service with no guest share "project".
 Decision: App\Services\Coder\LectorEspecificacion returns null (unknown). The default value of config coder.spec_desconocida is "rechazar": Coder::lanzar refuses a launch with a Spanish message. The value "confirmar" lets the user confirm in the panel that the service mounts the share. Rejected options: parse the .bee file in PHP (protobuf and multiblock code, too large) and a Python helper with bee-rpc (not in the image).
 Reason: The rule stays strict. A real reader can replace the class later with no change in Coder.
-Effect: With the default, no Coder can launch until a reader exists or the setting is "confirmar". This blocks the feature on purpose. The panel step must show the refusal text.
+Effect: With the default, no Coder can launch until a reader exists or the setting is "confirmar". This blocks the feature on purpose. The panel step must show the refusal text. Entry 88 adds a reader for uploaded packages. A service that the user names by hash stays unknown.
 
 ## 29. Coder state uses Ajuste keys with the prefix coder.
 Context: The state must survive a restart of the web process and be readable by the panel, the job and the command.
@@ -418,7 +418,7 @@ Effect: The user replaces one placeholder.
 Context: The default setting refuses a service when the spec cannot be read (entry 28).
 Decision: The page follows the setting. With "rechazar" it shows the reason and no launch button. With "confirmar" it shows a box that the user must tick, and passes that choice to the job.
 Reason: The page must not be a way around the setting.
-Effect: With the default setting, no launch works until a spec reader exists. This is the known open issue of the earlier steps.
+Effect: With the default setting, a launch by hash is refused until the setting is "confirmar". A launch of an uploaded package works, because entry 88 reads its spec. This was the open issue of the earlier steps.
 
 ## 70. One parent share with the tag project
 Context: The Coder and nutrition must see the same code tree. The node offers shares in two forms: a parent share and a network share.
@@ -533,3 +533,9 @@ Context: The watcher runs as root. The app user and the Coder write the share an
 Decision: The watcher (a) kills only a PID that passes the owner and command line check, (b) removes symlinks before an extract, (c) clears setuid and setgid bits in the share before each check and after each extract, and start.sh does it at start and warns when the share has no nosuid, (d) refuses to hash or reload when the watched paths hold more than 200 MiB (RECARGA_MAX_BYTES), (e) writes only printable ASCII in recarga.json, (f) does not save a snapshot when a watched path holds a symlink, so a snapshot never writes through a link.
 Reason: Each of these is a way for a file or a PID that the Coder controls to make root act on a wrong target.
 Effect: A larger share needs a higher RECARGA_MAX_BYTES. The check does not stop the Coder from filling the disk through other paths.
+
+## 88. The spec reader reads uploaded packages, not service ids
+Context: Entry 28 left LectorEspecificacion with a null result, so no launch could pass the rule "the Coder declares a guest share with the tag project". The celaut CLI v0.6.3 cannot read the spec of a service: `inspect` gives only the id, and `service-info` gives data from the chain.
+Decision: For an uploaded package (.celaut.bee), the class scans the file in reads of 1 MiB with an overlap of 1024 bytes. It looks for the text of a share policy: `setting=share` (the end of the formal), two or three bytes of the protobuf field, then the value (`access`, `env`, `network`, `role`, `tag`, one `key=value` line each, sorted by key). It reports the tag of each entry with `role=guest`. A package with no such entry gives an empty list, and the rule refuses it. For a service id, the result stays null (unknown). Rejected options: a full parse of the protobuf stream in PHP (the filesystem is a multiblock and the policy is at the end of a file of 30 MB or more), and a call to the node (no command exists).
+Reason: A packed service keeps the policy as plain text, so a scan is small, fast (a package of 30 MB takes less than a second) and testable. The scan can give a false guest share if a file of the image holds the same text after `setting=share`. This does not matter for safety: the node alone decides what the Coder mounts, and it refuses a launch whose guest share the parent does not export (SHARED_FILESYSTEMS.md). The worst case is a Coder that cannot see the code.
+Effect: To launch a Coder from the panel with the default setting, upload its package. To launch by hash, set coder.spec_desconocida to "confirmar". A guest share with no tag is named by its path, so the reader does not report it. Tested on a real package of the minimal Coder.

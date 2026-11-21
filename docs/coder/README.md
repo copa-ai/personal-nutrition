@@ -162,7 +162,7 @@ It sends only the amount that the three controls allow.
 
 - One Coder at a time for each shared database.
 - The Coder is always a direct child of nutrition on the same node.
-- With the default setting, no Coder launches. The node CLI cannot read the spec of a service. See decisions 28 and 69.
+- With the default setting, a Coder that the user names by hash is refused: the node CLI cannot read the spec of a service. An uploaded `.celaut.bee` package is read, and it launches if it declares the guest share `project`. See decisions 28, 69 and 88.
 - The upload limit for a package is 512 MB.
 - The forwarder allows 16 open pipes, and it closes a pipe after 4 hours with no traffic.
 - The disk of nutrition is 6 GiB. The value is a guess. Measure it after the first pack.
