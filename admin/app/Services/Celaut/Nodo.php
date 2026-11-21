@@ -179,6 +179,92 @@ class Nodo
         return null;
     }
 
+    /**
+     * Launch a service by its id (`celaut acquire --service`). The node must already hold the service. A start can take minutes.
+     * Without $nuevo, the node can reuse an idle instance with the same service and the same configuration.
+     * `uri` is the first address of the first api slot that the service declares. It is not the address of a given slot.
+     *
+     * @param  array<string, string>  $entorno  environment variables of the new instance
+     * @param  string|null  $inicialMu  most MU that the start can cost this service (`--initial-mu`)
+     * @return array{lease: int, uri: string, new: bool}
+     */
+    public function adquirirPorHash(string $hash, array $entorno = [], ?string $inicialMu = null, bool $nuevo = false): array
+    {
+        return $this->ejecutar($this->argsAdquirir(['--service', $hash], $entorno, $inicialMu, $nuevo), 1800);
+    }
+
+    /**
+     * Launch a service from a .celaut.bee file (`celaut acquire --package`). The first start sends the file to the node.
+     *
+     * @param  array<string, string>  $entorno
+     * @return array{lease: int, uri: string, new: bool}
+     */
+    public function adquirirPorPaquete(string $ruta, array $entorno = [], ?string $inicialMu = null, bool $nuevo = false): array
+    {
+        return $this->ejecutar($this->argsAdquirir(['--package', $ruta], $entorno, $inicialMu, $nuevo), 3600);
+    }
+
+    /**
+     * Cost of a service that the node already holds (`celaut cost --service`). The node refuses a service that it does not hold.
+     *
+     * @param  array<string, string>  $entorno
+     * @return array{service: string, cost_mu: string, init_maintenance_cost_mu: string, max_maintenance_cost_mu: string}
+     */
+    public function costePorHash(string $hash, array $entorno = [], ?string $inicialMu = null): array
+    {
+        return $this->ejecutar($this->argsCoste(['--service', $hash], $entorno, $inicialMu), 120);
+    }
+
+    /**
+     * Cost of a service from a .celaut.bee file (`celaut cost --package`). The node refuses a package that it does not hold.
+     *
+     * @param  array<string, string>  $entorno
+     * @return array{service: string, cost_mu: string, init_maintenance_cost_mu: string, max_maintenance_cost_mu: string}
+     */
+    public function costePorPaquete(string $ruta, array $entorno = [], ?string $inicialMu = null): array
+    {
+        return $this->ejecutar($this->argsCoste(['--package', $ruta], $entorno, $inicialMu), 120);
+    }
+
+    /** The service id (hex) of a .celaut.bee file. This reads the file only and does not call the node (`celaut inspect`). */
+    public function idDePaquete(string $ruta): string
+    {
+        return (string) ($this->ejecutar(['inspect', $ruta])['service'] ?? '');
+    }
+
+    /**
+     * @param  list<string>  $origen
+     * @param  array<string, string>  $entorno
+     * @return list<string>
+     */
+    private function argsAdquirir(array $origen, array $entorno, ?string $inicialMu, bool $nuevo): array
+    {
+        $args = ['acquire', ...$origen];
+        foreach ($entorno as $clave => $valor) {
+            array_push($args, '--env', "{$clave}={$valor}");
+        }
+        $inicialMu === null || array_push($args, '--initial-mu', $inicialMu);
+        $nuevo && $args[] = '--new';
+
+        return $args;
+    }
+
+    /**
+     * @param  list<string>  $origen
+     * @param  array<string, string>  $entorno
+     * @return list<string>
+     */
+    private function argsCoste(array $origen, array $entorno, ?string $inicialMu): array
+    {
+        $args = ['cost', ...$origen];
+        foreach ($entorno as $clave => $valor) {
+            array_push($args, '--env', "{$clave}={$valor}");
+        }
+        $inicialMu === null || array_push($args, '--initial-mu', $inicialMu);
+
+        return $args;
+    }
+
     /** Para una instancia del pool y la saca de el (el saldo no gastado vuelve a este servicio). */
     public function parar(int $lease): array
     {

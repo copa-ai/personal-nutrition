@@ -43,7 +43,9 @@ PATH_BASE=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 mkdir -p "$DATOS/secretos" "$DATOS/admin" "$DATOS/agente" "$DATOS/publico" "$CODER"
 chmod 755 "$DATOS" "$DATOS/publico"
-chmod 700 "$DATOS/secretos"
+chmod 711 "$DATOS/secretos"   # others can enter but not list: only the subdirectory for the Coder is theirs (see below)
+# The app user stores the SSH host key of the Coder here. Other files in secretos stay root-only (mode 600).
+mkdir -p "$DATOS/secretos/coder"; chown app:app "$DATOS/secretos/coder"; chmod 700 "$DATOS/secretos/coder"
 
 # --- Log y estado publicos desde el primer segundo: /app.log, /estado.json y la pagina /estado ---
 # Todo lo que escriben start.sh y las piezas (stdout y stderr) va a app.log. Lo sirve la pagina de estado (estado/servidor.py) mientras
@@ -291,6 +293,9 @@ lanzar ssh_proxy_bucle
 # --- Vigilante de la base compartida: cada 300 s elige en que base escribir entre las de la red y guarda copias de seguridad de ella ---
 # La primera vuelta es nada mas arrancar (no tras 300 s): asi la primera copia de seguridad de la base se toma en cuanto se conecta con ella.
 lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutrition:vigilar-base "$2" || true; sleep "$1"; done' vigilante 300 "$RUN_DB"
+
+# --- Coder watcher: every 60 s, checks that the Coder child is still in the node pool and removes its SSH target if it died ---
+lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan nutrition:vigilar-coder || true; sleep "$1"; done' vigilante-coder 60
 
 # --- Chat: traductor gRPC (usuario chat, entorno vacio). Necesita la web (127.0.0.1:8001, Caddyfile) y su base, ya arriba ---
 fase chat "en curso" "arrancando el traductor en :50051"

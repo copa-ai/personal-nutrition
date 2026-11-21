@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Services\BaseCompartida\EstadoBase;
+use App\Services\Coder\Coder;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
@@ -14,7 +15,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // The Coder service needs the node client with its real configuration. Tests replace it with $this->app->instance().
+        $this->app->bind(Coder::class, fn (): Coder => Coder::desdeConfig());
     }
 
     /**

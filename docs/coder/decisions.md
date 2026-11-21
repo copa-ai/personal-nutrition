@@ -152,3 +152,93 @@ Context: Every piece that ends stops the whole service (wait -n), but the forwar
 Decision: start.sh runs ssh_proxy_bucle, which restarts the forwarder after 3 seconds. TERM kills the child. The script and the user are outside the shared project, so a Coder cannot change them. The forwarder starts after the web and queue are ready and does not add a phase to the status page.
 Reason: A crash of a debug path must not take down the menu service.
 Effect: A crash loop shows in app.log. Not verified on a real VM: setpriv and the port bind at 2222 as a non-root user (port above 1023, so no capability is needed).
+
+## 26. The host key comes from PHP sodium, not from ssh-keygen
+Context: The image has no ssh-keygen. The Coder needs an OpenSSH private key in CODER_SSH_HOST_KEY.
+Decision: App\Services\Coder\ClaveSshHost builds an ed25519 key in the OpenSSH file format with the sodium extension. Rejected options: add openssh-client to the Dockerfile (a package and a sub-process for one call) and PHP openssl (it cannot write the OpenSSH format).
+Reason: Sodium is part of the PHP image. The format is short. A Python copy of the code was read by ssh-keygen -y on this host and gave the right public key.
+Effect: No image change. The PHP code itself did not run here. The test ClaveSshHostTest runs ssh-keygen when it exists.
+
+## 27. The host key is stored in a subdirectory that the app user owns
+Context: /var/lib/nutrition/secretos was root only (mode 700). The panel code runs as the app user and must write the key there.
+Decision: start.sh sets secretos to mode 711 and makes secretos/coder (owner app, mode 700). The key file is secretos/coder/ssh_host_ed25519, mode 600, written by rename.
+Reason: The app user must enter secretos to reach its subdirectory. Mode 711 lets it enter and does not let it list. Files directly in secretos stay mode 600 for root.
+Effect: Other users (agent, chat) can test if a name exists in secretos, but cannot read it. The key is created at the first launch, not at start.
+
+## 28. Spec reading is a replaceable class that returns "unknown"
+Context: celaut v0.6.3 cannot read the spec of a service (see the verification result). The agreed rule says to refuse a service with no guest share "project".
+Decision: App\Services\Coder\LectorEspecificacion returns null (unknown). The default value of config coder.spec_desconocida is "rechazar": a launch is refused with a Spanish message. The value "confirmar" lets the user confirm in the panel that the service mounts the share. Rejected options: parse the .bee file in PHP (protobuf and multiblock code, too large) and a Python helper with bee-rpc (not in the image).
+Reason: The rule stays strict. A real reader can replace the class later with no change in Coder.
+Effect: With the default, no Coder can launch until a reader exists or the setting is "confirmar". This blocks the feature on purpose. The panel step must show the refusal text.
+
+## 29. Coder state uses Ajuste keys with the prefix coder.
+Context: The state must survive a restart of the web process and be readable by the panel, the job and the command.
+Decision: Keys: estado (none, launching, running, error), instancia, servicio, tipo, referencia, lease, uri, error, lanzado_en, enviado_mu, horas_vida, saldo_mu, claves_ssh. The stop action sets the keys of one life to null and keeps claves_ssh.
+Reason: Ajuste::fijar audits each change. No new table or migration is needed.
+Effect: Each state change writes an audit row "ajuste.cambiado". The funding step writes horas_vida, saldo_mu and enviado_mu. Package files stay after a stop, so a new launch is quick.
+
+## 30. The settings table is shared, so the Coder has an owner instance
+Context: The table "ajustes" is in the core schema of the shared database. Two devices on one database see the same coder.* rows.
+Decision: A launch stores coder.instancia = Instancia::id(). If the state is not "none" and the owner is another instance, estado() sets ajeno=true. Launch, stop and the watcher then refuse or skip.
+Reason: A second device must not read a lease from another node and mark the Coder as dead, or stop it.
+Effect: One Coder for each shared database at a time. A Coder of a device that is lost stays "ajeno" until the owner stops it. A manual change of coder.estado to none clears it.
+
+## 31. Launch runs in a queue job and a stuck launch times out
+Context: celaut acquire can take minutes. A web request cannot wait for it.
+Decision: App\Jobs\LanzarCoder calls Coder::lanzar (tries 1, no timeout). Coder::lanzar sets the state to "launching" first. The watcher marks a launch older than coder.lanzamiento.colgado_s (2400 s) as "error". When a refusal occurs before any change, the job stores the reason in coder.error.
+Reason: If the queue worker dies or the reload watcher restarts it, the state must not stay "launching" for ever.
+Effect: A reload of the app can kill a launch that is in progress. The watcher then gives "error" after 40 minutes, or the user stops with force. The lease of such a launch can stay in the pool.
+
+## 32. The SSH address is the uri of acquire, checked by the SSH banner
+Context: celaut gives no slot list for a child. `uri` is the first address of the first api slot.
+Decision: The launch connects to the uri and reads a line that starts with SSH-2.0-. It retries for 180 s. If the test fails, the service is stopped, the state is "error" and no destino.json is written. The contract says that the ssh slot is the first api slot.
+Reason: A wrong first slot would send the user to a wrong service. The banner test needs no node command.
+Effect: A Coder whose first slot is not SSH never gets a target. The test connection is made from nutrition to the child and costs nothing. Not verified on a node.
+
+## 33. Rules for the authorized keys
+Context: The text of the panel is written in a file that the Coder reads as authorized_keys, as root in its VM.
+Decision: ClavesSsh accepts a line only if it matches "type base64 [comment]" as a whole. Types: ssh-ed25519, ecdsa-sha2-nistp256/384/521, ssh-rsa. The blob must start with the same type name. The comment has 1 to 64 characters from A-Z a-z 0-9 @ . _ : + = - and space. Blank lines are skipped, equal keys count once, the maximum is 20, and one bad line rejects the whole text. Rejected option: keep the good lines and drop the bad ones.
+Reason: A quote, a comma or a control character in the comment could add an option. Silent drops hide errors.
+Effect: Comment lines with # and keys with options fail. The user sees the line number. An empty text is valid and removes all keys.
+
+## 34. The keys are written at each save and at each launch
+Context: The share is new at each start of nutrition, so .coder/authorized_keys is lost. The key list is also in Ajuste.
+Decision: guardarClaves writes the file by rename (mode 644) and then stores the list. Launch writes the file again from the list before it starts the service. If the write fails, nothing is started.
+Reason: A launch with no keys file would give a Coder that nobody can enter, and it would cost money.
+Effect: The share must be writable by the app user. This is not verified on virtiofs (see the verification notes).
+
+## 35. Package upload rules
+Context: The panel accepts a .celaut.bee file. A path from a form field must not reach celaut.
+Decision: guardarPaquete accepts only a name that ends in .celaut.bee and a size up to coder.paquete.tamano_maximo_mb (512). It copies the file to coder/paquetes/<random>.celaut.bee (mode 600) and runs celaut inspect. Launch accepts a path only if its real path is inside that directory. A symbolic link to the outside fails.
+Reason: A stored file with a random name cannot be chosen by the user. The inspect call rejects a file that is not a package.
+Effect: The PHP and Livewire upload limits are separate and must be at least 512 MB. The panel step must set them. Uploaded files are never deleted by nutrition.
+
+## 36. The confirm step shows the cost and the resource bound, not the real resources
+Context: celaut cost prints four values and no memory, disk or CPU. The node refuses a cost for a service that it does not hold.
+Decision: preparar returns the cost array (or null with the reason of the node), the admission bound from config coder.recursos, and two spec fields. The real resources are "conocidos: null".
+Reason: A made-up value is worse than an unknown value.
+Effect: For an uploaded package that the node never saw, the panel shows "cost unknown". The start is then bounded only by the initial MU setting.
+
+## 37. Stop closes the SSH access first, and a forced stop exists
+Context: A stop that the node refuses must not leave the SSH target open.
+Decision: parar removes destino.json before the node call. If the node refuses, the state becomes "error" and the lease stays, so a new stop can run, and a new launch is refused. The option $forzar clears the state anyway. A stop while the state is "launching" needs $forzar.
+Reason: Access closes at once. The user is never stuck with a lease that nutrition cannot stop.
+Effect: A forced stop can leave a lease in the pool. The watcher does not track it any more.
+
+## 38. A dead Coder gets the state "error" with no lease
+Context: The watcher finds that the lease is not in the pool any more. The lease number has no use then.
+Decision: The watcher removes destino.json, sets "error", stores the reason and clears lease and uri. A launch is allowed when the state is "error" and the lease is null. It is not allowed with an "error" that keeps a lease.
+Reason: A stop of a lease that does not exist would fail for ever.
+Effect: The panel shows the reason until the user launches again. If the node does not answer, the watcher changes nothing.
+
+## 39. The watcher runs in start.sh every 60 seconds
+Context: The Coder can die from lack of balance at any time. The forwarder keeps open pipes until destino.json changes.
+Decision: start.sh runs nutrition:vigilar-coder as the app user in a loop with a 60 s pause. With no Coder, the command only removes a stale destino.json and makes no node call.
+Reason: The load is small. The same loop will later hold the funding rules.
+Effect: A dead Coder closes its SSH pipes in less than about 61 s. The command calls celaut list once for each pass when a Coder runs.
+
+## 40. The service class is built from config in the container
+Context: Nodo has string constructor arguments and the container cannot fill them from config.
+Decision: AppServiceProvider binds Coder::class to Coder::desdeConfig(). Tests replace it with $this->app->instance(). Fakes are subclasses of Nodo, SondaSsh and LectorEspecificacion in tests/Support.
+Reason: The command and the job get the class by injection and need no static call.
+Effect: A fake node needs no shell script. The real process call is tested in NodoCoderProcesoTest.
