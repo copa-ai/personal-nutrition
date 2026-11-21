@@ -13,14 +13,17 @@ trap cleanup EXIT
 
 export RECARGA_PROYECTO="$T/project" RECARGA_CODER="$T/coder" RECARGA_PRIVADO="$T/privado" RECARGA_ORIGINAL="$T/orig.tar.gz"
 export RECARGA_COMO="" RECARGA_HOME="$T" RECARGA_DEBOUNCE=0 RECARGA_PERIODO=0 RECARGA_ESPERA_WEB=10 RECARGA_INTENTOS_SALUD=3
+export RECARGA_UID=$(id -u) RECARGA_PATRON_WEB=sleep RECARGA_PATRON_COLA=sleep
 export RECARGA_PATH="$T/bin:/usr/bin:/bin" RECARGA_SALUD="$T/bin/salud"
 P=$RECARGA_PROYECTO; C=$RECARGA_CODER
 
-mkdir -p "$T/bin" "$P/admin/app" "$P/admin/config" "$P/admin/routes" "$P/admin/resources" "$P/admin/database" "$P/admin/bootstrap" \
+mkdir -p "$T/bin" "$P/admin/app" "$P/admin/config" "$P/admin/routes" "$P/admin/resources" "$P/admin/database" "$P/admin/bootstrap" "$P/admin/lang/es" \
     "$P/admin/vendor/x" "$P/.coder" "$C"
 echo '<?php // original' > "$P/admin/app/A.php"
 echo '<?php return [];' > "$P/admin/config/app.php"
 echo '<?php // app' > "$P/admin/bootstrap/app.php"
+echo '<?php return [];' > "$P/admin/bootstrap/providers.php"
+echo '<?php return [];' > "$P/admin/lang/es/x.php"
 echo '{}' > "$P/admin/composer.lock"
 echo 'v1' > "$P/admin/vendor/x/lib.php"
 echo 'key' > "$P/.coder/authorized_keys"
@@ -115,6 +118,44 @@ una_vuelta > /dev/null
 verificar "reload-now flag reloads and is removed" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ] && [ ! -e $C/recargar-ahora ] && [ \"\$(json pendiente)\" = False ]"
 rm -f "$C/auto-recarga"
 
+# 6b. Auto OFF with a pending change: the watcher does not redo the change branch on each pass.
+echo off > "$C/auto-recarga"
+cambia "$P/admin/app/A.php" '// edit 2b'
+una_vuelta > /dev/null
+N1=$(huella_actual); LOG1=$(una_vuelta 2>&1; una_vuelta 2>&1; una_vuelta 2>&1)
+verificar "auto off: later passes log nothing and stay pendiente" "[ -z \"\$LOG1\" ] && [ \"\$(json estado)\" = pendiente ]"
+touch "$C/recargar-ahora"; una_vuelta > /dev/null
+rm -f "$C/auto-recarga"
+
+# 6c. providers.php and lang are watched.
+PID_WEB=$(cat "$C/web.pid")
+cambia "$P/admin/bootstrap/providers.php" '// provider'
+una_vuelta > /dev/null
+verificar "change in bootstrap/providers.php reloads" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ]"
+PID_WEB=$(cat "$C/web.pid")
+cambia "$P/admin/lang/es/x.php" '// lang'
+una_vuelta > /dev/null
+verificar "change in lang reloads" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ]"
+
+# 6d. A forged PID file is not killed (the process is not the app web process).
+PID_WEB=$(cat "$C/web.pid")
+tail -f /dev/null & AJENO=$!
+pid_valido "$AJENO" frankenphp && mal "pid_valido accepts a wrong command line" || ok "pid_valido rejects a wrong command line"
+APP_UID_ANTES=$APP_UID; APP_UID=0
+pid_valido "$PID_WEB" sleep && mal "pid_valido accepts a wrong owner" || ok "pid_valido rejects a wrong owner"
+APP_UID=$APP_UID_ANTES
+echo "$AJENO" > "$C/web.pid"
+cambia "$P/admin/app/A.php" '// forged pid'
+una_vuelta > /dev/null 2>&1
+verificar "forged pid file: the foreign process stays alive" "kill -0 $AJENO"
+verificar "forged pid file: the reload fails and is reported" "[ \"\$(json resultado)\" != ok ]"
+kill "$AJENO" 2>/dev/null
+echo "$PID_WEB" > "$C/web.pid"
+
+# 6e. json_texto strips control characters.
+printf '%s' "$(json_texto $'admin/app/a\x01\x7f\xff.php: "x" \\')" | python3 -c "import sys,json; json.loads('\"'+sys.stdin.read()+'\"')" 2>/dev/null \
+    && ok "json_texto output is a valid JSON string" || mal "json_texto output is a valid JSON string"
+
 # 7. Restore original: files return, extra files go, .coder and vendor are right.
 cambia "$P/admin/app/A.php" '// edit 3'
 echo '<?php // extra' > "$P/admin/app/Extra.php"
@@ -128,6 +169,29 @@ verificar "restore: extra app file removed" "[ ! -e '$P/admin/app/Extra.php' ]"
 verificar "restore: vendor fixed" "[ ! -e '$P/admin/vendor/x/extra.php' ] && [ \"\$(cat $P/admin/vendor/x/lib.php)\" = v1 ]"
 verificar "restore: .coder kept" "[ \"\$(cat $P/.coder/authorized_keys)\" = newkey ]"
 verificar "restore: result and equal to original" "[ \"\$(json resultado)\" = restaurado_original ] && [ \"\$(json igual_original)\" = True ] && [ \"\$(json cambios)\" = 0 ] && [ ! -e $C/restaurar-original ]"
+
+# 8. A symlink in place of a watched path or of its parent: the rollback does not write through it.
+mkdir -p "$T/fuera"
+rm -rf "$P/admin/app"; ln -s "$T/fuera" "$P/admin/app"
+extraer_y_podar "$T/privado/ultima-buena.tar.gz" "${VIGILADOS[@]}"
+verificar "symlinked watched path: nothing written outside" "[ -z \"\$(ls -A $T/fuera)\" ] && [ -d $P/admin/app ] && [ ! -L $P/admin/app ]"
+mv "$P/admin" "$T/admin.real"; ln -s "$T/admin.real" "$P/admin"
+extraer_y_podar "$T/privado/ultima-buena.tar.gz" "${VIGILADOS[@]}"
+verificar "symlinked parent (admin): replaced by a real directory" "[ -d $P/admin ] && [ ! -L $P/admin ]"
+
+# 9. Setuid bits are cleared and unreadable files become readable.
+echo x > "$P/admin/app/Suid.php"; chmod 4755 "$P/admin/app/Suid.php"
+echo y > "$P/admin/app/Priv.php"; chmod 600 "$P/admin/app/Priv.php"
+sanear_modos
+verificar "sanear_modos clears setuid and opens mode 600" "[ ! -u $P/admin/app/Suid.php ] && [ -r $P/admin/app/Priv.php ] && [ \"\$(stat -c %a $P/admin/app/Priv.php)\" = 644 ]"
+
+# 10. A size over the cap refuses the reload.
+RECARGA_MAX_BYTES=10 MAX_BYTES=10
+cambia "$P/admin/app/A.php" '// big'
+PID_WEB=$(cat "$C/web.pid")
+una_vuelta > /dev/null 2>&1
+verificar "size over the cap: no reload and an error" "[ \"\$(cat $C/web.pid)\" = $PID_WEB ] && [ \"\$(json resultado)\" = error_arranque ]"
+MAX_BYTES=209715200
 
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "All tests passed."; else echo "$FALLOS test(s) failed."; exit 1; fi

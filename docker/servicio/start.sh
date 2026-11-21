@@ -55,6 +55,9 @@ PUBLICO="$DATOS/publico"
 touch "$PUBLICO/app.log"; chmod 644 "$PUBLICO/app.log"
 exec >>"$PUBLICO/app.log" 2>&1
 echo "=== arranque $(date -u +%FT%TZ) ==="
+# The Coder host key is an argument of the celaut process while a launch runs (up to 30 min). Hide the processes of other users from
+# the users agente and chat. The user app can still see them (it runs celaut and the code of the Coder). A failure is a warning.
+mount -o remount,hidepid=2 /proc 2>/dev/null || echo "start.sh: aviso: no se pudo montar /proc con hidepid=2" >&2
 
 FASES=(secretos agente base migraciones usuario web cola chat)
 declare -A F_NOMBRE=([secretos]="Secretos y claves" [agente]="Agente (Claude Code)" [base]="Base de datos PostgreSQL" \
@@ -154,9 +157,15 @@ agente_vigilar() { [ "${F_ESTADO[agente]}" = ok ] || ! agente_sano || fase agent
 # --- Administracion: carpeta propia del agente (encargos/workspace/base) y datos en $DATOS/admin ---
 A="$DATOS/admin"
 [ -f "$KIT_ADMIN/artisan" ] || { fallar agente "no hay codigo en $KIT_ADMIN (directorio compartido vacio)"; echo "start.sh: falta $KIT_ADMIN/artisan" >&2; parar; exit 1; }
-# The share can be written by the Coder as root: make the tree readable by the app user. The app writes nothing inside it
-# (storage and bootstrap caches live in $A, see ENTORNO_BASE). A failure here is a warning: virtiofs may refuse chmod.
+# The share can be written by the Coder as root: make the tree readable by the app user. The app writes only .coder/authorized_keys
+# inside it (storage and bootstrap caches live in $A, see ENTORNO_BASE). A failure here is a warning: virtiofs may refuse chmod.
 chmod -R a+rX "$PROYECTO" 2>/dev/null || echo "start.sh: aviso: no se pudo hacer legible $PROYECTO" >&2
+# The Coder is root in its VM and can write a setuid file into the share. Clear the bits, and tell if the mount allows them.
+find "$PROYECTO" -xdev -type f -perm /6000 -exec chmod ug-s {} + 2>/dev/null || true
+grep " $PROYECTO " /proc/mounts | grep -q nosuid || echo "start.sh: aviso: $PROYECTO no esta montado con nosuid ($(grep " $PROYECTO " /proc/mounts | cut -d' ' -f4 | head -1))" >&2
+# Folder for the keys of the Coder. The app writes the file authorized_keys here (the panel does it). Nobody else needs to write.
+mkdir -p "$PROYECTO/.coder" 2>/dev/null && chown app:app "$PROYECTO/.coder" && chmod 755 "$PROYECTO/.coder" \
+    || echo "start.sh: aviso: no se pudo preparar $PROYECTO/.coder para el usuario app" >&2
 # Control files shared by the panel (user app) and the reload watcher (root). Old PID files belong to the previous run.
 rm -f "$CODER"/*.pid "$CODER"/*.pid.tmp
 # Group sshproxy can read the directory (destino.json) and cannot write in it: the forwarder user needs no other right.

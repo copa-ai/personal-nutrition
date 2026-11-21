@@ -9,7 +9,12 @@ Rules:
   - No destination file, or a bad file: close the connection at once.
   - The destination file is read again for each connection and once per second.
     If the file disappears or the target changes, the open pipes of the old target close.
-  - The number of open pipes has a limit. A connection over the limit closes at once.
+  - The number of open pipes, plus the connects in progress, has a limit. A connection over the limit closes at once.
+  - The target must not be a loopback, unspecified, link-local or multicast address. This holds for a name too: the forwarder
+    checks the address that the connection reached. The app user writes the destination file and the Coder controls the app code,
+    so the file is not trusted. Without this rule, port 2222 would reach the local services of nutrition.
+  - Half-close works: when one side sends EOF, the forwarder sends EOF to the other side and lets the other direction finish.
+    The pipe closes when both directions end, or after the grace time.
   - A pipe with no traffic in both directions closes after the idle time.
   - The forwarder never logs bytes. It logs one line per event.
 
@@ -21,6 +26,7 @@ Only the Python standard library is used. Settings (argument, then environment, 
   --idle / SSH_PROXY_IDLE          14400 seconds without traffic
   --connect-timeout / SSH_PROXY_CONNECT_TIMEOUT  10 seconds
   --poll / SSH_PROXY_POLL          1 second
+  --grace / SSH_PROXY_GRACE        30 seconds that a pipe stays open after one side sent EOF
 """
 import argparse
 import asyncio
@@ -40,8 +46,18 @@ CHUNK = 65536
 HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 
-def validate_target(data):
-    """Return (host, port) for a decoded destination, or None if it is not valid."""
+def is_local_address(address):
+    """Return True for a loopback, unspecified, link-local or multicast address (an ipaddress object)."""
+    if getattr(address, "ipv4_mapped", None) is not None:
+        address = address.ipv4_mapped
+    return (address.is_loopback or address.is_unspecified or address.is_link_local
+            or address.is_multicast)
+
+
+def validate_target(data, allow_local=False):
+    """Return (host, port) for a decoded destination, or None if it is not valid.
+
+    allow_local is for tests only. It allows loopback and similar targets."""
     if not isinstance(data, dict):
         return None
     host, port = data.get("host"), data.get("port")
@@ -50,14 +66,19 @@ def validate_target(data):
     if not 1 <= port <= 65535:
         return None
     try:
-        ipaddress.ip_address(host)
+        address = ipaddress.ip_address(host)
     except ValueError:
         if not HOST_RE.fullmatch(host) or ".." in host:
+            return None
+        if not allow_local and (host.lower() == "localhost" or host.lower().endswith(".localhost")):
+            return None
+    else:
+        if not allow_local and is_local_address(address):
             return None
     return (host, port)
 
 
-def read_target(path):
+def read_target(path, allow_local=False):
     """Read the destination file. Return (host, port), or None with no file or a bad file."""
     try:
         with open(path, "rb") as handle:
@@ -67,7 +88,7 @@ def read_target(path):
     if len(raw) > MAX_FILE_BYTES:
         return None
     try:
-        return validate_target(json.loads(raw.decode("utf-8")))
+        return validate_target(json.loads(raw.decode("utf-8")), allow_local)
     except (ValueError, UnicodeDecodeError):
         return None
 
@@ -92,8 +113,12 @@ class Pipe:
 
 
 class Proxy:
-    def __init__(self, destino, max_pipes=16, idle=14400.0, connect_timeout=10.0, poll=1.0):
+    def __init__(self, destino, max_pipes=16, idle=14400.0, connect_timeout=10.0, poll=1.0,
+                 allow_local=False, grace=30.0):
         self.destino = destino
+        self.allow_local = allow_local
+        self.grace = grace
+        self.pending = 0
         self.max_pipes = max_pipes
         self.idle = idle
         self.connect_timeout = connect_timeout
@@ -120,7 +145,7 @@ class Proxy:
         """Close the pipes whose target is not the current target."""
         while True:
             await asyncio.sleep(self.poll)
-            current = read_target(self.destino)
+            current = read_target(self.destino, self.allow_local)
             for pipe in list(self.pipes):
                 if pipe.target != current:
                     LOG.info("destination changed or removed: closing a pipe to %s:%s", *pipe.target)
@@ -133,21 +158,40 @@ class Proxy:
         except Exception:
             pass
 
+    def _peer_is_local(self, t_writer):
+        """Return True if the connection reached a local address, whatever name the destination file holds."""
+        if self.allow_local:
+            return False
+        peer = t_writer.get_extra_info("peername")
+        try:
+            return peer is not None and is_local_address(ipaddress.ip_address(peer[0].split("%")[0]))
+        except ValueError:
+            return True
+
     async def handle(self, reader, writer):
-        if len(self.pipes) >= self.max_pipes:
+        # A connect in progress counts against the limit: many clients that arrive together must not pass it.
+        if len(self.pipes) + self.pending >= self.max_pipes:
             LOG.warning("refused a connection: limit of %d pipes", self.max_pipes)
             self._close(writer)
             return
-        target = read_target(self.destino)
+        target = read_target(self.destino, self.allow_local)
         if target is None:
             LOG.info("refused a connection: no valid destination file")
             self._close(writer)
             return
+        self.pending += 1
         try:
             t_reader, t_writer = await asyncio.wait_for(
                 asyncio.open_connection(*target), self.connect_timeout)
         except (OSError, asyncio.TimeoutError):
             LOG.warning("refused a connection: cannot connect to %s:%s", *target)
+            self._close(writer)
+            return
+        finally:
+            self.pending -= 1
+        if self._peer_is_local(t_writer):
+            LOG.warning("refused a connection: %s:%s is a local address", *target)
+            self._close(t_writer)
             self._close(writer)
             return
         pipe = Pipe(target, writer, t_writer)
@@ -157,13 +201,17 @@ class Proxy:
         pipe.tasks = [asyncio.ensure_future(self._pump(reader, t_writer, pipe)),
                       asyncio.ensure_future(self._pump(t_reader, writer, pipe))]
         try:
-            await asyncio.wait(pipe.tasks, return_when=asyncio.FIRST_COMPLETED)
+            done, rest = await asyncio.wait(pipe.tasks, return_when=asyncio.FIRST_COMPLETED)
+            # A clean EOF on one side: the other direction can still carry data. Wait for it, up to the grace time.
+            if rest and all(not task.cancelled() and task.result() for task in done):
+                await asyncio.wait(rest, timeout=self.grace)
         finally:
             pipe.abort()
             self.pipes.discard(pipe)
             LOG.info("pipe closed to %s:%s (%d open)", *target, len(self.pipes))
 
     async def _pump(self, reader, writer, pipe):
+        """Copy bytes from reader to writer. Return True after a clean EOF, False after an error or an idle timeout."""
         try:
             while True:
                 try:
@@ -171,15 +219,21 @@ class Proxy:
                 except asyncio.TimeoutError:
                     if time.monotonic() - pipe.last >= self.idle:
                         LOG.info("idle pipe to %s:%s closed", *pipe.target)
-                        return
+                        return False
                     continue
                 if not data:
-                    return
+                    try:
+                        if writer.can_write_eof():
+                            writer.write_eof()   # half-close: the other side still sends its last bytes
+                    except OSError:
+                        pass
+                    return True
                 pipe.last = time.monotonic()
                 writer.write(data)
-                await writer.drain()
-        except (OSError, asyncio.CancelledError):
-            return
+                # A peer that stops reading must not hold the slot for ever: drain is inside the idle timeout.
+                await asyncio.wait_for(writer.drain(), self.idle)
+        except (OSError, asyncio.TimeoutError, asyncio.CancelledError):
+            return False
 
 
 def parse_args(argv=None):
@@ -193,11 +247,13 @@ def parse_args(argv=None):
     parser.add_argument("--connect-timeout", type=float, dest="connect_timeout",
                         default=float(env("SSH_PROXY_CONNECT_TIMEOUT", "10")))
     parser.add_argument("--poll", type=float, default=float(env("SSH_PROXY_POLL", "1")))
+    parser.add_argument("--grace", type=float, default=float(env("SSH_PROXY_GRACE", "30")))
     return parser.parse_args(argv)
 
 
 async def run(args):
-    proxy = Proxy(args.destino, args.max_pipes, args.idle, args.connect_timeout, args.poll)
+    proxy = Proxy(args.destino, args.max_pipes, args.idle, args.connect_timeout, args.poll,
+                  grace=args.grace)
     port = await proxy.start(args.bind, args.port)
     LOG.info("listening on %s:%d, destination file %s", args.bind, port, args.destino)
     stop = asyncio.Event()

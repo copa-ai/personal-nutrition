@@ -21,9 +21,11 @@
 #   recargar-ahora      Flag. The panel creates it (any content). The watcher removes it and runs one reload.
 #   restaurar-original  Flag. The panel creates it. The watcher removes it, restores the original tar, then reloads.
 #   recarga.json        Status. Written by the watcher, through the app user, by atomic rename. Mode 644.
-#   web.pid, cola-default.pid, cola-chat.pid   PID files from bucle.sh. The watcher kills these PIDs.
+#   web.pid, cola-default.pid, cola-chat.pid   PID files from bucle.sh. The app user writes them, so the watcher does not trust them:
+#                       it kills a PID only if the process belongs to the app user and its command line is frankenphp or queue:work.
 # Directory $PRIVADO (default /var/lib/nutrition/coder-root, root only, mode 700):
 #   ultima-buena.tar.gz  The last good snapshot.   ultima-buena.stamp  mtime = start of the last good reload.
+#   ultima-buena.manifest  "sha256  path" lines of the watched paths at the last good reload. php -l runs on the files that differ from it.
 #   original.manifest    "sha256  path" lines of the watched paths in the original tar.
 # The private directory is not under $CODER because the app user owns $CODER and could plant symlinks there.
 #
@@ -43,6 +45,12 @@
 #   ultima_buena   UTC time of the last good reload (ISO 8601) or null.
 #   recargas       Count of good reloads since this watcher started.
 #
+# Security rules for this root script (the app user and the Coder can write the share and $CODER):
+#   - Before a restore or a rollback, it removes symlinks in the watched paths and their parents, so tar cannot write outside the share.
+#   - After an extract and before each check, it clears setuid and setgid bits and makes the watched paths readable.
+#   - It refuses to hash, copy or reload when the watched paths are larger than RECARGA_MAX_BYTES (default 200 MiB).
+#   - Text in recarga.json passes through json_texto: printable ASCII only.
+#
 # For tests, the paths and commands can change with the RECARGA_* variables below.
 set -u
 
@@ -61,9 +69,15 @@ if [ "${RECARGA_COMO+set}" = set ]; then COMO=$RECARGA_COMO; else COMO="setpriv 
 PATH_APP=${RECARGA_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}
 # Names of the environment variables the app needs (from start.sh). The values are read from this process.
 NOMBRES_ENTORNO=${RECARGA_NOMBRES:-}
+MAX_BYTES=${RECARGA_MAX_BYTES:-209715200}   # size cap of the watched paths
+# Owner and command line that a PID must have before the watcher kills it.
+APP_UID=${RECARGA_UID:-$(id -u app 2> /dev/null)}
+PATRON_WEB=${RECARGA_PATRON_WEB:-frankenphp}
+PATRON_COLA=${RECARGA_PATRON_COLA:-queue:work}
 
 # Watched paths, relative to $PROYECTO.
-VIGILADOS=(admin/app admin/config admin/routes admin/resources admin/database admin/bootstrap/app.php admin/composer.lock)
+# Laravel loads these files and opcache keeps them (validate_timestamps=0), so a change needs a reload.
+VIGILADOS=(admin/app admin/config admin/routes admin/resources admin/database admin/lang admin/bootstrap/app.php admin/bootstrap/providers.php admin/composer.lock)
 # Paths where a restore of the original removes files that the tar does not hold.
 PODAR_ORIGINAL=("${VIGILADOS[@]}" admin/vendor)
 
@@ -91,7 +105,10 @@ en_app() {
 # Make a text safe for a JSON string: one line, no quotes, no backslashes, max 400 characters.
 json_texto() {
     local t=$1
-    t=${t//$'\n'/ }; t=${t//$'\r'/ }; t=${t//$'\t'/ }; t=${t//\\//}; t=${t//\"/\'}
+    t=${t//$'\n'/ }; t=${t//$'\r'/ }; t=${t//$'\t'/ }
+    # Keep printable ASCII only. A file name from the Coder can hold any byte, and one bad byte makes the JSON invalid.
+    t=$(printf '%s' "$t" | LC_ALL=C tr -c ' -~' '?')
+    t=${t//\\//}; t=${t//\"/\'}
     printf '%s' "${t:0:400}"
 }
 
@@ -120,6 +137,37 @@ resultado() {   # resultado <estado> <resultado> <mensaje>
     ESTADO=$1; RESULTADO=$2; MENSAJE=$3; FECHA_UNIX=$(date +%s)
     log "$2: $3"
     escribir_estado
+}
+
+# --- Safety of the shared tree ----------------------------------------------------------------------------------------
+
+# Return 0 if the watched paths are not larger than MAX_BYTES. The Coder could fill the disk of nutrition through them.
+tamano_ok() {
+    local total
+    fijar_rutas "$PROYECTO"
+    [ "${#RUTAS[@]}" -gt 0 ] || return 0
+    total=$( ( cd "$PROYECTO" && du -sb "${RUTAS[@]}" 2> /dev/null ) | awk '{s += $1} END {print s + 0}')
+    [ "$total" -le "$MAX_BYTES" ]
+}
+
+# Make the watched paths readable for the app user and clear setuid and setgid bits in the whole share.
+# The Coder is root in its VM and can set any mode. A new file can have mode 600, and then php -l as app fails.
+sanear_modos() {
+    fijar_rutas "$PROYECTO"
+    [ "${#RUTAS[@]}" -eq 0 ] || ( cd "$PROYECTO" && chmod -R a+rX "${RUTAS[@]}" 2> /dev/null ) || true
+    find "$PROYECTO" -xdev -type f -perm /6000 -exec chmod ug-s {} + 2> /dev/null || true
+}
+
+# Remove symlinks that tar could follow when it extracts as root: the parents of the watched paths and every link inside the given paths.
+# rm and find -delete never follow a link. Then tar creates the real directories again.
+quitar_enlaces() {   # quitar_enlaces <ruta...>
+    local r
+    for r in admin admin/bootstrap; do [ ! -L "$PROYECTO/$r" ] || rm -f -- "$PROYECTO/$r"; done
+    for r in "$@"; do
+        if [ -L "$PROYECTO/$r" ]; then rm -f -- "$PROYECTO/$r"
+        elif [ -d "$PROYECTO/$r" ]; then find "$PROYECTO/$r" -type l -delete 2> /dev/null || true
+        fi
+    done
 }
 
 # --- Fingerprint and manifests ----------------------------------------------------------------------------------------
@@ -162,6 +210,10 @@ manifiesto_original() {
 actualizar_hashes() {
     local vivo="$PRIVADO/vivo.manifest"
     manifiesto_original
+    if ! tamano_ok; then
+        log "aviso: las rutas vigiladas pasan de $MAX_BYTES bytes: no se calculan los hashes"
+        ARBOL_VIVO=""; return 0
+    fi
     manifiesto "$PROYECTO" "$vivo"
     ARBOL_VIVO=$(sha256sum < "$vivo" | cut -d' ' -f1)
     ARBOL_ORIGINAL=$(sha256sum < "$PRIVADO/original.manifest" | cut -d' ' -f1)
@@ -171,23 +223,30 @@ actualizar_hashes() {
 
 # --- Checks before a reload -------------------------------------------------------------------------------------------
 
-# Run php -l on the changed PHP files. Print the first error. Return 1 on a syntax error.
+# Run php -l on the PHP files whose content differs from the last good reload. The test is a hash, not a time:
+# tar, cp -p and rsync -t can set an old mtime. With no last good manifest, check every PHP file.
+# Print the first error. Return 1 on a syntax error.
 revisar_sintaxis() {
-    local lista f salida rc=0
+    local lista nuevo f salida rc=0
     fijar_rutas "$PROYECTO"
     [ "${#RUTAS[@]}" -gt 0 ] || return 0
     lista=$(mktemp "$PRIVADO/php.XXXXXX") || return 0
-    if [ -f "$PRIVADO/ultima-buena.stamp" ]; then
-        ( cd "$PROYECTO" && find "${RUTAS[@]}" -type f -name '*.php' -newer "$PRIVADO/ultima-buena.stamp" ) > "$lista"
+    nuevo=$(mktemp "$PRIVADO/php.XXXXXX") || { rm -f "$lista"; return 0; }
+    manifiesto "$PROYECTO" "$nuevo"
+    if [ -f "$PRIVADO/ultima-buena.manifest" ]; then
+        LC_ALL=C sort "$nuevo" > "$nuevo.s"
+        LC_ALL=C sort "$PRIVADO/ultima-buena.manifest" > "$lista.b"
+        LC_ALL=C comm -13 "$lista.b" "$nuevo.s" | sed 's/^[0-9a-f]\{64\}  //' | grep '\.php$' > "$lista" || true
+        rm -f "$nuevo.s" "$lista.b"
     else
-        ( cd "$PROYECTO" && find "${RUTAS[@]}" -type f -name '*.php' ) > "$lista"
+        sed 's/^[0-9a-f]\{64\}  //' "$nuevo" | grep '\.php$' > "$lista" || true
     fi
     while IFS= read -r f; do
         if ! salida=$(en_app php -d display_errors=0 -l "$PROYECTO/$f" 2>&1); then
             ERROR_SINTAXIS="$f: $salida"; rc=1; break
         fi
     done < "$lista"
-    rm -f "$lista"
+    rm -f "$lista" "$nuevo"
     return $rc
 }
 
@@ -203,26 +262,50 @@ revisar_arranque() {
 
 # --- Restart ----------------------------------------------------------------------------------------------------------
 
-leer_pid() { { tr -dc '0-9' < "$CODER/$1.pid"; } 2> /dev/null || true; }
+# Return 0 if the process <pid> belongs to the app user and its command line holds <patron>.
+# The app user (and the Coder code that runs as app) writes the PID files. Root must not kill a PID that it reads there with no check.
+pid_valido() {   # pid_valido <pid> <patron>
+    local uid cmd
+    [ -n "$APP_UID" ] || return 1
+    uid=$(awk '/^Uid:/ {print $2}' "/proc/$1/status" 2> /dev/null) || return 1
+    [ "$uid" = "$APP_UID" ] || return 1
+    cmd=$(tr '\0' ' ' < "/proc/$1/cmdline" 2> /dev/null) || return 1
+    case "$cmd" in *"$2"*) return 0 ;; *) return 1 ;; esac
+}
 
-# Restart the web server and wait for the new process.
+# Print the PID in $CODER/<name>.pid if it passes pid_valido. Print nothing if not.
+leer_pid() {   # leer_pid <name> <patron>
+    local pid
+    pid=$( { tr -dc '0-9' < "$CODER/$1.pid"; } 2> /dev/null || true)
+    [ -z "$pid" ] || ! pid_valido "$pid" "$2" || echo "$pid"
+    return 0
+}
+
+# Restart the web server. Return 1 if the old process does not stop or no new process starts: the old code can still run then.
 reiniciar_web() {
-    local viejo nuevo i
-    viejo=$(leer_pid web)
-    [ -z "$viejo" ] || kill -TERM "$viejo" 2> /dev/null || true
-    for i in $(seq 1 "$ESPERA_WEB"); do
-        nuevo=$(leer_pid web)
-        [ -z "$nuevo" ] || [ "$nuevo" = "$viejo" ] || { return 0; }
+    local viejo="" nuevo i
+    for i in 1 2 3 4 5 6 7 8 9 10; do   # bucle.sh can be in its sleep between two processes
+        viejo=$(leer_pid web "$PATRON_WEB"); [ -z "$viejo" ] || break
         sleep 1
     done
-    log "aviso: no hay un proceso web nuevo tras ${ESPERA_WEB}s"
+    [ -n "$viejo" ] || { log "aviso: no hay un proceso web que reiniciar"; return 1; }
+    kill -TERM "$viejo" 2> /dev/null || true
+    for i in $(seq 1 "$ESPERA_WEB"); do
+        if ! kill -0 "$viejo" 2> /dev/null; then   # the old process is gone: wait for the new one
+            nuevo=$(leer_pid web "$PATRON_WEB")
+            [ -z "$nuevo" ] || [ "$nuevo" = "$viejo" ] || return 0
+        fi
+        sleep 1
+    done
+    log "aviso: el proceso web viejo no termino o no hay uno nuevo tras ${ESPERA_WEB}s"
+    return 1
 }
 
 # Ask the queue workers to stop. A worker ends its current job first. Then bucle.sh starts it with the new code.
 reiniciar_colas() {
     local c pid
     for c in cola-default cola-chat; do
-        pid=$(leer_pid "$c")
+        pid=$(leer_pid "$c" "$PATRON_COLA")
         [ -z "$pid" ] || kill -TERM "$pid" 2> /dev/null || true
     done
 }
@@ -245,7 +328,7 @@ esperar_salud() {
 # Clear the caches and restart web and queue. Return 0 when the app is healthy afterwards.
 aplicar_codigo() {
     en_app php artisan optimize:clear --no-interaction > /dev/null 2>&1 || log "aviso: optimize:clear fallo (continua)"
-    reiniciar_web
+    reiniciar_web || return 1
     reiniciar_colas
     esperar_salud
 }
@@ -256,6 +339,7 @@ guardar_copia() {   # guardar_copia <marca>: snapshot of the watched paths (no v
     fijar_rutas "$PROYECTO"
     tar -C "$PROYECTO" -czf "$PRIVADO/ultima-buena.tar.gz.tmp" "${RUTAS[@]}" 2> /dev/null \
         && mv -f "$PRIVADO/ultima-buena.tar.gz.tmp" "$PRIVADO/ultima-buena.tar.gz" || { log "aviso: no se pudo guardar la copia"; return 1; }
+    manifiesto "$PROYECTO" "$PRIVADO/ultima-buena.manifest"
     mv -f "$1" "$PRIVADO/ultima-buena.stamp"
     ULTIMA_BUENA=$(date -u -r "$PRIVADO/ultima-buena.stamp" +%FT%TZ)
 }
@@ -264,12 +348,14 @@ guardar_copia() {   # guardar_copia <marca>: snapshot of the watched paths (no v
 extraer_y_podar() {   # extraer_y_podar <tar> <ruta...>
     local tarfile=$1 listado vivos r; shift
     listado=$(mktemp "$PRIVADO/tar.XXXXXX"); vivos=$(mktemp "$PRIVADO/vivos.XXXXXX")
+    quitar_enlaces "$@"
     tar -C "$PROYECTO" -xzf "$tarfile" --no-same-owner --exclude=./.coder --exclude=.coder || { rm -f "$listado" "$vivos"; return 1; }
     tar -tzf "$tarfile" | grep -v '/$' | sed 's#^\./##' | LC_ALL=C sort -u > "$listado"
     ( cd "$PROYECTO" && for r in "$@"; do [ ! -e "$r" ] || find "$r" \( -type f -o -type l \) -print; done ) | LC_ALL=C sort -u > "$vivos"
     # Files that exist now and are not in the tar.
     ( cd "$PROYECTO" && comm -13 "$listado" "$vivos" | while IFS= read -r r; do rm -f -- "$r"; done )
     rm -f "$listado" "$vivos"
+    sanear_modos
 }
 
 # --- Reload cycle -----------------------------------------------------------------------------------------------------
@@ -294,14 +380,25 @@ revertir() {
 
 # One reload. $1 is the reason (texto for the log). $2 is "original" after a restore of the original (no rollback to a snapshot).
 ciclo_recarga() {
-    local motivo=$1 origen=${2:-} marca rc
+    local motivo=$1 origen=${2:-} marca rc intento
     marca=$(mktemp "$PRIVADO/marca.XXXXXX") || return 1
     HUELLA_BASE=$(huella_actual)
     ESTADO=revisando; escribir_estado
-    log "revisando el codigo ($motivo)"
-    if ! verificar_codigo; then
-        rm -f "$marca"; PENDIENTE=false; actualizar_hashes; escribir_estado; return 1
+    if ! tamano_ok; then
+        rm -f "$marca"; PENDIENTE=false; actualizar_hashes
+        resultado error error_arranque "Las rutas vigiladas pasan de $((MAX_BYTES / 1048576)) MiB: no se recarga"; return 1
     fi
+    log "revisando el codigo ($motivo)"
+    # A change during the checks would load files that nobody checked: take the fingerprint again before the restart and check again.
+    for intento in 1 2 3; do
+        HUELLA_BASE=$(huella_actual)
+        sanear_modos
+        if ! verificar_codigo; then
+            rm -f "$marca"; PENDIENTE=false; actualizar_hashes; escribir_estado; return 1
+        fi
+        [ "$(huella_actual)" != "$HUELLA_BASE" ] || break
+        log "el codigo cambio durante la revision: se revisa otra vez"
+    done
     ESTADO=recargando; escribir_estado
     log "recargando ($motivo)"
     if aplicar_codigo; then
@@ -333,11 +430,13 @@ restaurar_original() {
     [ -f "$ORIGINAL_TAR" ] || { resultado error error_arranque "No existe $ORIGINAL_TAR"; return 1; }
     ESTADO=restaurando; escribir_estado
     log "restaurando el codigo original"
+    # Remove every symlink in the share (not in .coder): tar runs as root and the Coder could point a link outside the share.
+    find "$PROYECTO" -path "$PROYECTO/.coder" -prune -o -type l -delete 2> /dev/null || true
     if ! extraer_y_podar "$ORIGINAL_TAR" "${PODAR_ORIGINAL[@]}"; then
         resultado error error_arranque "No se pudo extraer el codigo original"; return 1
     fi
     # The restored tree is new. Check every file again.
-    rm -f "$PRIVADO/ultima-buena.stamp"
+    rm -f "$PRIVADO/ultima-buena.stamp" "$PRIVADO/ultima-buena.manifest"
     ciclo_recarga "restaurar original" original
 }
 
@@ -357,7 +456,7 @@ estabilizar() {
 
 # One pass of the loop.
 una_vuelta() {
-    local h forzar=false
+    local h forzar=false ciclo=false
     if [ -e "$CODER/restaurar-original" ]; then
         rm -f "$CODER/restaurar-original"
         restaurar_original
@@ -373,10 +472,12 @@ una_vuelta() {
         escribir_estado
     fi
     if [ -e "$CODER/recargar-ahora" ]; then rm -f "$CODER/recargar-ahora"; forzar=true; fi
-    if [ "$forzar" = true ]; then ciclo_recarga "ahora"
-    elif [ "$PENDIENTE" = true ] && auto_activo; then ciclo_recarga "automatica"
+    if [ "$forzar" = true ]; then ciclo=true; ciclo_recarga "ahora"
+    elif [ "$PENDIENTE" = true ] && auto_activo; then ciclo=true; ciclo_recarga "automatica"
     fi
-    HUELLA_VISTA=$HUELLA_BASE
+    # After a cycle, a later difference from the fingerprint of that cycle is a new change. With no cycle (auto reload OFF),
+    # keep the fingerprint that was seen: the pending change must not trigger the debounce and the hashes again on each pass.
+    [ "$ciclo" != true ] || HUELLA_VISTA=$HUELLA_BASE
     return 0
 }
 
