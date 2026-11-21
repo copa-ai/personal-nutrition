@@ -249,11 +249,91 @@ class EntregaMenuTest extends TestCase
     {
         $datos = $this->entregaValida();
         $datos['dias'][0]['comida']['opciones'][0]['categorias'] = ['marciano'];
-        $datos['dias'][0]['comida']['opciones'][0]['ingredientes'] = [];
+        $datos['dias'][0]['comida']['opciones'][0]['platos'][0]['ingredientes'] = [];
 
         $errores = $this->menu->validarEntrega($datos);
 
         $this->assertCount(2, $errores);
+    }
+
+    public function test_el_encargo_pide_dos_platos_por_opcion_y_la_entrega_los_lleva(): void
+    {
+        $this->assertSame(2, $this->menu->encargo['platos_por_toma']);
+        $datos = $this->entregaValida();
+        $this->assertCount(2, $datos['dias'][0]['comida']['opciones'][0]['platos']);
+        $this->assertArrayNotHasKey('ingredientes', $datos['dias'][0]['comida']['opciones'][0]);
+        $this->assertSame([], $this->menu->validarEntrega($datos));
+    }
+
+    public function test_una_opcion_sin_platos_o_con_menos_de_los_pedidos_se_rechaza(): void
+    {
+        $datos = $this->entregaValida();
+        unset($datos['dias'][0]['comida']['opciones'][0]['platos']);
+        array_pop($datos['dias'][0]['cena']['opciones'][1]['platos']);
+
+        $errores = $this->menu->validarEntrega($datos);
+
+        $this->assertCount(2, $errores);
+        $this->assertStringContainsString('«platos» debe ser una lista con al menos 2 plato(s)', $errores[0]);
+    }
+
+    public function test_mas_platos_de_los_pedidos_es_valido_y_al_editar_basta_con_uno(): void
+    {
+        $datos = $this->entregaValida();
+        $datos['dias'][0]['cena']['opciones'][1]['platos'][] = ['titulo' => 'Postre', 'ingredientes' => [['nombre' => 'fruta']]];
+        $this->assertSame([], $this->menu->validarEntrega($datos));
+
+        $datos['dias'][0]['cena']['opciones'][1]['platos'] = [$datos['dias'][0]['cena']['opciones'][1]['platos'][0]];
+        $this->assertCount(1, $this->menu->validarEntrega($datos));
+        $this->menu->update(['encargo' => ['tarea' => 'editar'] + $this->menu->encargo]);
+        $this->assertSame([], $this->menu->fresh()->validarEntrega($datos));
+    }
+
+    public function test_cada_plato_necesita_titulo_ingredientes_y_pasos_en_texto(): void
+    {
+        $datos = $this->entregaValida();
+        $platos = &$datos['dias'][0]['comida']['opciones'][0]['platos'];
+        $platos[0]['titulo'] = ' ';
+        $platos[1]['ingredientes'] = [];
+        $platos[1]['pasos'] = [1];
+        unset($platos);
+
+        $errores = $this->menu->validarEntrega($datos);
+
+        $this->assertCount(3, $errores);
+        $this->assertStringContainsString('plato 1: falta el título', $errores[0]);
+        $this->assertStringContainsString('plato 2: «ingredientes»', $errores[1]);
+        $this->assertStringContainsString('plato 2: «pasos»', $errores[2]);
+    }
+
+    public function test_un_encargo_antiguo_sin_platos_por_toma_sigue_aceptando_opciones_de_un_plato(): void
+    {
+        $encargo = $this->menu->encargo;
+        unset($encargo['platos_por_toma']);
+        $this->menu->update(['encargo' => $encargo]);
+        $datos = $this->entregaValida();
+        foreach ($datos['dias'] as &$dia) {
+            foreach (['comida', 'cena'] as $momento) {
+                foreach ($dia[$momento]['opciones'] as &$o) {
+                    $o['ingredientes'] = [['nombre' => 'tomate']];
+                    unset($o['platos']);
+                }
+                unset($o);
+            }
+        }
+        unset($dia);
+
+        $this->assertSame([], $this->menu->fresh()->validarEntrega($datos));
+    }
+
+    public function test_los_ingredientes_de_una_opcion_son_los_de_todos_sus_platos(): void
+    {
+        $this->menu->importarEntrega($this->entregaValida());
+
+        $opcion = $this->menu->fresh()->opcionesDe('2026-11-02', 'comida')[0];
+
+        $this->assertCount(2, $opcion['platos']);
+        $this->assertSame(['tomate', 'tomate'], array_column($opcion['ingredientes'], 'nombre'));
     }
 
     public function test_sin_lista_de_dias_se_rechaza(): void

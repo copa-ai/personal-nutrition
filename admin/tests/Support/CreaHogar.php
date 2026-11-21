@@ -31,7 +31,7 @@ trait CreaHogar
         $this->menu = Menu::factory()->for($this->hogar)->create(['fecha_inicio' => '2026-11-02']);
     }
 
-    /** Entrega válida (versión 3) para el encargo guardado en $this->menu: categorías por toma, 2 opciones por comida y cena, tomas individuales y explicaciones por perfil. */
+    /** Entrega válida (versión 3) para el encargo guardado en $this->menu: categorías por toma, 2 opciones por comida y cena (cada una con 2 platos), tomas individuales y explicaciones por perfil. */
     protected function entregaValida(): array
     {
         $encargo = $this->menu->encargo;
@@ -39,7 +39,10 @@ trait CreaHogar
             'titulo' => $titulo, 'ingredientes' => [['nombre' => 'tomate', 'cantidad' => 200, 'unidad' => 'g', 'en_stock' => false]],
             'duracion_previa_min' => 0, 'duracion_momento_min' => $minutos,
         ];
-        $opcion = fn (string $titulo, int $minutos): array => $receta($titulo, $minutos) + ['categorias' => ['verdura']];
+        // Una opción de comida o cena son varios platos: los ingredientes van en cada plato, no en la opción.
+        $plato = fn (string $titulo): array => ['titulo' => $titulo, 'ingredientes' => [['nombre' => 'tomate', 'cantidad' => 200, 'unidad' => 'g', 'en_stock' => false]], 'pasos' => ['Cocinar']];
+        $opcion = fn (string $titulo, int $minutos): array => array_diff_key($receta($titulo, $minutos), ['ingredientes' => 0])
+            + ['categorias' => ['verdura'], 'platos' => [$plato("{$titulo}: primero"), $plato("{$titulo}: segundo")]];
         $toma = fn (string $titulo): array => $receta($titulo, 5) + ['descripcion' => 'Rápido.', 'nota' => null];
 
         $dias = [];

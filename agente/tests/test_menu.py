@@ -38,6 +38,16 @@ def opcion(titulo: str, minutos: int) -> dict:
     return {**receta(titulo, minutos), "categorias": ["verdura"]}
 
 
+def plato(titulo: str) -> dict:
+    return {"titulo": titulo, "ingredientes": [{"nombre": "tomate", "cantidad": 100, "unidad": "g", "en_stock": False}], "pasos": ["Cocinar"]}
+
+
+def opcion_con_platos(titulo: str, minutos: int, n: int = 2) -> dict:
+    """Opcion de varios platos: los ingredientes los llevan los platos, no la opcion."""
+    return {"titulo": titulo, "categorias": ["verdura"], "duracion_previa_min": 0, "duracion_momento_min": minutos,
+            "platos": [plato(f"{titulo} · plato {i}") for i in range(1, n + 1)]}
+
+
 def toma(titulo: str) -> dict:
     return {**receta(titulo, 5), "descripcion": "Rápido.", "nota": None}
 
@@ -56,6 +66,74 @@ def borrador_valido(encargo: dict) -> dict:
         })
     explicaciones = [{"perfil_id": p["id"], "texto": f"Menú pensado para {p['nombre']}."} for p in encargo["perfiles"]]
     return {"entrega": {"version": 3}, "dias": dias, "explicaciones": explicaciones}
+
+
+class ValidarPlatos(unittest.TestCase):
+    """Cada opcion de comida y cena lleva varios platos cuando el encargo trae `platos_por_toma`."""
+
+    def setUp(self):
+        os.environ["CLAUDE_PROJECT_DIR"] = tempfile.mkdtemp()
+        sys.path.insert(0, str(SCRIPTS))
+        self.menu = importlib.reload(importlib.import_module("menu"))
+        self.encargo = {**encargo_base(), "platos_por_toma": 2}
+        self.datos = borrador_valido(self.encargo)
+        for d in self.datos["dias"]:
+            for momento in ("comida", "cena"):
+                d[momento]["opciones"] = [opcion_con_platos("A", 10), opcion_con_platos("B", 10)]
+
+    def errores(self):
+        return self.menu.validar_entrega(self.datos, self.encargo)
+
+    def test_dos_platos_por_opcion_es_valido_sin_ingredientes_en_la_opcion(self):
+        self.assertEqual([], self.errores())
+
+    def test_con_platos_por_toma_la_opcion_necesita_platos(self):
+        del self.datos["dias"][0]["comida"]["opciones"][0]["platos"]
+        self.assertIn("«platos» debe ser una lista con al menos 2 plato(s)", self.errores()[0])
+
+    def test_menos_platos_de_los_pedidos_falla(self):
+        self.datos["dias"][0]["cena"]["opciones"][1]["platos"].pop()
+        self.assertIn("al menos 2 plato(s)", self.errores()[0])
+
+    def test_mas_platos_de_los_pedidos_es_valido(self):
+        self.datos["dias"][0]["cena"]["opciones"][1]["platos"].append(plato("Postre"))
+        self.assertEqual([], self.errores())
+
+    def test_al_editar_basta_con_un_plato(self):
+        self.encargo["tarea"] = "editar"
+        self.datos["dias"][0]["cena"]["opciones"][1]["platos"].pop()
+        self.assertEqual([], self.errores())
+
+    def test_cada_plato_necesita_titulo_ingredientes_y_pasos_en_texto(self):
+        platos = self.datos["dias"][0]["comida"]["opciones"][0]["platos"]
+        platos[0]["titulo"] = " "
+        platos[1]["ingredientes"] = []
+        platos[1]["pasos"] = [1]
+        errores = self.errores()
+        self.assertEqual(3, len(errores))
+        self.assertTrue(any("plato 1: falta el título" in e for e in errores))
+        self.assertTrue(any("plato 2: «ingredientes»" in e for e in errores))
+        self.assertTrue(any("plato 2: «pasos»" in e for e in errores))
+
+    def test_un_plato_que_no_es_objeto_no_rompe(self):
+        self.datos["dias"][0]["comida"]["opciones"][0]["platos"][0] = "sopa"
+        self.assertIn("el plato tiene que ser un objeto", self.errores()[0])
+
+    def test_la_opcion_sigue_teniendo_titulo_y_duraciones(self):
+        o = self.datos["dias"][0]["comida"]["opciones"][0]
+        del o["titulo"], o["duracion_momento_min"]
+        self.assertEqual(2, len(self.errores()))
+
+    def test_un_encargo_antiguo_sigue_aceptando_opciones_de_un_solo_plato(self):
+        encargo = encargo_base()
+        self.assertEqual([], self.menu.validar_entrega(borrador_valido(encargo), encargo))
+
+    def test_en_un_intercambio_las_tomas_tambien_llevan_platos(self):
+        encargo = {**self.encargo, "tarea": "intercambiar"}
+        cambios = {f"{FECHAS[0]}/comida": {"categorias": ["verdura"], "opciones": [opcion("A", 10), opcion("B", 10)]}}
+        self.assertIn("«platos»", self.menu.validar_entrega({"entrega": {"version": 3}, "cambios": cambios}, encargo)[0])
+        cambios[f"{FECHAS[0]}/comida"]["opciones"] = [opcion_con_platos("A", 10), opcion_con_platos("B", 10)]
+        self.assertEqual([], self.menu.validar_entrega({"entrega": {"version": 3}, "cambios": cambios}, encargo))
 
 
 class ValidarEntrega(unittest.TestCase):

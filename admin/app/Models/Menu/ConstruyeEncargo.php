@@ -49,6 +49,8 @@ trait ConstruyeEncargo
             'semana' => ['inicio' => $inicio->toDateString(), 'dias' => $dias, 'fechas' => array_map(fn (CarbonImmutable $f): string => $f->toDateString(), $fechas)],
             'categorias_validas' => array_column(CategoriaComida::cases(), 'value'),
             'opciones_por_comida' => ['min' => (int) config('agente.menu.opciones_min'), 'max' => (int) config('agente.menu.opciones_max')],
+            'platos_por_toma' => max(1, (int) config('agente.menu.platos_por_toma')),
+            'temporada' => $this->temporada($fechas),
             'hogar' => ['nombre' => $hogar->nombre, 'tiempos' => $tiempos],
             'perfiles' => $perfiles->map(fn ($p): array => [
                 'id' => $p->id,
@@ -73,6 +75,31 @@ trait ConstruyeEncargo
         ];
 
         return $encargo + $this->encargoDeTarea();
+    }
+
+    /**
+     * La temporada de la semana, para que las frutas y verduras sean de temporada por defecto: mes y estación del día central de la semana
+     * (en el hemisferio configurado) y la zona. Si una persona pide otra cosa en sus notas o gustos, manda lo que pida.
+     *
+     * @param  list<CarbonImmutable>  $fechas
+     * @return array{mes: string, mes_numero: int, estacion: string, hemisferio: string, zona: string}
+     */
+    private function temporada(array $fechas): array
+    {
+        $centro = $fechas[intdiv(count($fechas), 2)];
+        $sur = config('agente.menu.hemisferio') === 'sur';
+        $estaciones = ['invierno', 'primavera', 'verano', 'otoño'];
+        // Estaciones meteorológicas del hemisferio norte (dic-feb invierno…); en el sur van desfasadas medio año.
+        $indice = intdiv($centro->month % 12, 3);
+        $estacion = $estaciones[$sur ? ($indice + 2) % 4 : $indice];
+
+        return [
+            'mes' => $centro->locale('es')->monthName,
+            'mes_numero' => $centro->month,
+            'estacion' => $estacion,
+            'hemisferio' => $sur ? 'sur' : 'norte',
+            'zona' => (string) config('agente.menu.zona'),
+        ];
     }
 
     /**

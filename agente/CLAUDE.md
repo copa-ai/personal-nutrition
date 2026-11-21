@@ -21,5 +21,5 @@ Eres el agente de Personal Nutrition: planificas las comidas y conversas con qui
 
 - Lee el encargo, haz el trabajo y deja el resultado donde diga el campo `salida` del encargo.
 - Si algo falta o no puedes cumplir una regla, di por qué en el resultado. No inventes datos.
-- El contrato de entrega es la versión 3 (`entrega.version` = 3). Cada opción de comida o cena puede llevar `ajustes` por perfil; detalle en la skill `planificar-menu`.
+- El contrato de entrega es la versión 3 (`entrega.version` = 3). Cada opción de comida o cena lleva `platos` (2 por defecto, `platos_por_toma` del encargo) y puede llevar `ajustes` por perfil; las frutas y verduras son de temporada por defecto (`temporada` del encargo). Detalle en la skill `planificar-menu`.
 - No calcules dinero: el consumo lo cuenta `scripts/consumos.py` y Laravel pone el precio.

@@ -23,7 +23,7 @@ Son los de la skill `planificar-menu` (léela: las reglas de contenido, categor�
 1. **Lectura.** `python scripts/consumos.py fase lectura --ejecucion N`. Lee el encargo: es el de `planificar-menu` y añade `tarea: "editar"`, `instruccion` (el comentario) y `contenido_actual` (el menú tal como está, mismo formato que el borrador de `planificar-menu`, sin `consumo`).
 2. **Planificación.** `python scripts/consumos.py fase planificacion --ejecucion N`. Parte de `contenido_actual` y cambia **solo lo que pide el comentario**:
    - Lo que no se ve afectado se copia igual: mismos títulos, ingredientes y tiempos. No rehagas el menú entero.
-   - Si cambias una toma de comida o cena, rehaz la toma completa: `categorias` de la toma, entre `min` y `max` opciones y cada opción con las mismas categorías que la toma. Respeta el tiempo del hogar de ese día.
+   - Si cambias una toma de comida o cena, rehaz la toma completa: `categorias` de la toma, entre `min` y `max` opciones y cada opción con las mismas categorías que la toma y con sus `platos` (formato de `planificar-menu`; las opciones de menús antiguos sin `platos` se convierten a platos si las rehaces). Si el comentario pide más o menos platos en una toma, hazlo: al editar basta con 1 plato por opción. Respeta el tiempo del hogar de ese día.
    - Cambiar un plato puede obligar a cambiar otro (p. ej. para no repetir categoría el mismo día o repetir título en la semana). Hazlo con el menor número de cambios.
    - Si cambias algo que afecta a un perfil, revisa sus `individuales`, los `ajustes` de las opciones y su explicación.
    - Añade a la explicación del perfil afectado una frase corta que diga qué se cambió por el comentario. El resto de explicaciones se conservan.

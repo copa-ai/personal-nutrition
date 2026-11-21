@@ -1,6 +1,6 @@
 ---
 name: planificar-menu
-description: Genera el menú semanal de un hogar (comida y cena de cada día con 2-3 opciones de receta, más desayuno, almuerzo y merienda individuales por perfil, y una explicación por perfil) a partir de un encargo JSON. Úsala solo en modo encargo, cuando el prompt diga «Realiza el trabajo N» y pida la skill planificar-menu.
+description: Genera el menú semanal de un hogar (comida y cena de cada día con 2-3 opciones de 2 platos cada una, más desayuno, almuerzo y merienda individuales por perfil, y una explicación por perfil) a partir de un encargo JSON. Úsala solo en modo encargo, cuando el prompt diga «Realiza el trabajo N» y pida la skill planificar-menu.
 ---
 
 # planificar-menu
@@ -39,6 +39,8 @@ Si tras varios intentos no consigues un borrador válido, **no entregues**. Resp
   "semana": {"inicio": "2026-11-02", "dias": 7, "fechas": ["2026-11-02", "…"]},
   "categorias_validas": ["carne_roja", "pescado", "…"],
   "opciones_por_comida": {"min": 2, "max": 3},
+  "platos_por_toma": 2,
+  "temporada": {"mes": "noviembre", "mes_numero": 11, "estacion": "otoño", "hemisferio": "norte", "zona": "España"},
   "hogar": {"nombre": "Casa", "tiempos": [
     {"fecha": "2026-11-02", "dia_semana": 1, "minutos_comida": 30, "minutos_cena": 45,
      "minutos_desayuno": 10, "minutos_almuerzo": null, "minutos_merienda": 5}]},
@@ -55,6 +57,8 @@ Si tras varios intentos no consigues un borrador válido, **no entregues**. Resp
 - `hogar.tiempos`: minutos que el hogar tiene para cocinar **al momento** cada toma ese día.
   - `minutos_comida` y `minutos_cena` (toma de todo el hogar): `null` = ese momento **no se cocina** (`categorias` y `opciones` van vacías).
   - `minutos_desayuno`, `minutos_almuerzo` y `minutos_merienda` (tomas individuales): `null` = **sin dato**, no hay límite que comprobar. Entonces propón algo sencillo o que se pueda dejar preparado el día antes.
+- `platos_por_toma`: cuántos platos lleva **cada opción** de comida y cena (2 por defecto: p. ej. un primero y un segundo). Es el mínimo que valida `menu.py`.
+- `temporada`: mes, estación y zona de la semana, para elegir frutas y verduras de temporada (ver «Cómo planificar»).
 - `perfiles[].id` es un UUID en texto: cópialo tal cual en cada `perfil_id` (no lo acortes ni lo cambies).
 - `perfiles[].notas` es texto libre del hogar (horarios, gimnasio, trabajo…). **Interprétalo tú**: no hay campos aparte para eso.
 - `perfiles[].historial` es lo que **se comió de verdad** (no lo que se planeó). `origen: fuera` significa que comió fuera de casa.
@@ -65,14 +69,14 @@ Si tras varios intentos no consigues un borrador válido, **no entregues**. Resp
 
 El menú tiene dos partes:
 
-- **Comida y cena** (compartidas por todo el hogar): 2-3 opciones de receta cada una, cocinadas una sola vez para todos.
+- **Comida y cena** (compartidas por todo el hogar): 2-3 opciones cada una, cocinadas una sola vez para todos. **Cada opción es una comida completa de `platos_por_toma` platos** (2 por defecto: un primero y un segundo que se complementen; no repitas la proteína ni la técnica entre ellos). El `titulo` de la opción nombra la comida entera («Crema de calabaza y merluza al horno»); cada plato lleva su propio título, ingredientes y pasos.
 - **Desayuno, almuerzo y merienda** (individuales): una toma por perfil, **una sola versión** (sin opciones), todos los días, **fines de semana incluidos**.
 
 Razona **en este orden**, de lo general a lo concreto:
 
 1. **Categorías primero (comida y cena).** Para cada toma elige la lista de `categorias` de alimento (p. ej. `["legumbre", "verdura"]`) según el tiempo del hogar ese día, el `historial` de cada perfil (lo comido de verdad, sobre todo la última semana), la variedad de la semana y los objetivos. Reparte las categorías principales a lo largo de la semana y no repitas la misma categoría principal en la comida y la cena del mismo día. Si el hogar no cocina ese momento (`minutos` = `null`): `categorias: []` y `opciones: []`.
-2. **Recetas dentro de esas categorías.** Ahora propón entre `min` y `max` recetas para la toma. **Todas las propuestas de una toma comparten las mismas categorías de alimento, acompañamientos incluidos**: el conjunto de `categorias` de cada opción (ignorando el orden) es igual al de la toma. Si el acompañamiento es un cereal, el cereal está en `categorias` de la toma y de **todas** sus opciones. Que las opciones sean distintas entre sí (otra técnica, otro plato), no variantes del mismo.
-3. **Tiempos.** `duracion_momento_min` ≤ los minutos del hogar de ese día y momento, en cualquier toma. Lo que se puede hacer antes (marinar, cocer legumbres, preparar una base) va en `duracion_previa_min` y no gasta el tiempo del momento. Estima de forma realista; si dudas, sube el valor.
+2. **Recetas dentro de esas categorías.** Ahora propón entre `min` y `max` opciones para la toma, cada una con sus platos. **Todas las propuestas de una toma comparten las mismas categorías de alimento, acompañamientos incluidos**: el conjunto de `categorias` de cada opción (ignorando el orden) es igual al de la toma y recoge las de todos sus platos. Si el acompañamiento es un cereal, el cereal está en `categorias` de la toma y de **todas** sus opciones. Que las opciones sean distintas entre sí (otra técnica, otro plato), no variantes del mismo.
+3. **Tiempos.** `duracion_momento_min` es el de la opción entera (todos sus platos juntos) y ≤ los minutos del hogar de ese día y momento, en cualquier toma. Lo que se puede hacer antes (marinar, cocer legumbres, preparar una base) va en `duracion_previa_min` y no gasta el tiempo del momento. Estima de forma realista; si dudas, sube el valor.
 4. **Tomas individuales.** Una por perfil y día para `desayuno`, `almuerzo` y `merienda`, pensada para esa persona (objetivo, kcal, gustos, restricciones). Si hay `minutos_*`, cabe en ellos. Si es `null`, haz algo sencillo o déjalo preparado el día antes (`duracion_previa_min`). Usa `nota` para decirlo («Dejar la avena en remojo la noche anterior»).
 5. **Comida pre y post entrenamiento.** Lee las `notas` de cada perfil: si indican ejercicio (gimnasio, running, clase…) en ciertos días y horas, adapta **ese día** la toma que cae antes (algo ligero, con hidratos y poca grasa) y la que cae después (con proteína). Hazlo solo si las notas lo dicen; no inventes entrenamientos. Cuéntalo en la explicación del perfil.
 6. **Restricciones y objetivos.** Mira cada perfil. Las tomas individuales se hacen a medida de cada uno. En comida y cena, prefiere una receta que ya cumpla las restricciones de todos; si no hay forma razonable para algún perfil, descarta la opción (no hay adaptaciones por receta: el plato es el mismo para todos).
@@ -80,7 +84,8 @@ Razona **en este orden**, de lo general a lo concreto:
 8. **Variedad.** No repitas títulos en la semana ni los de `calendario_previo`, ni lo ya comido según el `historial`.
 9. **Stock y cantidades.** Aprovecha lo que hay, empezando por lo que caduca antes. Cada ingrediente lleva `nombre`, `cantidad`, `unidad` y `en_stock` (según el encargo). En comida y cena la `cantidad` es para **todo el hogar** junto; en las tomas individuales, para **esa persona**. Un ingrediente genérico como «fruta» es válido y va tal cual a la lista de la compra: no hace falta concretar la pieza.
 10. **Explicaciones.** Una por perfil en `explicaciones`, texto libre y breve que justifica el plan para esa persona, deducido de sus notas, objetivo e historial («Lunes y miércoles, que vas al gimnasio, el almuerzo es más ligero y la merienda lleva más proteína…»). Siempre una por cada perfil, aunque no haya nada especial que contar.
-11. **Honestidad.** No inventes datos que el encargo no da.
+11. **Temporada.** Salvo que el perfil pida otra cosa (`notas`, `gusta`, o un comentario al editar), la **mayoría** de las frutas y verduras de comidas, cenas y tomas individuales tienen que ser **de temporada** en `temporada.zona` durante `temporada.mes` (en `hemisferio` norte/sur). Algún ingrediente fuera de temporada es válido (congelado, en conserva, o que el hogar ya tiene en `stock`), pero no la norma. Aprovecha antes lo que ya hay en el stock. Un ingrediente genérico como «fruta» pide concretar: «mandarina», no «fruta», si es para recomendar.
+12. **Honestidad.** No inventes datos que el encargo no da.
 
 ## El borrador (`workspace/borrador-N.json`)
 
@@ -96,15 +101,21 @@ Lleva `entrega.version` = 3, una entrada en `dias` por cada fecha de `semana.fec
         "categorias": ["carne_blanca", "cereal", "verdura"],
         "opciones": [
           {
-            "titulo": "Arroz con pollo y verduras",
+            "titulo": "Crema de calabaza y arroz con pollo",
             "categorias": ["cereal", "carne_blanca", "verdura"],
-            "ingredientes": [
-              {"nombre": "arroz", "cantidad": 300, "unidad": "g", "en_stock": true},
-              {"nombre": "pechuga de pollo", "cantidad": 500, "unidad": "g", "en_stock": true}
-            ],
             "duracion_previa_min": 10,
             "duracion_momento_min": 25,
-            "pasos": ["Cortar el pollo en dados…", "Sofreír…"],
+            "platos": [
+              {"titulo": "Crema de calabaza",
+               "ingredientes": [{"nombre": "calabaza", "cantidad": 600, "unidad": "g", "en_stock": false}],
+               "pasos": ["Cocer la calabaza…", "Triturar…"]},
+              {"titulo": "Arroz con pollo y verduras",
+               "ingredientes": [
+                 {"nombre": "arroz", "cantidad": 300, "unidad": "g", "en_stock": true},
+                 {"nombre": "pechuga de pollo", "cantidad": 500, "unidad": "g", "en_stock": true}
+               ],
+               "pasos": ["Cortar el pollo en dados…", "Sofreír…"]}
+            ],
             "ajustes": [{"perfil_id": "0192f3c4-8a11-7c20-b001-1a2b3c4d5e6f", "texto": "Apartar el arroz antes de mezclar y añadir brócoli."}]
           }
         ]
@@ -142,6 +153,7 @@ Lleva `entrega.version` = 3, una entrada en `dias` por cada fecha de `semana.fec
 ```
 
 - `comida` y `cena` llevan `categorias` y `opciones`; cada opción lleva `categorias` con **el mismo conjunto** que la toma (el orden no importa).
+- Cada opción lleva `platos`: lista con al menos `platos_por_toma` platos (puede haber más). Cada plato lleva `titulo`, `ingredientes` (no vacío, cada uno con `nombre`) y `pasos` (opcional, lista de textos). **La opción no lleva `ingredientes` ni `pasos` propios**: los ingredientes de la opción son los de todos sus platos juntos.
 - Cada toma individual lleva `titulo`, `ingredientes` (no vacío, cada uno con `nombre`), `duracion_previa_min` y `duracion_momento_min` (enteros ≥ 0). `descripcion` y `nota` son opcionales; `pasos` es opcional.
 - `ajustes` (opcional, en cada opción de comida o cena): lista de `{perfil_id, texto}`, con un perfil del encargo y sin repetir perfil. Sirve para que cada persona adapte **el mismo plato** sin cocinar platos distintos (añadir brócoli, doble ración, apartar el arroz antes de mezclar). Dalos **solo si aportan**; si el plato ya sirve a todos tal cual, omite la clave. El texto no puede ir vacío.
 - Los `ajustes` no cambian los ingredientes ni los tiempos de la opción: son indicaciones al cocinar. No hay recetas distintas por persona; la persona se refleja en los `ajustes`, en las tomas individuales y en `explicaciones`.

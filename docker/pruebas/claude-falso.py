@@ -145,7 +145,11 @@ def main() -> int:
     receta = lambda titulo, minutos: {
         "titulo": titulo, "ingredientes": [{"nombre": "tomate", "cantidad": 200, "unidad": "g", "en_stock": True}],
         "duracion_previa_min": 0, "duracion_momento_min": minutos, "pasos": ["Cortar", "Cocinar"]}
-    opcion = lambda titulo, minutos: {**receta(titulo, minutos), "categorias": [categoria]}
+    plato = lambda titulo: {"titulo": titulo, "ingredientes": [{"nombre": "tomate", "cantidad": 200, "unidad": "g", "en_stock": True}], "pasos": ["Cortar", "Cocinar"]}
+    n_platos = int(encargo.get("platos_por_toma") or 0)
+    opcion = lambda titulo, minutos: ({"titulo": titulo, "categorias": [categoria], "duracion_previa_min": 0, "duracion_momento_min": minutos,
+                                       "platos": [plato(f"{titulo} · plato {i}") for i in range(1, n_platos + 1)]}
+                                      if n_platos else {**receta(titulo, minutos), "categorias": [categoria]})
     toma = lambda titulo: receta(titulo, 0)
     tarea = encargo.get("tarea", "generar")
     if tarea == "intercambiar":

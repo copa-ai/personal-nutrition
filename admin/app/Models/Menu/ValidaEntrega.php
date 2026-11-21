@@ -21,6 +21,10 @@ trait ValidaEntrega
      *  - cada opción: `titulo`, `categorias` (mismo conjunto que la toma, sin importar el orden), `ingredientes` (con `nombre`),
      *    `duracion_previa_min` y `duracion_momento_min` (no más que el tiempo del hogar ese día).
      *    Opcional: `ajustes`, lista de `{perfil_id, texto}` con un perfil del encargo (sin repetir) y texto no vacío.
+     *  - `platos`: cada opción de comida o cena es una toma completa de varios platos (p. ej. primero y segundo). Si el encargo trae
+     *    `platos_por_toma` (N), cada opción lleva `platos` con al menos N (1 al editar) y no necesita `ingredientes` propios: los lleva
+     *    cada plato (`titulo`, `ingredientes` con `nombre`, `pasos` opcional). Sin `platos_por_toma` (encargos antiguos) la opción sigue
+     *    siendo un solo plato con sus `ingredientes`; si trae `platos`, se validan igual.
      *  - `individuales`: una entrada por perfil del encargo (`perfil_id`) con `desayuno`, `almuerzo` y `merienda`. Cada toma es una sola
      *    versión: `titulo`, `ingredientes` (con `nombre`), `duracion_previa_min` y `duracion_momento_min` (no más que el tiempo del hogar
      *    ese día si hay dato; con null no se limita).
@@ -40,10 +44,11 @@ trait ValidaEntrega
         $perfiles = collect($encargo['perfiles'] ?? [])->pluck('id')->map(fn ($id): string => (string) $id)->sort()->values()->all();
         $tiempos = collect($encargo['hogar']['tiempos'] ?? [])->keyBy('fecha');
         $categorias = array_column(CategoriaComida::cases(), 'value');
+        $platosMin = $this->platosMinimos($encargo);
         $errores = [];
 
         if (($encargo['tarea'] ?? 'generar') === 'intercambiar') {
-            return $this->erroresDeIntercambio($datos, $fechas, $tiempos, $categorias, $min, $max, $perfiles);
+            return $this->erroresDeIntercambio($datos, $fechas, $tiempos, $categorias, $min, $max, $perfiles, $platosMin);
         }
 
         $dias = $datos['dias'] ?? null;
@@ -62,7 +67,7 @@ trait ValidaEntrega
             $fecha = $d['fecha'] ?? '?';
             foreach (['comida', 'cena'] as $momento) {
                 $minutos = $tiempos->get($fecha)["minutos_{$momento}"] ?? null;
-                array_push($errores, ...$this->erroresDeToma($d[$momento] ?? null, "{$fecha} · {$momento}", $minutos, $categorias, $min, $max, $perfiles));
+                array_push($errores, ...$this->erroresDeToma($d[$momento] ?? null, "{$fecha} · {$momento}", $minutos, $categorias, $min, $max, $perfiles, $platosMin));
             }
             array_push($errores, ...$this->erroresDeIndividuales($d['individuales'] ?? null, $fecha, $tiempos->get($fecha) ?? [], $perfiles));
         }
@@ -86,7 +91,7 @@ trait ValidaEntrega
      * @param  list<string>  $perfiles
      * @return list<string>
      */
-    private function erroresDeToma(mixed $toma, string $donde, ?int $minutos, array $categorias, int $min, int $max, array $perfiles): array
+    private function erroresDeToma(mixed $toma, string $donde, ?int $minutos, array $categorias, int $min, int $max, array $perfiles, ?int $platosMin = null): array
     {
         $errores = [];
         $opciones = is_array($toma) ? ($toma['opciones'] ?? null) : null;
@@ -108,10 +113,26 @@ trait ValidaEntrega
             $errores[] = "{$donde}: hay ".count($opciones)." opciones y tienen que ser entre {$min} y {$max}.";
         }
         foreach (array_values($opciones) as $i => $o) {
-            array_push($errores, ...$this->erroresDeOpcion($o, "{$donde} · opción ".($i + 1), $minutos, $categorias, $catsToma, $perfiles));
+            array_push($errores, ...$this->erroresDeOpcion($o, "{$donde} · opción ".($i + 1), $minutos, $categorias, $catsToma, $perfiles, $platosMin));
         }
 
         return $errores;
+    }
+
+    /**
+     * Platos que tiene que llevar cada opción de comida o cena: `encargo.platos_por_toma` (1 al editar, que puede quitar platos).
+     * Null si el encargo no lo trae (encargos antiguos).
+     *
+     * @param  array<string, mixed>  $encargo
+     */
+    private function platosMinimos(array $encargo): ?int
+    {
+        $n = $encargo['platos_por_toma'] ?? null;
+        if (! is_int($n) || $n < 1) {
+            return null;
+        }
+
+        return ($encargo['tarea'] ?? 'generar') === 'editar' ? 1 : $n;
     }
 
     /**
@@ -124,7 +145,7 @@ trait ValidaEntrega
      * @param  list<string>  $categorias
      * @return list<string>
      */
-    private function erroresDeIntercambio(array $datos, array $fechas, Collection $tiempos, array $categorias, int $min, int $max, array $perfiles): array
+    private function erroresDeIntercambio(array $datos, array $fechas, Collection $tiempos, array $categorias, int $min, int $max, array $perfiles, ?int $platosMin = null): array
     {
         $errores = [];
         if (($datos['entrega']['version'] ?? null) !== 3) {
@@ -147,7 +168,7 @@ trait ValidaEntrega
 
                 continue;
             }
-            array_push($errores, ...$this->erroresDeToma($toma, $clave, $minutos, $categorias, $min, $max, $perfiles));
+            array_push($errores, ...$this->erroresDeToma($toma, $clave, $minutos, $categorias, $min, $max, $perfiles, $platosMin));
         }
 
         return $errores;
@@ -158,14 +179,19 @@ trait ValidaEntrega
      * @param  list<string>  $categorias
      * @param  list<string>|null  $catsToma  categorías de la toma; null si ya se informó de que faltan
      * @param  list<string>  $perfiles  ids de perfil del encargo (para los `ajustes`)
+     * @param  ?int  $platosMin  null: encargo antiguo, la opción es un solo plato (si trae `platos`, se validan igual)
      * @return list<string>
      */
-    private function erroresDeOpcion(mixed $o, string $donde, ?int $minutos, array $categorias, ?array $catsToma, array $perfiles = []): array
+    private function erroresDeOpcion(mixed $o, string $donde, ?int $minutos, array $categorias, ?array $catsToma, array $perfiles = [], ?int $platosMin = null): array
     {
         if (! is_array($o)) {
             return ["{$donde}: la opción tiene que ser un objeto."];
         }
-        $errores = $this->erroresDeReceta($o, $donde, $minutos);
+        $conPlatos = $platosMin !== null || array_key_exists('platos', $o);
+        $errores = $this->erroresDeReceta($o, $donde, $minutos, $conPlatos);
+        if ($conPlatos) {
+            array_push($errores, ...$this->erroresDePlatos($o['platos'] ?? null, $donde, $platosMin ?? 1));
+        }
         $cats = $o['categorias'] ?? null;
         if (! is_array($cats) || ! array_is_list($cats) || $cats === [] || array_diff($cats, $categorias) !== []) {
             $errores[] = "{$donde}: «categorias» debe ser una lista no vacía de categorías válidas.";
@@ -247,21 +273,19 @@ trait ValidaEntrega
     }
 
     /**
-     * Reglas comunes a una opción de comida/cena y a una toma individual.
+     * Reglas comunes a una opción de comida/cena y a una toma individual. Con `$conPlatos` los ingredientes los llevan los platos.
      *
      * @param  array<string, mixed>  $o
      * @return list<string>
      */
-    private function erroresDeReceta(array $o, string $donde, ?int $minutos): array
+    private function erroresDeReceta(array $o, string $donde, ?int $minutos, bool $conPlatos = false): array
     {
         $errores = [];
         if ($this->texto($o['titulo'] ?? null) === '') {
             $errores[] = "{$donde}: falta el título.";
         }
-        $ingredientes = $o['ingredientes'] ?? null;
-        if (! is_array($ingredientes) || $ingredientes === [] || ! array_is_list($ingredientes)
-            || collect($ingredientes)->contains(fn ($i): bool => ! is_array($i) || $this->texto($i['nombre'] ?? null) === '')) {
-            $errores[] = "{$donde}: «ingredientes» debe ser una lista no vacía y cada uno con «nombre».";
+        if (! $conPlatos) {
+            array_push($errores, ...$this->erroresDeIngredientes($o['ingredientes'] ?? null, $donde));
         }
         foreach (['duracion_previa_min', 'duracion_momento_min'] as $campo) {
             if (! is_int($o[$campo] ?? null) || $o[$campo] < 0) {
@@ -270,6 +294,49 @@ trait ValidaEntrega
         }
         if ($minutos !== null && is_int($o['duracion_momento_min'] ?? null) && $o['duracion_momento_min'] > $minutos) {
             $errores[] = "{$donde}: tarda {$o['duracion_momento_min']} min al momento y el hogar solo tiene {$minutos}.";
+        }
+
+        return $errores;
+    }
+
+    /** @return list<string> */
+    private function erroresDeIngredientes(mixed $ingredientes, string $donde): array
+    {
+        if (! is_array($ingredientes) || $ingredientes === [] || ! array_is_list($ingredientes)
+            || collect($ingredientes)->contains(fn ($i): bool => ! is_array($i) || $this->texto($i['nombre'] ?? null) === '')) {
+            return ["{$donde}: «ingredientes» debe ser una lista no vacía y cada uno con «nombre»."];
+        }
+
+        return [];
+    }
+
+    /**
+     * `platos` de una opción de comida o cena: al menos `$minimo`, cada uno con `titulo`, `ingredientes` y, opcional, `pasos` (lista de textos).
+     *
+     * @return list<string>
+     */
+    private function erroresDePlatos(mixed $platos, string $donde, int $minimo): array
+    {
+        $minimo = max(1, $minimo);
+        if (! is_array($platos) || ! array_is_list($platos) || count($platos) < $minimo) {
+            return ["{$donde}: «platos» debe ser una lista con al menos {$minimo} plato(s)."];
+        }
+        $errores = [];
+        foreach ($platos as $i => $plato) {
+            $aqui = "{$donde} · plato ".($i + 1);
+            if (! is_array($plato)) {
+                $errores[] = "{$aqui}: el plato tiene que ser un objeto.";
+
+                continue;
+            }
+            if ($this->texto($plato['titulo'] ?? null) === '') {
+                $errores[] = "{$aqui}: falta el título.";
+            }
+            array_push($errores, ...$this->erroresDeIngredientes($plato['ingredientes'] ?? null, $aqui));
+            $pasos = $plato['pasos'] ?? null;
+            if ($pasos !== null && (! is_array($pasos) || ! array_is_list($pasos) || collect($pasos)->contains(fn ($x): bool => ! is_string($x)))) {
+                $errores[] = "{$aqui}: «pasos» debe ser una lista de textos.";
+            }
         }
 
         return $errores;

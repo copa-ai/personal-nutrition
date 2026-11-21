@@ -178,7 +178,17 @@
                                                         </div>
                                                     @endif
 
-                                                    @if (! empty($o['pasos']))
+                                                    @if (! empty($o['platos']))
+                                                        <div class="mn-bloque">
+                                                            <span class="mn-etiqueta">{{ count($o['platos']) }} platos</span>
+                                                            @foreach ($o['platos'] as $n => $pl)
+                                                                <div class="mn-persona-fila">
+                                                                    <span class="quien">{{ $n + 1 }}. {{ $pl['titulo'] ?? '' }}</span>
+                                                                    @if (! empty($pl['pasos']))<ol class="mn-pasos">@foreach ($pl['pasos'] as $paso)<li>{{ $paso }}</li>@endforeach</ol>@endif
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    @elseif (! empty($o['pasos']))
                                                         <div class="mn-bloque">
                                                             <span class="mn-etiqueta">Cómo se hace</span>
                                                             <ol class="mn-pasos">@foreach ($o['pasos'] as $paso)<li>{{ $paso }}</li>@endforeach</ol>

@@ -28,7 +28,7 @@ Son los de la skill `planificar-menu` (restricciones y objetivos de cada perfil 
    - Puedes **reubicar** un plato entre tomas (p. ej. lo que sobraba pasa a otra comida) y **sustituir** platos dentro de las categorías de la toma, o cambiar las categorías de la toma si lo comido las hace necesarias (no repetir la misma categoría principal el mismo día ni la misma semana).
    - Cambia lo mínimo: si una toma no necesita cambio, no la incluyas.
    - Solo comida y cena (no las tomas individuales) y solo donde el hogar cocina (`minutos_*` no nulo en `hogar.tiempos`).
-   - Cada toma que incluyas es **completa**: `categorias` de la toma, entre `min` y `max` opciones, y cada opción con las mismas categorías que la toma, `titulo`, `ingredientes`, `duracion_previa_min`, `duracion_momento_min` (no más que el tiempo del hogar ese día) y `ajustes` opcionales (ver `planificar-menu`). No repitas títulos de la semana.
+   - Cada toma que incluyas es **completa**: `categorias` de la toma, entre `min` y `max` opciones, y cada opción con las mismas categorías que la toma, `titulo`, `platos` (al menos `platos_por_toma` del encargo, cada uno con `titulo`, `ingredientes` y `pasos`; la opción no lleva `ingredientes` propios), `duracion_previa_min`, `duracion_momento_min` (no más que el tiempo del hogar ese día) y `ajustes` opcionales (ver `planificar-menu`). No repitas títulos de la semana.
    Escribe el borrador en `workspace/borrador-N.json`.
 3. **Validación.** `python scripts/consumos.py fase validacion --ejecucion N` y después
    `python scripts/menu.py validar workspace/borrador-N.json --encargo encargos/encargo-N.json`. Si da errores, corrige y repite.
@@ -50,9 +50,11 @@ No lleva `dias` ni `explicaciones`. Lleva `cambios`: un objeto cuya clave es `AA
         {
           "titulo": "Merluza al horno con verduras",
           "categorias": ["pescado", "verdura"],
-          "ingredientes": [{"nombre": "merluza", "cantidad": 600, "unidad": "g", "en_stock": false}],
           "duracion_previa_min": 5, "duracion_momento_min": 30,
-          "pasos": ["…"]
+          "platos": [
+            {"titulo": "Crema de calabaza", "ingredientes": [{"nombre": "calabaza", "cantidad": 500, "unidad": "g", "en_stock": false}], "pasos": ["…"]},
+            {"titulo": "Merluza al horno con verduras", "ingredientes": [{"nombre": "merluza", "cantidad": 600, "unidad": "g", "en_stock": false}], "pasos": ["…"]}
+          ]
         }
       ]
     }

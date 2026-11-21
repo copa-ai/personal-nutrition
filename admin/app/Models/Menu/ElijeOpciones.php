@@ -39,7 +39,27 @@ trait ElijeOpciones
     {
         $dia = collect($this->contenidoLeido()['dias'] ?? [])->firstWhere('fecha', $fecha);
 
-        return array_values($dia[$momento]['opciones'] ?? []);
+        return array_values(array_map($this->conIngredientesDeLosPlatos(...), $dia[$momento]['opciones'] ?? []));
+    }
+
+    /**
+     * Una opción de varios platos (`platos`) no guarda `ingredientes` propios: se leen como los de todos sus platos juntos, así la lista
+     * de la compra, «por comprar» y el resto de lectores funcionan igual que con una opción de un solo plato.
+     *
+     * @param  array<string, mixed>  $opcion
+     * @return array<string, mixed>
+     */
+    private function conIngredientesDeLosPlatos(array $opcion): array
+    {
+        if (! is_array($opcion['platos'] ?? null)) {
+            return $opcion;
+        }
+        $ingredientes = [];
+        foreach ($opcion['platos'] as $plato) {
+            array_push($ingredientes, ...array_values(is_array($plato['ingredientes'] ?? null) ? $plato['ingredientes'] : []));
+        }
+
+        return $opcion + ['ingredientes' => $ingredientes];
     }
 
     /** Índice (desde 0) de la opción elegida en una toma. Sin elección hecha, o si ya no es válida, es la primera. */

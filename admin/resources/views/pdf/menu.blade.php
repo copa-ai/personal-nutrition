@@ -66,6 +66,9 @@
     .indiv .mins { font-family: 'DejaVu Sans Mono', monospace; font-size: 6pt; color: #5D6874; }
     .indiv .sub { color: #5D6874; font-size: 6.8pt; margin-top: 1pt; }
     .indiv .nota { color: #A63D22; font-size: 6.8pt; font-style: italic; margin-top: 1pt; }
+    .plato { margin-top: 5pt; padding-top: 4pt; border-top: 1px dotted #D9D8D0; }
+    .plato .pt { font-size: 8.6pt; color: #141C26; }
+    .plato .pt b { font-weight: normal; font-family: 'DejaVu Sans Mono', monospace; font-size: 6.4pt; letter-spacing: 0.6pt; color: #5F6E38; }
     .ajustes { font-size: 7.2pt; margin-top: 4pt; }
     .ajustes b { font-weight: normal; font-family: 'DejaVu Sans Mono', monospace; font-size: 6pt; letter-spacing: 0.8pt; text-transform: uppercase; color: #A63D22; }
     .chip.cambiada { color: #A63D22; border-color: #A63D22; margin-left: 4pt; }
@@ -178,7 +181,23 @@
                                 <span class="chip {{ $i === 0 ? 'destaca' : '' }}">{{ CategoriaComida::tryFrom($c)?->getLabel() ?? $c }}</span>
                             @endforeach
                         </div>
-                        @if (! empty($o['pasos']))
+                        {{-- Una opción son varios platos (primero, segundo…): cada uno con sus pasos e ingredientes. Las antiguas, de un solo plato, no llevan `platos`. --}}
+                        @foreach ($o['platos'] ?? [] as $n => $pl)
+                            <div class="plato">
+                                <p class="pt"><b>{{ $n + 1 }}</b>&nbsp; {{ $pl['titulo'] ?? '' }}</p>
+                                @if (! empty($pl['pasos']))
+                                    <ol class="pasos">
+                                        @foreach ($pl['pasos'] as $paso)<li>{{ $paso }}</li>@endforeach
+                                    </ol>
+                                @endif
+                                @if (! empty($pl['ingredientes']))
+                                    <p class="ing"><b>Con</b>
+                                        {{ collect($pl['ingredientes'])->map(fn ($i) => $i['nombre'].(isset($i['cantidad']) ? ' '.$cantidad((float) $i['cantidad'], (string) ($i['unidad'] ?? '')) : ''))->implode(' · ') }}
+                                    </p>
+                                @endif
+                            </div>
+                        @endforeach
+                        @if (empty($o['platos']) && ! empty($o['pasos']))
                             <ol class="pasos">
                                 @foreach ($o['pasos'] as $paso)<li>{{ $paso }}</li>@endforeach
                             </ol>
@@ -188,7 +207,7 @@
                                 {{ collect($o['ajustes'])->map(fn ($a) => ($nombres[$a['perfil_id']] ?? 'Perfil '.$a['perfil_id']).': '.$a['texto'])->implode(' · ') }}
                             </p>
                         @endif
-                        @if (! empty($o['ingredientes']))
+                        @if (empty($o['platos']) && ! empty($o['ingredientes']))
                             <p class="ing"><b>Con</b>
                                 {{ collect($o['ingredientes'])->map(fn ($i) => $i['nombre'].(isset($i['cantidad']) ? ' '.$cantidad((float) $i['cantidad'], (string) ($i['unidad'] ?? '')) : ''))->implode(' · ') }}
                             </p>

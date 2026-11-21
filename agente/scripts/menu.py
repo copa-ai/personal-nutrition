@@ -21,6 +21,10 @@ Reglas del contrato (version 3):
   - cada opcion: `titulo`, `categorias` (el mismo conjunto que la toma, sin importar el orden), `ingredientes` (con `nombre`),
     `duracion_previa_min` y `duracion_momento_min` (no mas que los minutos del hogar ese dia).
     Opcional: `ajustes`, lista de `{perfil_id, texto}` con un perfil del encargo (sin repetir) y texto no vacio.
+  - `platos`: cada opcion de comida o cena es una toma completa de varios platos (p. ej. primero y segundo). Si el encargo trae
+    `platos_por_toma` (N), cada opcion lleva `platos` con al menos N (1 al editar) y la opcion no necesita `ingredientes` propios:
+    los lleva cada plato (`titulo`, `ingredientes` con `nombre`, `pasos` opcional). Sin `platos_por_toma` (encargos antiguos) la opcion
+    sigue siendo un solo plato con sus `ingredientes`; si trae `platos`, se validan igual.
   - `individuales`: una entrada por perfil del encargo (`perfil_id`) con `desayuno`, `almuerzo` y `merienda`. Cada toma es una sola
     version: `titulo`, `ingredientes` (con `nombre`), `duracion_previa_min` y `duracion_momento_min` (no mas que los minutos del
     hogar ese dia si hay dato; con null no se limita).
@@ -64,15 +68,39 @@ def _ids_de_perfil(entradas) -> list[str]:
     return sorted(ids)
 
 
-def errores_de_receta(o: dict, donde: str, minutos) -> list[str]:
-    """Reglas comunes a una opcion de comida/cena y a una toma individual."""
+def errores_de_ingredientes(ingredientes, donde: str) -> list[str]:
+    if (not isinstance(ingredientes, list) or not ingredientes
+            or any(not isinstance(i, dict) or not _texto(i.get("nombre")) for i in ingredientes)):
+        return [f"{donde}: «ingredientes» debe ser una lista no vacía y cada uno con «nombre»."]
+    return []
+
+
+def errores_de_platos(platos, donde: str, minimo: int) -> list[str]:
+    """`platos` de una opcion de comida o cena: al menos `minimo`, cada uno con `titulo`, `ingredientes` y, opcional, `pasos` (lista de textos)."""
+    if not isinstance(platos, list) or len(platos) < max(1, minimo):
+        return [f"{donde}: «platos» debe ser una lista con al menos {max(1, minimo)} plato(s)."]
+    errores = []
+    for i, plato in enumerate(platos, 1):
+        aqui = f"{donde} · plato {i}"
+        if not isinstance(plato, dict):
+            errores.append(f"{aqui}: el plato tiene que ser un objeto.")
+            continue
+        if not _texto(plato.get("titulo")):
+            errores.append(f"{aqui}: falta el título.")
+        errores += errores_de_ingredientes(plato.get("ingredientes"), aqui)
+        pasos = plato.get("pasos")
+        if pasos is not None and (not isinstance(pasos, list) or any(not isinstance(x, str) for x in pasos)):
+            errores.append(f"{aqui}: «pasos» debe ser una lista de textos.")
+    return errores
+
+
+def errores_de_receta(o: dict, donde: str, minutos, con_platos: bool = False) -> list[str]:
+    """Reglas comunes a una opcion de comida/cena y a una toma individual. Con `con_platos` los ingredientes los llevan los platos."""
     errores = []
     if not _texto(o.get("titulo")):
         errores.append(f"{donde}: falta el título.")
-    ingredientes = o.get("ingredientes")
-    if (not isinstance(ingredientes, list) or not ingredientes
-            or any(not isinstance(i, dict) or not _texto(i.get("nombre")) for i in ingredientes)):
-        errores.append(f"{donde}: «ingredientes» debe ser una lista no vacía y cada uno con «nombre».")
+    if not con_platos:
+        errores += errores_de_ingredientes(o.get("ingredientes"), donde)
     for campo in ("duracion_previa_min", "duracion_momento_min"):
         if not _entero(o.get(campo)) or o[campo] < 0:
             errores.append(f"{donde}: «{campo}» debe ser un número entero de minutos (0 o más).")
@@ -101,10 +129,15 @@ def errores_de_ajustes(ajustes, donde: str, perfiles: list[str]) -> list[str]:
     return errores
 
 
-def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma, perfiles: list[str] | None = None) -> list[str]:
+def errores_de_opcion(o, donde: str, minutos, categorias: list[str], cats_toma, perfiles: list[str] | None = None,
+                      platos_min: int | None = None) -> list[str]:
+    """`platos_min` = None: encargo antiguo, la opcion es un solo plato (si trae `platos`, se validan igual)."""
     if not isinstance(o, dict):
         return [f"{donde}: la opción tiene que ser un objeto."]
-    errores = errores_de_receta(o, donde, minutos)
+    con_platos = platos_min is not None or "platos" in o
+    errores = errores_de_receta(o, donde, minutos, con_platos)
+    if con_platos:
+        errores += errores_de_platos(o.get("platos"), donde, platos_min or 1)
     cats = o.get("categorias")
     if not isinstance(cats, list) or not cats or any(c not in categorias for c in cats):
         errores.append(f"{donde}: «categorias» debe ser una lista no vacía de categorías válidas.")
@@ -134,7 +167,8 @@ def errores_de_individuales(individuales, fecha: str, tiempo: dict, perfiles: li
     return errores
 
 
-def errores_de_toma(toma, donde: str, minutos, categorias: list[str], minimo: int, maximo: int, perfiles: list[str]) -> list[str]:
+def errores_de_toma(toma, donde: str, minutos, categorias: list[str], minimo: int, maximo: int, perfiles: list[str],
+                    platos_min: int | None = None) -> list[str]:
     """Una toma de comida o cena: `categorias` y entre `minimo` y `maximo` `opciones` (vacias las dos si el hogar no cocina: minutos = None).
     La usan la entrega completa (generar y editar) y cada toma de un intercambio."""
     opciones = toma.get("opciones") if isinstance(toma, dict) else None
@@ -154,8 +188,17 @@ def errores_de_toma(toma, donde: str, minutos, categorias: list[str], minimo: in
     elif minutos is not None and not minimo <= len(opciones) <= maximo:
         errores.append(f"{donde}: hay {len(opciones)} opciones y tienen que ser entre {minimo} y {maximo}.")
     for i, o in enumerate(opciones, 1):
-        errores += errores_de_opcion(o, f"{donde} · opción {i}", minutos, categorias, cats_toma, perfiles)
+        errores += errores_de_opcion(o, f"{donde} · opción {i}", minutos, categorias, cats_toma, perfiles, platos_min)
     return errores
+
+
+def platos_minimos(encargo: dict) -> int | None:
+    """Platos que tiene que llevar cada opcion de comida o cena: `encargo.platos_por_toma` (1 al editar, que puede quitar platos).
+    None si el encargo no lo trae (encargos antiguos)."""
+    n = encargo.get("platos_por_toma")
+    if not _entero(n) or n < 1:
+        return None
+    return 1 if encargo.get("tarea", "generar") == "editar" else n
 
 
 def errores_de_intercambio(datos, encargo: dict) -> list[str]:
@@ -186,7 +229,7 @@ def errores_de_intercambio(datos, encargo: dict) -> list[str]:
         if minutos is None:
             errores.append(f"{clave}: el hogar no cocina en ese momento, no se puede cambiar.")
             continue
-        errores += errores_de_toma(toma, clave, minutos, categorias, minimo, maximo, perfiles)
+        errores += errores_de_toma(toma, clave, minutos, categorias, minimo, maximo, perfiles, platos_minimos(encargo))
     return errores
 
 
@@ -214,7 +257,7 @@ def validar_entrega(datos, encargo: dict) -> list[str]:
         d = d if isinstance(d, dict) else {}
         fecha = d.get("fecha", "?")
         for momento in MOMENTOS:
-            errores += errores_de_toma(d.get(momento), f"{fecha} · {momento}", tiempos.get(fecha, {}).get(f"minutos_{momento}"), categorias, minimo, maximo, perfiles)
+            errores += errores_de_toma(d.get(momento), f"{fecha} · {momento}", tiempos.get(fecha, {}).get(f"minutos_{momento}"), categorias, minimo, maximo, perfiles, platos_minimos(encargo))
         errores += errores_de_individuales(d.get("individuales"), fecha, tiempos.get(fecha, {}), perfiles)
 
     explicaciones = datos.get("explicaciones")

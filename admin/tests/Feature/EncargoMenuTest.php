@@ -25,12 +25,27 @@ class EncargoMenuTest extends TestCase
         $this->assertCount(7, $encargo['semana']['fechas']);
         $this->assertSame('2026-11-08', $encargo['semana']['fechas'][6]);
         $this->assertSame(['min' => 2, 'max' => 3], $encargo['opciones_por_comida']);
+        $this->assertSame(2, $encargo['platos_por_toma']);
         $this->assertContains('carne_roja', $encargo['categorias_validas']);
         $this->assertCount(14, $encargo['categorias_validas']);
         $this->assertSame(['fecha' => '2026-11-02', 'dia_semana' => 1, 'minutos_comida' => 30, 'minutos_cena' => 45,
             'minutos_desayuno' => 10, 'minutos_almuerzo' => 10, 'minutos_merienda' => 5], $encargo['hogar']['tiempos'][0]);
         $this->assertSame(['Marta', 'Javier'], array_column($encargo['perfiles'], 'nombre'));
         $this->assertSame(['sin lácteos'], $encargo['perfiles'][0]['restricciones']);
+    }
+
+    public function test_el_encargo_lleva_la_temporada_de_la_semana(): void
+    {
+        $this->crearHogar();
+
+        $this->assertSame(
+            ['mes' => 'noviembre', 'mes_numero' => 11, 'estacion' => 'otoño', 'hemisferio' => 'norte', 'zona' => 'España'],
+            $this->menu->construirEncargo()['temporada'],
+        );
+
+        config(['agente.menu.hemisferio' => 'sur', 'agente.menu.zona' => 'Chile']);
+        $sur = $this->menu->construirEncargo()['temporada'];
+        $this->assertSame(['primavera', 'sur', 'Chile'], [$sur['estacion'], $sur['hemisferio'], $sur['zona']]);
     }
 
     public function test_las_tomas_individuales_sin_dato_viajan_como_null(): void
