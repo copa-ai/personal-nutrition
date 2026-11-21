@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 
-#[Fillable(['nombre'])]
+#[Fillable(['nombre', 'platos_por_toma'])]
 class Hogar extends Model
 {
     /** @use HasFactory<HogarFactory> */
@@ -22,7 +22,7 @@ class Hogar extends Model
 
     protected function casts(): array
     {
-        return ['cambios' => 'array'];
+        return ['cambios' => 'array', 'platos_por_toma' => 'integer'];
     }
 
     /** Menú que el hogar sigue ahora. Null si aún no hay ninguno activo. */

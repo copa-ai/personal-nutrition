@@ -34,6 +34,16 @@ class EncargoMenuTest extends TestCase
         $this->assertSame(['sin lácteos'], $encargo['perfiles'][0]['restricciones']);
     }
 
+    public function test_los_platos_por_toma_son_una_columna_del_hogar_con_2_por_defecto(): void
+    {
+        $this->crearHogar();
+        $this->assertSame(2, $this->hogar->fresh()->platos_por_toma);
+
+        $this->hogar->update(['platos_por_toma' => 3]);
+
+        $this->assertSame(3, $this->menu->fresh()->construirEncargo()['platos_por_toma']);
+    }
+
     public function test_el_encargo_lleva_la_temporada_de_la_semana(): void
     {
         $this->crearHogar();

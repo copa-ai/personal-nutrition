@@ -49,7 +49,7 @@ trait ConstruyeEncargo
             'semana' => ['inicio' => $inicio->toDateString(), 'dias' => $dias, 'fechas' => array_map(fn (CarbonImmutable $f): string => $f->toDateString(), $fechas)],
             'categorias_validas' => array_column(CategoriaComida::cases(), 'value'),
             'opciones_por_comida' => ['min' => (int) config('agente.menu.opciones_min'), 'max' => (int) config('agente.menu.opciones_max')],
-            'platos_por_toma' => max(1, (int) config('agente.menu.platos_por_toma')),
+            'platos_por_toma' => max(1, (int) $hogar->platos_por_toma),
             'temporada' => $this->temporada($fechas),
             'hogar' => ['nombre' => $hogar->nombre, 'tiempos' => $tiempos],
             'perfiles' => $perfiles->map(fn ($p): array => [

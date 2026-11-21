@@ -46,7 +46,6 @@ return [
         'dias' => (int) env('AGENTE_MENU_DIAS', 7),                    // dias que cubre un menú
         'opciones_min' => 2,                                           // opciones de receta por comida y cena
         'opciones_max' => 3,
-        'platos_por_toma' => (int) env('AGENTE_MENU_PLATOS', 2),        // platos de cada opción de comida y cena (p. ej. primero y segundo)
         // Dónde se come, para que las frutas y verduras sean de temporada (el hogar no guarda ubicación). `hemisferio`: norte | sur.
         'hemisferio' => env('AGENTE_MENU_HEMISFERIO', 'norte'),
         'zona' => env('AGENTE_MENU_ZONA', 'España'),
