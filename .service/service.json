@@ -4,13 +4,13 @@
     "resources": {
         "at_init": {
             "mem_limit": 1610612736,
-            "disk_space": 4294967296,
+            "disk_space": 6442450944,
             "cpu_period": 100000,
             "cpu_quota": 100000
         },
         "at_most": {
             "mem_limit": 1610612736,
-            "disk_space": 4294967296,
+            "disk_space": 6442450944,
             "cpu_period": 100000,
             "cpu_quota": 100000
         }
@@ -18,6 +18,9 @@
     "init": {
         "entry_path": ["opt", "nutrition", "start.sh"]
     },
+    "shared_filesystems": [
+        {"path": "/opt/nutrition/project", "role": "shared", "tag": "project", "access": "rw"}
+    ],
     "api": [
         {
             "port": 8000,
@@ -41,6 +44,11 @@
                 ["grpc"],
                 {"tags": ["cards"], "prose": "Interfaz cards de celaut-project/chatui (cards.md): lista de la compra del menu activo como mazo de tarjetas (comprado, no lo encuentro, ya lo tengo)."}
             ]
+        },
+        {
+            "port": 2222,
+            "transport": "tcp",
+            "protocol_stack": [["ssh"]]
         }
     ],
     "envs": ["NUTRITION_RED"],
@@ -98,6 +106,33 @@
                                                 "disk_space": 5368709120,
                                                 "cpu_period": 100000,
                                                 "cpu_quota": 50000
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "possible_environment_workload": [
+        {
+            "any_of": [
+                {
+                    "workloads": [
+                        {
+                            "count": 1,
+                            "dependency": {
+                                "service": {
+                                    "container": {
+                                        "resources": {
+                                            "at_most": {
+                                                "mem_limit": 3221225472,
+                                                "disk_space": 10737418240,
+                                                "cpu_period": 100000,
+                                                "cpu_quota": 200000
                                             }
                                         }
                                     }

@@ -9,15 +9,15 @@
     "include": [
         "admin",
         "agente",
-        "docker/agente",
-        "docker/chat",
-        "docker/servicio",
-        ".service/pack_config.json"
+        "dependencies",
+        "docker",
+        "docs",
+        "README.md",
+        ".service"
     ],
     "ignore": [
         "vendor/",
         "node_modules/",
-        "tests/",
         "__pycache__/",
         "*.pyc",
         "*.sqlite*",

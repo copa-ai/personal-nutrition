@@ -11,7 +11,7 @@
 }
 
 :8000 {
-	root * /opt/nutrition/admin/public
+	root * /opt/nutrition/project/admin/public
 	encode zstd gzip
 	request_body {
 		max_size 20MB
@@ -55,7 +55,7 @@
 # (archivos de 4 MiB en base64 caben en 8 MiB). Laravel exige ademas el Bearer CHAT_SECRETO.
 http://127.0.0.1:8001 {
 	bind 127.0.0.1
-	root * /opt/nutrition/admin/public
+	root * /opt/nutrition/project/admin/public
 	request_body {
 		max_size 8MiB
 	}

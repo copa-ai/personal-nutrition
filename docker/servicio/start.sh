@@ -6,7 +6,9 @@
 # (env -i) al que solo se le pasa lo suyo: el agente nunca ve APP_KEY ni la base.
 #
 #   agente  (usuario agente)  runner de claude -p 0.0.0.0:9000 (el runner no deja elegir interfaz; fuera del VM no se declara)
-#   web     (usuario app)     frankenphp (HTTP)   0.0.0.0:8000  <- unico puerto declarado en service.json -> api
+#   web     (usuario app)     frankenphp (HTTP)   0.0.0.0:8000  <- slot HTTP de service.json -> api. Corre desde /opt/nutrition/project/admin
+#                             (directorio compartido con un Coder hijo) dentro de un bucle (bucle.sh): matar el hijo lo relanza.
+#                             Los PID de web y cola estan en /var/lib/nutrition/coder/*.pid
 #   cola    (usuario app)     queue:work --queue=default (menus: pueden durar horas) y otro --queue=chat (respuestas del chat)
 #   chat    (usuario chat)    traductor gRPC de la interfaz «chat» de chatui (docker/chat/servidor.py, venv /opt/chat-venv) 0.0.0.0:50051
 #                             <- segundo slot de service.json -> api (http2 -> grpc -> chat). No guarda datos: habla por HTTP con la web
@@ -31,10 +33,14 @@
 set -eu
 
 DATOS=/var/lib/nutrition
-KIT_ADMIN=/opt/nutrition/admin
+# The whole project is a shared directory (service.json -> shared_filesystems). The app runs from it, so a Coder child can change the code.
+# Start scripts, Caddyfile, bucle.sh and the agent kit stay outside it: they run as root or as other users.
+PROYECTO=/opt/nutrition/project
+KIT_ADMIN="$PROYECTO/admin"
+CODER="$DATOS/coder"
 PATH_BASE=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-mkdir -p "$DATOS/secretos" "$DATOS/admin" "$DATOS/agente" "$DATOS/publico"
+mkdir -p "$DATOS/secretos" "$DATOS/admin" "$DATOS/agente" "$DATOS/publico" "$CODER"
 chmod 755 "$DATOS" "$DATOS/publico"
 chmod 700 "$DATOS/secretos"
 
@@ -144,6 +150,13 @@ agente_vigilar() { [ "${F_ESTADO[agente]}" = ok ] || ! agente_sano || fase agent
 
 # --- Administracion: carpeta propia del agente (encargos/workspace/base) y datos en $DATOS/admin ---
 A="$DATOS/admin"
+[ -f "$KIT_ADMIN/artisan" ] || { fallar agente "no hay codigo en $KIT_ADMIN (directorio compartido vacio)"; echo "start.sh: falta $KIT_ADMIN/artisan" >&2; parar; exit 1; }
+# The share can be written by the Coder as root: make the tree readable by the app user. The app writes nothing inside it
+# (storage and bootstrap caches live in $A, see ENTORNO_BASE). A failure here is a warning: virtiofs may refuse chmod.
+chmod -R a+rX "$PROYECTO" 2>/dev/null || echo "start.sh: aviso: no se pudo hacer legible $PROYECTO" >&2
+# Control files shared by the panel (user app) and the reload watcher (root). Old PID files belong to the previous run.
+rm -f "$CODER"/*.pid "$CODER"/*.pid.tmp
+chown app:app "$CODER"; chmod 750 "$CODER"
 mkdir -p "$A/storage/framework/cache" "$A/storage/framework/sessions" "$A/storage/framework/views" "$A/storage/logs" \
          "$A/storage/app/private" "$A/agente" "$A/bootstrap-cache" "$A/celaut"
 chown -R app:app "$A"; chmod 700 "$A"
@@ -215,14 +228,15 @@ else fase agente aviso "no responde en 127.0.0.1:9000 tras 120 s: no se podran g
 fase web "en curso" "FrankenPHP toma el puerto 8000"
 kill "$PID_ESTADO" 2>/dev/null || true
 wait "$PID_ESTADO" 2>/dev/null || true
-lanzar como app "${ENTORNO_APP[@]}" -- frankenphp run --config /opt/nutrition/Caddyfile --adapter caddyfile
+# Restartable loop (bucle.sh): a kill of frankenphp restarts it. The PID of frankenphp is in $CODER/web.pid.
+lanzar como app "${ENTORNO_APP[@]}" -- /opt/nutrition/bucle.sh "$CODER/web.pid" frankenphp run --config /opt/nutrition/Caddyfile --adapter caddyfile
 fase cola "en curso"
-# Cada worker va en un bucle que lo relanza: queue:work sale por si solo al pasar --memory (128 MB por defecto) o --max-jobs, y si saliera
+# Cada worker va en un bucle (bucle.sh) que lo relanza: queue:work sale por si solo al pasar --memory (128 MB por defecto) o --max-jobs, y si saliera
 # directamente caeria todo el servicio (mas abajo, `wait -n`). Asi su memoria queda acotada sin tirar el servicio. `--memory` se comprueba
-# entre trabajos: un menu largo no se interrumpe.
-lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan queue:work --queue=default --tries=1 --timeout=0 --sleep=3 --memory=192 --max-jobs=200 || true; sleep 1; done'
+# entre trabajos: un menu largo no se interrumpe. El PID del worker esta en $CODER/cola-<cola>.pid (el vigilante de recarga lo mata para recargar).
+lanzar como app "${ENTORNO_APP[@]}" -- /opt/nutrition/bucle.sh "$CODER/cola-default.pid" php artisan queue:work --queue=default --tries=1 --timeout=0 --sleep=3 --memory=192 --max-jobs=200
 # Worker propio del chat: una generacion de menu (horas) no debe dejar sin respuesta ni al bot basico.
-lanzar como app "${ENTORNO_APP[@]}" -- sh -c 'while true; do php artisan queue:work --queue=chat --tries=1 --timeout=0 --sleep=1 --memory=192 --max-jobs=500 || true; sleep 1; done'
+lanzar como app "${ENTORNO_APP[@]}" -- /opt/nutrition/bucle.sh "$CODER/cola-chat.pid" php artisan queue:work --queue=chat --tries=1 --timeout=0 --sleep=1 --memory=192 --max-jobs=500
 for i in $(seq 1 60); do
     python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/estado.json', timeout=2)" 2>/dev/null && break
     sleep 1

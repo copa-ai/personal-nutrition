@@ -67,15 +67,27 @@ COPY ./docker/chat /opt/chat
 COPY --from=stubs /stubs/ /opt/chat/
 RUN sed -i 's/\r$//' /opt/chat/*.py /opt/chat/*.sh 2>/dev/null; chmod -R a+rX /opt/chat
 
-# Administracion (Laravel + Filament): codigo de solo lectura, todo lo que escribe va a /var/lib/nutrition/admin.
-COPY ./admin /opt/nutrition/admin
-COPY --from=vendor /app/vendor /opt/nutrition/admin/vendor
-RUN cd /opt/nutrition/admin \
+# Proyecto completo en /opt/nutrition/project: es el directorio que el servicio comparte (service.json -> shared_filesystems, tag «project»).
+# Un servicio Coder hijo lo monta en lectura y escritura y cambia el codigo de Laravel sin reempaquetar. La web y la cola corren desde
+# /opt/nutrition/project/admin. Lo que escribe la app (storage, caches) vive fuera, en /var/lib/nutrition/admin.
+# El arranque (start.sh, Caddyfile, bucle.sh, estado) y el kit del agente NO se leen del directorio compartido: corren como root o como
+# otro usuario y el Coder no debe poder cambiarlos. Por eso se copian tambien mas abajo, fuera de /opt/nutrition/project.
+# Los COPY llevan «./»: el empaquetador los reescribe a service/... Cada ruta debe estar en .service/pack_config.json -> include.
+# Sin .git ni node_modules (pack_config ignore y .service/.dockerignore); los tests se quedan.
+COPY ./admin /opt/nutrition/project/admin
+COPY --from=vendor /app/vendor /opt/nutrition/project/admin/vendor
+COPY ./agente /opt/nutrition/project/agente
+COPY ./docker /opt/nutrition/project/docker
+COPY ./.service /opt/nutrition/project/.service
+COPY ./dependencies /opt/nutrition/project/dependencies
+COPY ./docs /opt/nutrition/project/docs
+COPY ./README.md /opt/nutrition/project/README.md
+RUN cd /opt/nutrition/project/admin \
     && APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= CACHE_STORE=array SESSION_DRIVER=array QUEUE_CONNECTION=sync \
        LARAVEL_STORAGE_PATH=/tmp/storage-build \
        sh -c 'mkdir -p /tmp/storage-build/framework/views /tmp/storage-build/framework/cache /tmp/storage-build/logs \
               && php artisan package:discover --ansi && php artisan filament:assets --ansi' \
-    && rm -rf /tmp/storage-build /opt/nutrition/admin/bootstrap/cache/*.php.tmp
+    && rm -rf /tmp/storage-build /opt/nutrition/project/admin/bootstrap/cache/*.php.tmp
 
 # Subidas de la copia de seguridad (por defecto PHP admite 2 MB; Livewire limita a 12 MB).
 RUN printf 'upload_max_filesize=16M\npost_max_size=20M\nmemory_limit=512M\nopcache.enable=1\nopcache.validate_timestamps=0\n' > /usr/local/etc/php/conf.d/zz-nutrition.ini
@@ -90,9 +102,16 @@ COPY ./docker/agente/entrypoint.sh /opt/runner/entrypoint.sh
 COPY ./docker/servicio/start.sh /opt/nutrition/start.sh
 COPY ./docker/servicio/Caddyfile /opt/nutrition/Caddyfile
 COPY ./docker/servicio/estado /opt/nutrition/estado
-RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/estado/servidor.py \
-    && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh \
+COPY ./docker/servicio/bucle.sh /opt/nutrition/bucle.sh
+RUN sed -i 's/\r$//' /opt/runner/entrypoint.sh /opt/runner/runner.py /opt/nutrition/start.sh /opt/nutrition/bucle.sh /opt/nutrition/estado/servidor.py \
+    && chmod 755 /opt/runner/entrypoint.sh /opt/nutrition/start.sh /opt/nutrition/bucle.sh \
     && mkdir -p /var/lib/nutrition
+
+# Copia original del proyecto, FUERA del directorio compartido (el montaje oculta el contenido de la imagen en esa ruta). Se hace al final,
+# con el arbol ya completo y legible para todos. «Restaurar original» la extrae sobre el directorio compartido.
+RUN chmod -R a+rX /opt/nutrition/project \
+    && tar -C /opt/nutrition/project -czf /opt/nutrition/project.orig.tar.gz . \
+    && chmod 644 /opt/nutrition/project.orig.tar.gz
 
 # Los datos locales (sesion de Claude, estado del runner y del pool de celaut) viven en /var/lib/nutrition, creado y repartido por start.sh.
 # Todo lo demas (datos, cache, sesiones, cola y archivos del agente) vive en la PostgreSQL compartida.
