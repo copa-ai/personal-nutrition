@@ -2,6 +2,9 @@
 
 This file records the design decisions for the Coder feature.
 Each entry has a Context, a Decision, a Reason and an Effect.
+Some entries also have a line "Rejected options".
+Entries 1 to 69 come from the build steps (image, reload, ssh, coder, funds, panel).
+Entries 70 to 85 record the agreed design decisions and the limits that the build did not record.
 
 ## 1. Project tree path and content
 Context: The agreed share path is /opt/nutrition/project. The old code path was /opt/nutrition/admin.
@@ -101,7 +104,7 @@ Effect: A restore of the original removes the stamp, so every file is checked on
 
 ## 17. Reload method and health check
 Context: The loops from entry 6 restart a child that ends.
-Decision: The watcher runs optimize:clear, sends TERM to the FrankenPHP PID and waits for a new PID file (max 40 s). It sends TERM to both queue workers and does not wait: a worker ends its current job first, then bucle.sh starts it with the new code. The health check is an HTTP 200 on http://127.0.0.1:8000/up, one try per second, 30 tries.
+Decision: The watcher runs optimize:clear, sends TERM to the FrankenPHP PID and waits for a new PID file (max 40 s). It sends TERM to both queue workers and does not wait. A worker ends its current job first. Then bucle.sh starts it with the new code. The health check is an HTTP 200 on http://127.0.0.1:8000/up, one try per second, 30 tries.
 Reason: A menu job can last hours. A wait for the worker would block the reload. The route /up exists in bootstrap/app.php and needs no login.
 Effect: A queue job that is running keeps the old code until it ends. optimize:clear also clears the database cache store (cache:clear): a failure only gives a log warning. During the web restart the app is down for a few seconds.
 
@@ -113,7 +116,7 @@ Effect: After an error the old code runs and the status shows the message until 
 
 ## 19. Restore original details
 Context: The tar holds the whole project, including vendor. The Coder can add files and packages.
-Decision: The watcher extracts the whole tar over the share with --no-same-owner and without .coder, then removes files that the tar does not hold in the watched paths and in admin/vendor. It then runs a normal reload with no snapshot rollback. A failed health check gives error_salud. Rejected option: delete and rebuild vendor (large and slow with the app running).
+Decision: The watcher extracts the whole tar over the share with --no-same-owner and without .coder. Then it removes files that the tar does not hold in the watched paths and in admin/vendor. It then runs a normal reload with no snapshot rollback. A failed health check gives error_salud. Rejected option: delete and rebuild vendor (large and slow with the app running).
 Reason: Extraction replaces changed vendor files. The prune step removes added vendor files. composer.lock and vendor match again.
 Effect: Files outside these paths (docs, agente, docker) are replaced but extra files there stay. Empty directories stay. Root extracts files that the Coder wrote: tar can follow a symlink that the Coder planted. Accept this risk for now. File names with a newline are not handled.
 
@@ -137,7 +140,7 @@ Effect: The values are settings (--max, --idle, --connect-timeout). Not tuned on
 
 ## 23. Strict host validation, no resolution rules
 Context: The destination file is written by the app user from the output of the node, but the forwarder must not trust it.
-Decision: The host must be an IP address (v4 or v6) or a name of letters, digits, dots and hyphens that starts and ends with a letter or digit. The port must be an integer from 1 to 65535. Other types (text, boolean, float) are refused. The match uses the whole string, so a trailing newline fails.
+Decision: The host must be an IP address (v4 or v6). Or it must be a name of letters, digits, dots and hyphens that starts and ends with a letter or digit. The port must be an integer from 1 to 65535. Other types (text, boolean, float) are refused. The match uses the whole string, so a trailing newline fails.
 Reason: A bad file must not make the forwarder connect to an odd target or write odd text in the log.
 Effect: The forwarder accepts loopback and private addresses. It does not limit the target to the Coder: only the app user can write the file.
 
@@ -251,7 +254,7 @@ Effect: The panel step calls addBalance, guardarLimites and status. The command 
 
 ## 42. Setting keys for the panel
 Context: The panel step binds to the settings.
-Decision: Three keys are edited by the user: coder.tope_mu (total cap, digit string, null means default), coder.porcentaje_max (integer 1 to 100) and coder.horas_minimas (integer 0 to 8760). The panel calls Saldo::guardarLimites, which validates and calls Ajuste::fijar. The defaults are in config coder.saldo: 24 hours of cap with margin 1.25, 20 percent, 48 hours.
+Decision: The user edits three keys. They are coder.tope_mu (total cap, digit string, null means default), coder.porcentaje_max (integer 1 to 100) and coder.horas_minimas (integer 0 to 8760). The panel calls Saldo::guardarLimites, which validates and calls Ajuste::fijar. The defaults are in config coder.saldo: 24 hours of cap with margin 1.25, 20 percent, 48 hours.
 Reason: One method validates all three values together. A bad value changes nothing.
 Effect: Other keys are written by Saldo only: coder.muestras_saldo, coder.depositado_hijos_mu, coder.precio, coder.ultimo_rechazo, coder.saldo_mu, coder.saldo_nutrition_mu, coder.horas_vida and coder.enviado_mu. The panel only reads them, through status().
 
@@ -287,7 +290,7 @@ Effect: The counter is read before the balance. A deposit between the two reads 
 
 ## 48. When the rate is unknown
 Context: Too few or bad samples must never allow a transfer.
-Decision: The rate is unknown (null) when there are fewer than 4 samples, when the samples span less than 600 s, when fewer than 3 intervals are valid, or when the rate is 0 or negative. An interval with no time or a negative burn (a refund, a credit) is dropped. All limits are in config coder.saldo.
+Decision: The rate is unknown (null) in these cases. There are fewer than 4 samples. The samples span less than 600 s. Fewer than 3 intervals are valid. The rate is 0 or negative. An interval with no time or a negative burn (a refund, a credit) is dropped. All limits are in config coder.saldo.
 Reason: A refund or a credit hides burn. With a long list one dropped interval is acceptable. With the minimum list it is not.
 Effect: After a launch, the first top-up waits about 15 minutes. The initial balance of the launch covers that time (about 1 hour by default). The list keeps at most 72 samples and drops those older than 12 hours.
 
@@ -317,7 +320,7 @@ Effect: A failed deposit uses no cap. It has an audit row (coder.saldo_fallo) an
 
 ## 53. Audit events and silence for the loop
 Context: Every refusal must be audited. A loop that is refused for the same reason would write a row every 300 s.
-Decision: Events: coder.saldo_enviado, coder.saldo_rechazado (control, reason, amount, source, maximum, balances) and coder.saldo_fallo. A refusal of a user action is always audited. A refusal of the loop is audited when the control or the source changes, or when the last audit of it is older than one hour. The last refusal is always stored for the panel.
+Decision: Events: coder.saldo_enviado, coder.saldo_rechazado (control, reason, amount, source, maximum, balances) and coder.saldo_fallo. A refusal of a user action is always audited. A refusal of the loop is audited in two cases. The control or the source changes. Or the last audit of it is older than one hour. The last refusal is always stored for the panel.
 Reason: The log keeps every change of reason and every hour of a lasting refusal. It does not fill with copies.
 Effect: With a refusal that lasts a day, the log has about 24 rows from the loop. This is a small step away from "every refusal" and it is only for repeated loop refusals.
 
@@ -359,7 +362,7 @@ Effect: A flag is never half written. A missing control directory gives a Spanis
 
 ## 60. recarga.json is untrusted input
 Context: A crash or a Coder with write access can leave a missing, partial or wrong recarga.json. The page prints some of its text.
-Decision: ControlRecarga::estado gives a default for each field. It checks each type, keeps only known states and results, cuts the message to 400 characters, removes control characters, and accepts a tree hash only as 64 hex characters. A file over 64 KiB is ignored. Blade escapes the text.
+Decision: ControlRecarga::estado gives a default for each field. It checks each type and keeps only known states and results. It cuts the message to 400 characters, removes control characters, and accepts a tree hash only as 64 hex characters. A file over 64 KiB is ignored. Blade escapes the text.
 Reason: The page must render in all cases, and a field must never become markup.
 Effect: Without a valid file, the page says "sin datos" for the watcher. It still works.
 
@@ -412,7 +415,109 @@ Reason: Without an alias, a second tunnel on the same port would raise a host ke
 Effect: The user replaces one placeholder.
 
 ## 69. Confirm mode for an unreadable spec
-Context: The default setting refuses a service when the spec cannot be read (entry 33 onward).
+Context: The default setting refuses a service when the spec cannot be read (entry 28).
 Decision: The page follows the setting. With "rechazar" it shows the reason and no launch button. With "confirmar" it shows a box that the user must tick, and passes that choice to the job.
 Reason: The page must not be a way around the setting.
 Effect: With the default setting, no launch works until a spec reader exists. This is the known open issue of the earlier steps.
+
+## 70. One parent share with the tag project
+Context: The Coder and nutrition must see the same code tree. The node offers shares in two forms: a parent share and a network share.
+Decision: Nutrition exports one parent share at /opt/nutrition/project with the tag "project". The Coder mounts it as a guest.
+Rejected options: A network share (see entry 71). One share for each directory (it needs more tags and more checks).
+Reason: A parent share needs no third service and no network. The tag, not the path, identifies the share. The Coder can mount it at any path.
+Effect: The Coder must be a direct child of nutrition on the same node. The share belongs to nutrition (see entry 85).
+
+## 71. No network share
+Context: A network share can outlive both services and can join services that are not parent and child.
+Decision: The feature does not use a network share.
+Rejected options: A network share between nutrition and the Coder.
+Reason: A network share needs an extra owner. It has more states, and a failure there is hard to see. The parent share has one owner and one life.
+Effect: The code is lost when nutrition stops (see entry 85). The Coder keeps its work in git.
+
+## 72. No control API between the Coder and nutrition
+Context: The Coder must tell nutrition when to reload.
+Decision: The Coder sends nothing. Nutrition polls the share (entries 10 and 14).
+Rejected options: A control API on nutrition. Request files that the Coder writes in the share.
+Reason: A control API is an attack surface that the Coder could abuse. A request file is a second control path that the Coder writes and root reads. A poll needs no trust in the Coder.
+Effect: A reload starts up to 5 seconds plus the debounce after the last edit. Any editor works, with no special tool.
+
+## 73. Auto reload is ON by default
+Context: The reload checks the code before it acts, and it can roll back.
+Decision: A missing flag file means ON. The user can turn it OFF in the panel. Then the watcher waits for "Reload now".
+Reason: The aim is to edit while the server runs. With ON, an edit is live at once. With OFF, the user keeps full control.
+Effect: A bad edit can start a reload. The checks and the rollback limit the damage (entries 15 and 18).
+
+## 74. A last good snapshot and an automatic rollback
+Context: A change can pass the syntax and boot checks and still fail at run time.
+Decision: After each good reload the watcher saves a small tar of the code directories. If the health check fails, the watcher restores it.
+Reason: The user can then use the app after a bad edit. The Coder is not always a person who can fix the code at once.
+Effect: One snapshot only. The snapshot has no vendor. A bad change to vendor is not rolled back. Use "Restore original" for that case.
+
+## 75. SSH is the only access path
+Context: The user needs a shell, an editor and a file view in the Coder.
+Decision: Nutrition forwards SSH bytes on port 2222. The user reaches it with `nodo tunnel`.
+Rejected options: An HTTP proxy to a web editor. A proxy for the chat. Both need nutrition to parse or to serve the protocol of the Coder.
+Reason: SSH carries every tool: a shell, VS Code Remote-SSH, git and port forwarding. The forwarder pipes bytes and never parses them.
+Effect: The slot has the tag ssh. The Coder must follow the contract (entries 32 and 79).
+
+## 76. The service hash is free and not fixed
+Context: The author of a Coder service can publish new versions at any time.
+Decision: The panel accepts any hash or an uploaded package. No hash is in the code or in the config.
+Rejected options: A fixed hash in config. A list of allowed hashes.
+Reason: A fixed hash would need a new release of nutrition for each Coder version. The user takes the risk, and the confirm step and the funding controls limit it.
+Effect: Nutrition cannot trust the service. The contract is the only link (entry 79). See also entry 28 for the spec check.
+
+## 77. Funding controls and their defaults
+Context: A Coder spends MU that nutrition owns. A Coder with no limit can drain nutrition.
+Decision: Three controls run in this order: total cap, percentage of the joint balance, minimum life of nutrition. The defaults are: cap of 24 hours at the current price with a margin, 20 percent, 48 hours.
+Reason: The cap limits the total loss. The percentage limits the loss at one time. The minimum life keeps nutrition alive. The order is from the widest limit to the most specific one.
+Effect: The rules are in Saldo::decidir (entries 41 to 45). The user can change the three values in the panel.
+
+## 78. Rules for SSH keys
+Context: The text in the panel becomes authorized_keys in the Coder VM.
+Decision: Only five key types are valid. No key options are valid. The maximum is 20 keys. The file is written by rename.
+Reason: A key option such as `command=` can run a command or open a port. A strict list closes this risk. A rename never gives a half file.
+Effect: See entry 33 for the exact rules. The Coder reads the file at each login, so a change needs no relaunch.
+
+## 79. The host key is made once and stays the same
+Context: A new host key at each launch shows a warning to the user and breaks `known_hosts`.
+Decision: Nutrition makes the host key at the first launch. It stores the key in /var/lib/nutrition/secretos and passes it in CODER_SSH_HOST_KEY.
+Reason: The address is always 127.0.0.1 through the tunnel, so the key is the only identity check.
+Effect: The key is stored in the nutrition VM, so it stays when nutrition restarts only if the disk stays (see TODO.md). The key appears in the argument list of the celaut process for a short time. It allows host impersonation only.
+
+## 80. The Coder is launched with a reusable configuration
+Context: The node reuses an idle instance with the same service and the same configuration.
+Decision: The launch passes the host key as the only environment variable. It never uses --new.
+Reason: A stable configuration lets the node reuse an instance, and the lease stays in the pool until nutrition stops it.
+Effect: Nutrition must not release the lease of the Coder. The node needs a leased lease for metrics, deposit and tunnel.
+
+## 81. The stop action does not trust the node
+Context: Nothing cascades when nutrition stops. The node does not stop the children.
+Decision: The panel stop action closes the SSH target first and then asks the node to stop. See entry 37.
+Reason: A user can then stop the Coder before the shutdown of nutrition.
+Effect: A shutdown of nutrition that has no stop leaves an orphan Coder. A fix is in TODO.md (the notice declaration).
+
+## 82. Documentation language
+Context: The project text is Spanish. The Coder docs, comments and commits need a clear style for a reader with a different native language.
+Decision: New documentation, code comments and commit messages for this feature use ASD-STE100 English. UI text stays Spanish.
+Reason: The panel is for Spanish speakers. The docs and the code are for developers and for the authors of other services.
+Effect: Existing Spanish comments in other files are not changed.
+
+## 83. Single household
+Context: The panel has one household, and Hogar::unico() returns it.
+Decision: The Coder page has no household picker and no household field.
+Reason: A picker would add code for a case that does not exist.
+Effect: The Coder state is global for the database (see entry 30).
+
+## 84. Burn rate measured by samples, ledger method kept for later
+Context: Entry 46 explains the choice. The verification found an exact ledger method.
+Decision: Keep the samples. Record the ledger method in TODO.md as a later improvement.
+Reason: The samples need no unverified output. The ledger method needs a live node to check the JSON.
+Effect: The estimate of the hours left can be wrong when the samples are few. The controls send nothing in that case.
+
+## 85. The share is not durable
+Context: The node owns the share through the nutrition instance. It makes the share new at each start.
+Decision: The docs say that nutrition holds no copy of the live tree. The Coder must keep its work in git. Nutrition makes no automatic backup of the share.
+Rejected options: A periodic copy of the share to the database. It would store code of unknown size and trust.
+Reason: Git in the Coder VM is the standard way to keep code. The snapshot of entry 74 is for rollback only, not for backup.
+Effect: A stop of nutrition loses the edits that are not pushed. The README of this directory says so.

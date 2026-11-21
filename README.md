@@ -195,6 +195,18 @@ El servicio declara un segundo slot de API (puerto 50051: `http2` → `grpc` →
 - **Lista de la compra** (tercer slot, puerto 50052: `http2` → `grpc` → `cards`, [cards.md rev. 1](https://github.com/celaut-project/chatui/blob/master/docs/celaut/cards.md)). Escribe «lista de la compra» en el chat y aparece un botón que abre un mazo de tarjetas, una por alimento del menú activo, con lo que falta tras restar la despensa y agrupado por pasillo (categoría del alimento). Desliza a la derecha = **comprado** (suma esa cantidad a la despensa; deshacer la resta), a la izquierda = **no lo encuentro** (la tarjeta vuelve al final) y el botón **Ya lo tengo** resuelve sin sumar. El mazo se genera cada vez que lo abres, con lo que pide el menú y lo que hay en la despensa en ese momento (se reanuda si reconectas en menos de 5 minutos). Cada alimento tiene una ilustración: la dibuja el agente de Claude por demanda y en lote (SVG comprobado y guardado en `alimentos.ilustracion`, compartido entre instancias; cada una lo rasteriza a PNG; topes de coste en `admin/config/cards.php`) y, mientras tanto o sin token, una fija por categoría. El estado del mazo es por instancia (SQLite del chat). El panel tiene *Seguimiento → Lista de la compra* en solo lectura. Usa el mismo traductor, secreto e interruptor *Chat habilitado*.
 - Contrato interno: [`docs/chat-api-interna.md`](docs/chat-api-interna.md). Decisiones, beneficios y tradeoffs: [`docs/chat-arquitectura.md`](docs/chat-arquitectura.md).
 
+## Coder (edición remota)
+
+El servicio puede lanzar otro servicio Celaut como hijo, el «Coder» (Claude Code, VS Code server u otro), que cambia el código de Laravel mientras el servidor funciona, sin reempaquetar.
+
+- **Compartido:** `/opt/nutrition/project` se exporta como recurso compartido con la etiqueta `project`. La app corre desde `admin/` de ese directorio. La copia original está en `/opt/nutrition/project.orig.tar.gz`.
+- **Recarga:** `docker/servicio/recarga.sh` vigila el código cada 5 s, comprueba la sintaxis y el arranque, y recarga web y cola. Si algo falla, el código viejo sigue en marcha. Si falla la salud tras recargar, vuelve a la última copia buena.
+- **Acceso:** reenviador SSH en el puerto 2222 (`nodo tunnel <instancia> 2222 --listen 2222` y `ssh -p 2222 coder@127.0.0.1`).
+- **Panel:** *Ajustes → Coder* (lanzar por hash o `.celaut.bee`, saldo con tres límites, claves SSH, recargar, restaurar el original).
+- **Cuidado:** el recurso compartido se pierde al parar el servicio. El Coder debe guardar su trabajo en git.
+
+Detalles: [`docs/coder/README.md`](docs/coder/README.md), [contrato del Coder](docs/coder/contract.md) y [decisiones](docs/coder/decisions.md).
+
 ## Desarrollo y pruebas sin instalar PHP
 
 Las pruebas de PHP corren **solo contra PostgreSQL** (el motor de producción; no hay SQLite). `phpunit.xml` apunta por defecto a la base desechable de `docker/pruebas/postgres.sh` (`127.0.0.1:55432`, `nutrition`/`ci`); las pruebas la borran y migran de nuevo, así que no la uses para nada más.
@@ -216,7 +228,7 @@ admin/      Laravel + Filament (panel, modelos, cola, servicios del agente)
 agente/     Kit del agente: CLAUDE.md, skills planificar-menu, editar-menu e intercambiar-menu, scripts (consumos.py, menu.py) y sus tests
 .service/   Empaquetado como servicio Celaut (Dockerfile de construcción, service.json, pack_config.json)
 docker/     agente/ (runner HTTP del agente), chat/ (traductor gRPC), servicio/ (start.sh, arranque del microVM) y pruebas/ (scripts de prueba)
-docs/       Contrato interno del chat y documento de arquitectura
+docs/       Contrato interno del chat, documento de arquitectura y docs/coder/ (función Coder)
 agentic-laravel/   Guía de arquitectura origen (no se versiona)
 ```
 
