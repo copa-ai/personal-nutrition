@@ -377,7 +377,7 @@ class CoderPagina extends Page
             'puerto' => $puerto,
             'comandoTunel' => "nodo tunnel <instancia-de-esta-app> {$puerto} --listen {$puerto}",
             'configSsh' => "Host nutrition-coder\n    HostName 127.0.0.1\n    Port {$puerto}\n    User {$usuario}\n    IdentityFile ~/.ssh/id_ed25519\n    HostKeyAlias nutrition-coder",
-            'comandoSsh' => "ssh -p {$puerto} {$usuario}@127.0.0.1",
+            'comandoSsh' => "ssh -p {$puerto} -o HostKeyAlias=nutrition-coder {$usuario}@127.0.0.1",
             'maximoClaves' => (int) config('coder.claves.maximo'),
         ];
     }

@@ -185,6 +185,14 @@ echo y > "$P/admin/app/Priv.php"; chmod 600 "$P/admin/app/Priv.php"
 sanear_modos
 verificar "sanear_modos clears setuid and opens mode 600" "[ ! -u $P/admin/app/Suid.php ] && [ -r $P/admin/app/Priv.php ] && [ \"\$(stat -c %a $P/admin/app/Priv.php)\" = 644 ]"
 
+# 9b. A snapshot is not saved when a watched path holds a symlink.
+cp "$T/privado/ultima-buena.tar.gz" "$T/antes.tar.gz"
+ln -s "$T/fuera" "$P/admin/app/enlace"
+marca=$(mktemp "$T/privado/marca.XXXXXX")
+guardar_copia "$marca" > /dev/null 2>&1; rc=$?
+rm -f "$P/admin/app/enlace" "$marca"
+verificar "snapshot with a symlink: refused, old snapshot kept" "[ $rc -ne 0 ] && cmp -s '$T/privado/ultima-buena.tar.gz' '$T/antes.tar.gz'"
+
 # 10. A size over the cap refuses the reload.
 RECARGA_MAX_BYTES=10 MAX_BYTES=10
 cambia "$P/admin/app/A.php" '// big'

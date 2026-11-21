@@ -201,8 +201,9 @@ El servicio puede lanzar otro servicio Celaut como hijo, el «Coder» (Claude Co
 
 - **Compartido:** `/opt/nutrition/project` se exporta como recurso compartido con la etiqueta `project`. La app corre desde `admin/` de ese directorio. La copia original está en `/opt/nutrition/project.orig.tar.gz`.
 - **Recarga:** `docker/servicio/recarga.sh` vigila el código cada 5 s, comprueba la sintaxis y el arranque, y recarga web y cola. Si algo falla, el código viejo sigue en marcha. Si falla la salud tras recargar, vuelve a la última copia buena.
-- **Acceso:** reenviador SSH en el puerto 2222 (`nodo tunnel <instancia> 2222 --listen 2222` y `ssh -p 2222 coder@127.0.0.1`).
+- **Acceso:** reenviador SSH en el puerto 2222 (`nodo tunnel <instancia> 2222 --listen 2222` y `ssh -p 2222 -o HostKeyAlias=nutrition-coder coder@127.0.0.1`).
 - **Panel:** *Ajustes → Coder* (lanzar por hash o `.celaut.bee`, saldo con tres límites, claves SSH, recargar, restaurar el original).
+- **Confianza:** el Coder cambia código que corre con los permisos de la aplicación: puede leer todas sus claves y secretos (incluidos `APP_KEY` y la base) y gastar su saldo. Lanza solo servicios de plena confianza.
 - **Cuidado:** el recurso compartido se pierde al parar el servicio. El Coder debe guardar su trabajo en git.
 
 Detalles: [`docs/coder/README.md`](docs/coder/README.md), [contrato del Coder](docs/coder/contract.md) y [decisiones](docs/coder/decisions.md).

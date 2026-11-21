@@ -337,6 +337,10 @@ aplicar_codigo() {
 
 guardar_copia() {   # guardar_copia <marca>: snapshot of the watched paths (no vendor) and the stamp of this reload
     fijar_rutas "$PROYECTO"
+    # A snapshot with a symlink could write outside the share when root extracts it: a link entry, then a file through it.
+    if [ -n "$( cd "$PROYECTO" && find "${RUTAS[@]}" -type l -print -quit 2> /dev/null )" ]; then
+        log "aviso: hay enlaces simbolicos en las rutas vigiladas: no se guarda la copia"; return 1
+    fi
     tar -C "$PROYECTO" -czf "$PRIVADO/ultima-buena.tar.gz.tmp" "${RUTAS[@]}" 2> /dev/null \
         && mv -f "$PRIVADO/ultima-buena.tar.gz.tmp" "$PRIVADO/ultima-buena.tar.gz" || { log "aviso: no se pudo guardar la copia"; return 1; }
     manifiesto "$PROYECTO" "$PRIVADO/ultima-buena.manifest"

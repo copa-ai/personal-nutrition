@@ -8,6 +8,19 @@ Only nutrition exists today. The Coder service itself is out of scope.
 The requirements for a Coder service are in [contract.md](contract.md).
 The design decisions are in [decisions.md](decisions.md).
 
+## Trust: what the Coder can read
+
+The Coder is **not** a separate trust domain from the app. It edits PHP code that runs as the user `app`,
+with the full environment of the app. After a reload, that code can do all that the app can do:
+
+- Read all secrets in the environment and files of the app, for example `APP_KEY` and the database credentials.
+- Read and change all data in the database.
+- Spend the balance of nutrition (the funding limits stop only an honest use).
+- Run `celaut` commands as the app user.
+
+Only the scripts that root runs, and the users `agente`, `chat` and `sshproxy`, are outside its reach.
+Launch only a Coder that you trust fully. The panel shows this warning before the launch.
+
 ## The three copies of the code
 
 The code exists in three places. Do not confuse them.
@@ -31,12 +44,12 @@ A Coder cannot change them. A change to these scripts needs a repack.
 Nutrition watches the share by itself. The Coder sends no request.
 The script docker/servicio/recarga.sh runs as a loop and polls the share every 5 seconds.
 
-It watches these paths: `admin/app`, `admin/config`, `admin/routes`, `admin/resources`, `admin/database`, `admin/bootstrap/app.php` and `admin/composer.lock`.
+It watches these paths: `admin/app`, `admin/config`, `admin/routes`, `admin/resources`, `admin/database`, `admin/lang`, `admin/bootstrap/app.php`, `admin/bootstrap/providers.php` and `admin/composer.lock`.
 
 When a change appears, the watcher does these steps:
 
 1. It waits a short time for more changes (debounce).
-2. It runs `php -l` on the changed PHP files.
+2. It runs `php -l` on the PHP files whose content changed since the last good reload.
 3. It checks that the app boots (`php artisan route:list`).
 4. It runs `optimize:clear`.
 5. It restarts FrankenPHP and the queue workers.
@@ -73,7 +86,7 @@ It has these parts:
 - The estimated cost and a confirm step before the launch.
 - The state: none, launching, running or error.
 - The balance and the hours left of the Coder and of nutrition.
-- The buttons Add balance, Stop, Reload now and Restore original.
+- The buttons Add balance, "Parar el Coder", Reload now and Restore original.
 - The switch Auto reload.
 - The three funding limits.
 - A text area for SSH public keys.
@@ -97,7 +110,7 @@ nodo tunnel <nutrition instance> 2222 --listen 2222
 4. Connect:
 
 ```
-ssh -p 2222 coder@127.0.0.1
+ssh -p 2222 -o HostKeyAlias=nutrition-coder coder@127.0.0.1
 ```
 
 For VS Code, use the extension Remote-SSH.
@@ -108,6 +121,7 @@ Host nutrition-coder
     HostName 127.0.0.1
     Port 2222
     User coder
+    IdentityFile ~/.ssh/id_ed25519
     HostKeyAlias nutrition-coder
 ```
 
@@ -164,4 +178,4 @@ The share is not durable. The node owns it through the nutrition instance.
 - When nutrition starts again, the share is new. It holds the code of the image.
 
 Keep the work in git in the Coder VM. Push it to a remote often.
-The Coder must stop before nutrition stops. Use the "Detener" button.
+The Coder must stop before nutrition stops. Use the "Parar el Coder" button.

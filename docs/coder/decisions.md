@@ -4,7 +4,7 @@ This file records the design decisions for the Coder feature.
 Each entry has a Context, a Decision, a Reason and an Effect.
 Some entries also have a line "Rejected options".
 Entries 1 to 69 come from the build steps (image, reload, ssh, coder, funds, panel).
-Entries 70 to 85 record the agreed design decisions and the limits that the build did not record.
+Entries 70 to 87 record the agreed design decisions and the limits that the build did not record.
 
 ## 1. Project tree path and content
 Context: The agreed share path is /opt/nutrition/project. The old code path was /opt/nutrition/admin.
@@ -15,7 +15,7 @@ Effect: The share is bigger. The pack has more files (see entry 3).
 ## 2. Run scripts stay outside the share
 Context: The Coder can write all files in the share. start.sh runs as root. The agent kit and the chat translator run as other users.
 Decision: start.sh, Caddyfile, bucle.sh, the status page, /opt/agente-kit, /opt/runner and /opt/chat stay at their old paths. The Dockerfile copies them a second time, outside the share. The project copy of docker/ is only for reading and editing by the Coder.
-Reason: A Coder could change a script that root runs. It would gain root in the nutrition VM. The Coder is a separate trust domain.
+Reason: A Coder could change a script that root runs. It would gain root in the nutrition VM. This rule protects the root scripts and the other users (agente, chat, sshproxy). It does not make the Coder a separate trust domain from the app: the Coder can read all secrets of the app (entry 86).
 Effect: A change to start.sh in the share has no effect until the next repack. The Laravel code reloads without a repack. Rejected option: run start.sh from the share.
 
 ## 3. Pack context
@@ -32,7 +32,7 @@ Effect: The restore action must extract with -C /opt/nutrition/project. The imag
 
 ## 5. Writable data stays outside the share
 Context: Laravel writes to storage and to bootstrap/cache.
-Decision: No change to the env variables that start.sh already sets: LARAVEL_STORAGE_PATH and the APP_*_CACHE paths point to /var/lib/nutrition/admin. Filament assets are built in the image under admin/public. The app user only reads the share.
+Decision: No change to the env variables that start.sh already sets: LARAVEL_STORAGE_PATH and the APP_*_CACHE paths point to /var/lib/nutrition/admin. Filament assets are built in the image under admin/public. The app user reads the share. It writes only one path in it: .coder/authorized_keys (entry 34).
 Reason: The share ownership on virtiofs is not verified. The Coder may create root-owned files. A read-only need is safe in both cases.
 Effect: start.sh runs chmod -R a+rX on the share at each start. If chmod fails, it logs a warning and continues. A missing artisan file stops the start with a clear error on the status page.
 
@@ -96,15 +96,15 @@ Decision: The boot check runs "php artisan route:list --json --no-interaction" a
 Reason: "artisan --version" does not boot the providers, so it finds too little. A command that reads data would fail when the database is down and would block a good reload. start.sh never runs route:cache, so the command reads the real route files.
 Effect: A run takes about one to two seconds of PHP. Not verified on real PHP: a provider that queries the database at boot would fail this check.
 
-## 16. php -l only on files newer than the last good reload
+## 16. php -l only on files that changed since the last good reload
 Context: Checking every PHP file on each change is slow on virtiofs.
-Decision: The stamp file ultima-buena.stamp has the time of the start of the last good reload. php -l runs on watched .php files newer than it. A missing stamp means all files. A failed check leaves the stamp unchanged, so the files are checked again next time. Blade and JSON files are not checked.
-Reason: The stamp uses the start time of the cycle, so an edit during a cycle is checked in the next one.
+Decision: The file ultima-buena.manifest holds the hashes of the watched files at the last good reload. php -l runs on the watched .php files whose hash differs from it. A missing manifest means all files. A failed check leaves the manifest unchanged, so the files are checked again next time. Blade and JSON files are not checked. The watcher takes the fingerprint again after the checks. If the code changed meanwhile, it checks again (3 tries). The stamp file ultima-buena.stamp keeps the time of the last good reload for the status.
+Reason: A time test fails when tar, cp -p or rsync -t sets an old time on a file. A hash test does not.
 Effect: A restore of the original removes the stamp, so every file is checked once.
 
 ## 17. Reload method and health check
 Context: The loops from entry 6 restart a child that ends.
-Decision: The watcher runs optimize:clear, sends TERM to the FrankenPHP PID and waits for a new PID file (max 40 s). It sends TERM to both queue workers and does not wait. A worker ends its current job first. Then bucle.sh starts it with the new code. The health check is an HTTP 200 on http://127.0.0.1:8000/up, one try per second, 30 tries.
+Decision: The watcher runs optimize:clear, sends TERM to the FrankenPHP PID and waits until the old process is gone and a new PID file appears (max 40 s). If this fails, the reload is an error and the old code can still run. The watcher sends TERM to a PID only if the process belongs to the app user and its command line holds frankenphp or queue:work, because the app user writes the PID files. It sends TERM to both queue workers and does not wait. A worker ends its current job first. Then bucle.sh starts it with the new code. The health check is an HTTP 200 on http://127.0.0.1:8000/up, one try per second, 30 tries.
 Reason: A menu job can last hours. A wait for the worker would block the reload. The route /up exists in bootstrap/app.php and needs no login.
 Effect: A queue job that is running keeps the old code until it ends. optimize:clear also clears the database cache store (cache:clear): a failure only gives a log warning. During the web restart the app is down for a few seconds.
 
@@ -118,7 +118,7 @@ Effect: After an error the old code runs and the status shows the message until 
 Context: The tar holds the whole project, including vendor. The Coder can add files and packages.
 Decision: The watcher extracts the whole tar over the share with --no-same-owner and without .coder. Then it removes files that the tar does not hold in the watched paths and in admin/vendor. It then runs a normal reload with no snapshot rollback. A failed health check gives error_salud. Rejected option: delete and rebuild vendor (large and slow with the app running).
 Reason: Extraction replaces changed vendor files. The prune step removes added vendor files. composer.lock and vendor match again.
-Effect: Files outside these paths (docs, agente, docker) are replaced but extra files there stay. Empty directories stay. Root extracts files that the Coder wrote: tar can follow a symlink that the Coder planted. Accept this risk for now. File names with a newline are not handled.
+Effect: Files outside these paths (docs, agente, docker) are replaced but extra files there stay. Empty directories stay. Root extracts files that the Coder can influence. Before each extract, the watcher removes symlinks in the share (not in .coder), and it extracts with --no-same-owner. After the extract it clears setuid and setgid bits. File names with a newline are not handled.
 
 ## 20. Forwarder is a Python asyncio script with no dependency
 Context: The SSH slot needs a byte pipe from port 2222 to the Coder. The image has python3 and no extra package is needed.
@@ -134,7 +134,7 @@ Effect: A pipe closes within about one second of a change. A pipe to a Coder tha
 
 ## 22. Limits and timeouts
 Context: A bad client can open many connections and pay nothing, but nutrition pays 10000 MU for each tunnel connection.
-Decision: Defaults: 16 open pipes, 10 s connect timeout, 14400 s (4 hours) idle timeout, 4096 bytes maximum for the destination file. The idle time counts both directions together. A connection over the limit closes at once with one log line.
+Decision: Defaults: 16 open pipes, 10 s connect timeout, 14400 s (4 hours) idle timeout, 4096 bytes maximum for the destination file. The idle time counts both directions together. A connection in progress counts against the pipe limit. A connection over the limit closes at once with one log line. Half-close works: after one side sends EOF, the other direction has 30 s (--grace) to finish.
 Reason: VS Code Remote-SSH opens several connections. SSH sessions can be quiet for hours. A shared idle clock stops a pipe only when both sides are quiet.
 Effect: The values are settings (--max, --idle, --connect-timeout). Not tuned on a real node.
 
@@ -142,7 +142,7 @@ Effect: The values are settings (--max, --idle, --connect-timeout). Not tuned on
 Context: The destination file is written by the app user from the output of the node, but the forwarder must not trust it.
 Decision: The host must be an IP address (v4 or v6). Or it must be a name of letters, digits, dots and hyphens that starts and ends with a letter or digit. The port must be an integer from 1 to 65535. Other types (text, boolean, float) are refused. The match uses the whole string, so a trailing newline fails.
 Reason: A bad file must not make the forwarder connect to an odd target or write odd text in the log.
-Effect: The forwarder accepts loopback and private addresses. It does not limit the target to the Coder: only the app user can write the file.
+Effect: The forwarder accepts loopback and private addresses. It refuses loopback, unspecified, link-local and multicast targets, and it checks the address that the connection reached, so a name cannot hide them. It does not limit the target to the Coder: the app user writes the file, and the Coder controls the app code (entry 86), so private addresses stay allowed.
 
 ## 24. Forwarder user sshproxy and a group on the coder directory
 Context: The app user owns /var/lib/nutrition/coder (mode 750) and writes destino.json. The forwarder needs to read it. Group app is not suitable: /__config__ is readable by group app.
@@ -177,8 +177,8 @@ Effect: With the default, no Coder can launch until a reader exists or the setti
 ## 29. Coder state uses Ajuste keys with the prefix coder.
 Context: The state must survive a restart of the web process and be readable by the panel, the job and the command.
 Decision: Keys: estado (none, launching, running, error), instancia, servicio, tipo, referencia, lease, uri, error, lanzado_en, enviado_mu, horas_vida, saldo_mu, claves_ssh. The stop action sets the keys of one life to null and keeps claves_ssh.
-Reason: Ajuste::fijar audits each change. No new table or migration is needed.
-Effect: Each state change writes an audit row "ajuste.cambiado". The funding step writes horas_vida, saldo_mu and enviado_mu. Package files stay after a stop, so a new launch is quick.
+Reason: Ajuste::fijar audits each change, and a state change must leave an audit row. The values that change often go to coder_estado (entry 49).
+Effect: Each state change writes an audit row "ajuste.cambiado". The funding step writes horas_vida, saldo_mu and enviado_mu in the table coder_estado (entry 49). Package files stay after a stop, so a new launch is quick.
 
 ## 30. The settings table is shared, so the Coder has an owner instance
 Context: The table "ajustes" is in the core schema of the shared database. Two devices on one database see the same coder.* rows.
@@ -208,7 +208,7 @@ Effect: Comment lines with # and keys with options fail. The user sees the line 
 Context: The share is new at each start of nutrition, so .coder/authorized_keys is lost. The key list is also in Ajuste.
 Decision: guardarClaves writes the file by rename (mode 644) and then stores the list. Launch writes the file again from the list before it starts the service. If the write fails, nothing is started.
 Reason: A launch with no keys file would give a Coder that nobody can enter, and it would cost money.
-Effect: The share must be writable by the app user. This is not verified on virtiofs (see the verification notes).
+Effect: The directory .coder in the share belongs to the app user (start.sh creates it with chown), and the app writes only this file there. The sshd of the Coder can refuse the file with StrictModes if the owner is wrong (contract requirement 8). This is not verified on virtiofs (see the verification notes).
 
 ## 35. Package upload rules
 Context: The panel accepts a .celaut.bee file. A path from a form field must not reach celaut.
@@ -294,9 +294,9 @@ Decision: The rate is unknown (null) in these cases. There are fewer than 4 samp
 Reason: A refund or a credit hides burn. With a long list one dropped interval is acceptable. With the minimum list it is not.
 Effect: After a launch, the first top-up waits about 15 minutes. The initial balance of the launch covers that time (about 1 hour by default). The list keeps at most 72 samples and drops those older than 12 hours.
 
-## 49. Volatile values are written without an audit row
+## 49. Volatile values live in the table coder_estado
 Context: Ajuste::fijar writes an audit row on each change. A sample every 300 s, with the whole list, would fill the audit log.
-Decision: Saldo writes samples, counters, balances, price and the last refusal with a private method that calls updateOrCreate directly. The three limits and the launch values still use Ajuste::fijar.
+Decision: Saldo and Coder write samples, counters, balances, price and the last refusal in the table coder_estado (model CoderEstado, key and json value). This table has no audit trigger, and the backup skips it. The earlier version wrote these keys in ajustes with updateOrCreate, but ajustes has a PostgreSQL audit trigger, so each write made an audit row anyway. The three limits and the launch values still use Ajuste::fijar.
 Reason: The audit log is for decisions and money moves, not for readings.
 Effect: Each transfer and each refusal has its own audit row (see 53). A changed limit has the standard setting row.
 
@@ -521,3 +521,15 @@ Decision: The docs say that nutrition holds no copy of the live tree. The Coder 
 Rejected options: A periodic copy of the share to the database. It would store code of unknown size and trust.
 Reason: Git in the Coder VM is the standard way to keep code. The snapshot of entry 74 is for rollback only, not for backup.
 Effect: A stop of nutrition loses the edits that are not pushed. The README of this directory says so.
+
+## 86. Trust model: the Coder is in the trust domain of the app
+Context: The Coder edits PHP files that the app runs as the user app, with the full environment of the app. Entry 2 said that the Coder is a separate trust domain. That is wrong.
+Decision: Say it plainly in the docs and in the panel: after a reload, the Coder code can read all secrets of the app, read and change the database, spend the balance and run celaut as the app user. The funding controls stop an honest use only. The rules about root scripts, PID checks and symlinks protect the root part of the VM and the users agente, chat and sshproxy. The panel shows a warning before each launch.
+Reason: A user who reads "separate trust domain" can launch an unknown Coder and lose the secrets.
+Effect: Launch only a Coder that you trust fully. The host key in the argument list of the celaut process (up to 30 minutes) is visible to the app user, which already can read all secrets. start.sh mounts /proc with hidepid=2, so agente and chat cannot see it. Rejected option: run the Coder code in a second PHP process with fewer rights (large change, not done).
+
+## 87. Safety rules of the reload watcher
+Context: The watcher runs as root. The app user and the Coder write the share and the control directory.
+Decision: The watcher (a) kills only a PID that passes the owner and command line check, (b) removes symlinks before an extract, (c) clears setuid and setgid bits in the share before each check and after each extract, and start.sh does it at start and warns when the share has no nosuid, (d) refuses to hash or reload when the watched paths hold more than 200 MiB (RECARGA_MAX_BYTES), (e) writes only printable ASCII in recarga.json, (f) does not save a snapshot when a watched path holds a symlink, so a snapshot never writes through a link.
+Reason: Each of these is a way for a file or a PID that the Coder controls to make root act on a wrong target.
+Effect: A larger share needs a higher RECARGA_MAX_BYTES. The check does not stop the Coder from filling the disk through other paths.
