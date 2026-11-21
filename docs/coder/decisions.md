@@ -20,7 +20,7 @@ Effect: A change to start.sh in the share has no effect until the next repack. T
 
 ## 3. Pack context
 Context: The packer builds the image from the include list of pack_config.json. It had only admin, agente and three docker subdirectories.
-Decision: The include list now has admin, agente, dependencies, docker, docs, README.md and .service. The ignore list loses "tests/". It keeps vendor/, because the vendor stage builds vendor. There is no root .dockerignore. The file .service/.dockerignore stays as it is.
+Decision: The include list now has admin, agente, dependencies, docker, docs, README.md and the four files of .service (Dockerfile, service.json, pack_config.json, .dockerignore). It must not list the directory .service itself: the packer builds in .service/service, so the packer would copy that directory into itself without end and fail. The ignore list loses "tests/". It keeps vendor/, because the vendor stage builds vendor. There is no root .dockerignore. The file .service/.dockerignore stays as it is.
 Reason: A COPY of a path that is not in the context fails. The old ignore rule removed tests, but the share must hold them.
 Effect: The pack includes docker/pruebas and docker/Dockerfile.agente. It also includes dependencies/postgres sources (small, 12 KB).
 

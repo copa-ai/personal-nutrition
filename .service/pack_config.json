@@ -13,7 +13,10 @@
         "docker",
         "docs",
         "README.md",
-        ".service"
+        ".service/Dockerfile",
+        ".service/service.json",
+        ".service/pack_config.json",
+        ".service/.dockerignore"
     ],
     "ignore": [
         "vendor/",
