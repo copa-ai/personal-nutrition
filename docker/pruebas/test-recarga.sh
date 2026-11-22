@@ -181,6 +181,30 @@ for contenido in "$(( $(date +%s) - 3000 ))" "basura" "$(( $(date +%s) + 99999 )
 done
 rm -f "$C/lanzando"
 
+# 6g. A lock that appears while the checks run: the restart waits. The change stays pending and the reload runs when the lock ends.
+PID_WEB=$(cat "$C/web.pid")
+cambia "$P/admin/app/A.php" '// lock during the checks'
+eval "$(declare -f verificar_codigo | sed '1s/verificar_codigo/verificar_codigo_real/')"
+verificar_codigo() { date +%s > "$C/lanzando"; verificar_codigo_real; }
+una_vuelta > /dev/null 2>&1
+verificar "lock during the checks: no restart, change pending, wait shown" "[ \"\$(cat $C/web.pid)\" = $PID_WEB ] && [ \"\$(json pendiente)\" = True ] && [ \"\$(json espera_lanzamiento)\" = True ]"
+unset -f verificar_codigo
+eval "$(declare -f verificar_codigo_real | sed '1s/verificar_codigo_real/verificar_codigo/')"
+rm -f "$C/lanzando"; una_vuelta > /dev/null 2>&1; una_vuelta > /dev/null 2>&1
+verificar "lock during the checks: the reload runs after the lock ends" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ] && [ \"\$(json resultado)\" = ok ] && [ \"\$(json espera_lanzamiento)\" = False ]"
+# The same with a reload-now request: it is not lost.
+PID_WEB=$(cat "$C/web.pid")
+cambia "$P/admin/app/A.php" '// reload now during the checks'
+touch "$C/recargar-ahora"
+eval "$(declare -f verificar_codigo | sed '1s/verificar_codigo/verificar_codigo_real/')"
+verificar_codigo() { date +%s > "$C/lanzando"; verificar_codigo_real; }
+una_vuelta > /dev/null 2>&1
+unset -f verificar_codigo
+eval "$(declare -f verificar_codigo_real | sed '1s/verificar_codigo_real/verificar_codigo/')"
+verificar "reload-now during the checks: no restart yet" "[ \"\$(cat $C/web.pid)\" = $PID_WEB ]"
+rm -f "$C/lanzando"; una_vuelta > /dev/null 2>&1
+verificar "reload-now during the checks: it runs after the lock ends" "[ \"\$(cat $C/web.pid)\" != $PID_WEB ] && [ \"\$(json resultado)\" = ok ]"
+
 # 7. Restore original: files return, extra files go, .coder and vendor are right.
 cambia "$P/admin/app/A.php" '// edit 3'
 echo '<?php // extra' > "$P/admin/app/Extra.php"

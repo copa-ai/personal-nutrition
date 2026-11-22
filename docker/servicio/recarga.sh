@@ -90,7 +90,7 @@ PODAR_ORIGINAL=("${VIGILADOS[@]}" admin/vendor)
 RUTAS=() HUELLA_VISTA=""
 ESTADO=vigilando RESULTADO=ninguno MENSAJE="" FECHA_UNIX=0
 PENDIENTE=false HUELLA_BASE="" ULTIMA_BUENA="" RECARGAS=0 CAMBIOS=0 ARBOL_VIVO="" ARBOL_ORIGINAL=""
-ESPERA_LANZAMIENTO=false
+ESPERA_LANZAMIENTO=false DIFERIDO_AHORA=false
 
 log() { echo "[$(date -u +%T)] recarga: $*"; }
 
@@ -391,7 +391,7 @@ revertir() {
 
 # One reload. $1 is the reason (texto for the log). $2 is "original" after a restore of the original (no rollback to a snapshot).
 ciclo_recarga() {
-    local motivo=$1 origen=${2:-} marca rc intento
+    local motivo=$1 origen=${2:-} marca rc intento base_previa=$HUELLA_BASE
     marca=$(mktemp "$PRIVADO/marca.XXXXXX") || return 1
     HUELLA_BASE=$(huella_actual)
     ESTADO=revisando; escribir_estado
@@ -410,6 +410,14 @@ ciclo_recarga() {
         [ "$(huella_actual)" != "$HUELLA_BASE" ] || break
         log "el codigo cambio durante la revision: se revisa otra vez"
     done
+    # The checks take seconds. A Coder launch can start meanwhile, after the loop looked at the lock. A restart now would kill it:
+    # keep the change pending (and a reload-now request) and reload when the launch ends. A restore of the original does not wait.
+    if [ "$origen" != original ] && lanzamiento_activo; then
+        rm -f "$marca"; HUELLA_BASE=$base_previa; PENDIENTE=true; actualizar_hashes
+        [ "$motivo" != ahora ] || DIFERIDO_AHORA=true
+        ESTADO=vigilando; ESPERA_LANZAMIENTO=false; actualizar_espera true
+        return 0
+    fi
     ESTADO=recargando; escribir_estado
     log "recargando ($motivo)"
     if aplicar_codigo; then
@@ -525,9 +533,9 @@ una_vuelta() {
         if [ "$PENDIENTE" = true ] && ! auto_activo; then ESTADO=pendiente; else ESTADO=vigilando; fi
         escribir_estado
     fi
-    if [ -e "$CODER/recargar-ahora" ]; then
+    if [ -e "$CODER/recargar-ahora" ] || [ "$DIFERIDO_AHORA" = true ]; then
         quiere=true
-        if [ "$bloqueo" = false ]; then rm -f "$CODER/recargar-ahora"; forzar=true; fi
+        if [ "$bloqueo" = false ]; then rm -f "$CODER/recargar-ahora"; DIFERIDO_AHORA=false; forzar=true; fi
     fi
     if [ "$PENDIENTE" = true ] && auto_activo; then quiere=true; fi
     if [ "$bloqueo" = true ] && [ "$quiere" = true ]; then
