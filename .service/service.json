@@ -116,32 +116,5 @@
                 }
             ]
         }
-    ],
-    "possible_environment_workload": [
-        {
-            "any_of": [
-                {
-                    "workloads": [
-                        {
-                            "count": 1,
-                            "dependency": {
-                                "service": {
-                                    "container": {
-                                        "resources": {
-                                            "at_most": {
-                                                "mem_limit": 3221225472,
-                                                "disk_space": 10737418240,
-                                                "cpu_period": 100000,
-                                                "cpu_quota": 200000
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
     ]
 }

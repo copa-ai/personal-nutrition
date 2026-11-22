@@ -37,7 +37,7 @@ return [
         'inicial_mu' => null,        // --initial-mu of the start. null: the node uses the cost plus its default balance (about 1 hour)
     ],
 
-    // Admission bound that service.json declares (possible_environment_workload). The panel shows it. The node does not tell the real resources.
+    // Limits that the panel shows as "up to" for a Coder. service.json does not declare them (docs/coder/decisions.md, entry 91). The node does not tell the real resources.
     'recursos' => [
         'memoria_gib' => 3,
         'disco_gib' => 10,
