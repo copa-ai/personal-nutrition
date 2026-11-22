@@ -71,7 +71,7 @@
                                     Pon un máximo para el arranque más abajo.</li>
                             @endif
                             <li>Recursos: el nodo no los dice antes del arranque. Se espera como mucho
-                                {{ $recursos['memoria_gib'] }} GiB de memoria, {{ $recursos['disco_gib'] }} GiB de disco y {{ $recursos['cpus'] }} CPU para el Coder (cota orientativa: el nodo no la reserva ni la comprueba).</li>
+                                {{ $recursos['memoria_gib'] }} GiB de memoria, {{ $recursos['disco_gib'] }} GiB de disco y {{ $recursos['cpus'] }} CPU para el Coder (cota orientativa: el nodo no la reserva).</li>
                             <li>Carpeta compartida «{{ $tag }}»:
                                 @if ($preparacion['spec_leida'])
                                     <strong>{{ $preparacion['spec_declara_share'] ? 'declarada' : 'NO declarada' }}</strong>

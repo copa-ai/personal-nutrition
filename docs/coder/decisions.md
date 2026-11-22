@@ -53,7 +53,7 @@ Context: A node must hold room for a Coder child. The agreed bound is 3 GiB memo
 Decision: service.json gets possible_environment_workload with one clause that has one workload and only at_most. It is separate from the postgres clause in initial_environment_workload.
 Reason: The check is an admission check at launch of nutrition. It has no cost and no reservation. at_init is not needed.
 Effect: A node that is too small refuses nutrition itself. I did not verify that the bound limits which hash the panel launches later.
-Update: Entry 91 removes this field.
+Update: Entry 91 tested the removal of this field. It did not fix a hang, so the field stays.
 
 ## 9. SSH slot position
 Context: The SSH slot is the fourth api slot, port 2222, tcp, protocol_stack [["ssh"]].
@@ -554,9 +554,14 @@ Rejected options: A lock in the database (the watcher has no database access). A
 Reason: A file is the same way that the panel and the watcher already use. The age limit stops a crash of the app from blocking reloads for ever.
 Effect: A reload can be late by the time of a launch (usually less than 3 minutes, at most 40). The Coder can write the lock file, as it can write other files of the app (entry 86). The most it can do is to delay reloads by 40 minutes for each write that it makes, but it must refresh the time to do so.
 
-## 91. service.json does not declare possible_environment_workload
-Context: The first launch of a Coder in a cold state never ended in nutrition. The node showed the Coder as running and charged, but `celaut acquire` did not return. The panel stayed in "Lanzando" for 8 to 27 minutes, until a forced stop. Release v0.9.5 and main behaved the same (3 launches of 3: v0.9.5 once, main twice). The same launch ended in 22 to 90 seconds in a build of main that differs only in this field (2 launches of 2), and in personal-finance, whose service.json has no such field (1 launch of 1). A launch in a warm state ended in 7 to 12 seconds with the field.
-Decision: service.json does not declare possible_environment_workload. The limits stay in config coder.recursos. The panel shows them as a guide and says that the node does not reserve or check them.
-Rejected options: A smaller bound in the field (I did not test it: the cause is not known). Keep the field and shorten the wait (the launch does not end).
-Reason: The field caused no error. It is in the admission only, and the documentation of the node does not explain the wait. The result of the tests is the only proof, and it is small: 3 launches with the field and 3 without it (2 of nutrition and 1 of finance).
-Effect: The node no longer refuses nutrition on a node that is too small for a Coder of 3 GiB. The Coder itself can still be refused when it starts. Entry 8 is replaced by this entry.
+## 91. A cold launch of a Coder can hang in nutrition, and the cause is not known
+Context: The first launch of a Coder in a cold state (the node has not started this service before) can stay in "Lanzando" for ever. The node shows the Coder as running and charged, and the Coder answers on SSH, but `celaut acquire` does not return. A trace in Coder.php showed "acquire inicio" and no "acquire fin". A launch in a warm state ended in 7 to 12 seconds.
+Tests (cold launches, one instance of nutrition each, a minimal Coder packed just before):
+- Release v0.9.5, with possible_environment_workload: hung (27 minutes).
+- main, with the field: hung 2 times (15 and 17 minutes).
+- main without the field: ended 2 times (22 seconds and under 90 seconds) and hung 1 time (more than 10 minutes, until a forced stop).
+- personal-finance, which does not declare the field: ended 2 times (75 and 78 seconds).
+Decision: Keep possible_environment_workload in service.json. The removal is not proved to help.
+Rejected options: Remove the field (one hang happened without it). Wait for the colgado_s limit (2400 s) and mark an error (it does not fix the launch).
+Reason: The tests do not link the hang to the field. The hang is older than the lock of entry 90: v0.9.5 has it too.
+Effect: A cold launch can need a forced stop ("Forzar la parada"). In the node log of a hung launch, the lines "[FW] Ensured global FORWARD" and "[FW] Allowed tcp from <parent> to <child>:22" do not appear after "Instance provisioned in DB". In a launch that ends, they do. This points at the node. A warm launch ends.
